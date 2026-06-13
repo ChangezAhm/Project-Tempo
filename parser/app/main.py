@@ -171,7 +171,7 @@ def impact_route(template_id: str, cell: str, depth: int = 3, max_total: int = 5
 # input-area snippets, and persist it. Long-running (~minutes, multiple Opus
 # calls); the request blocks until done. Re-running replaces the prior result.
 @app.post("/understand/{template_id}", dependencies=[Depends(require_api_key)])
-def understand_route(template_id: str, max_sheets: int = 8) -> dict:
+def understand_route(template_id: str, max_sheets: int = 16) -> dict:
     if not settings.configured:
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
     try:

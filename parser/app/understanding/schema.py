@@ -13,8 +13,26 @@ and `confidence` (0-1) so claims are auditable and the uncertain are flagged.
 from __future__ import annotations
 
 from enum import Enum
+from typing import Annotated, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict
+
+_E = TypeVar("_E", bound=Enum)
+
+
+def _lenient(enum_cls: type[_E], fallback):
+    """Coerce an unrecognised enum value to a fallback instead of failing
+    validation. The model occasionally invents a value (e.g. section_type
+    'calc'); without this the whole sheet would be dropped or burn a retry. The
+    prompt schema still lists the valid values, so this is a safety net."""
+    def _v(x):
+        if x is None or isinstance(x, enum_cls):
+            return x
+        try:
+            return enum_cls(x)
+        except (ValueError, TypeError):
+            return fallback
+    return BeforeValidator(_v)
 
 
 class _Strict(BaseModel):
@@ -93,10 +111,19 @@ class RuleCategory(str, Enum):
     other = "other"
 
 
+# Lenient enum aliases — an invented value coerces to the fallback (never drops a sheet).
+LenientSectionType = Annotated[SectionType, _lenient(SectionType, SectionType.other)]
+LenientMetricType = Annotated[MetricType, _lenient(MetricType, MetricType.other)]
+LenientValueRole = Annotated[ValueRole, _lenient(ValueRole, ValueRole.other)]
+LenientSheetRole = Annotated[SheetRole, _lenient(SheetRole, SheetRole.mixed)]
+LenientRuleCategory = Annotated[RuleCategory, _lenient(RuleCategory, RuleCategory.other)]
+LenientInterpSource = Annotated[InterpretationSource | None, _lenient(InterpretationSource, None)]
+
+
 class Section(_Strict):
     id: str                       # local id, e.g. "s1" — referenced by metric rows / sub-sections
     title: str
-    section_type: SectionType
+    section_type: LenientSectionType
     purpose: str                  # one line: what this block is for / collects
     cell_range: str               # e.g. "C30:X78"
     parent_id: str | None         # nesting via local id; null for top-level
@@ -111,8 +138,8 @@ class MetricRow(_Strict):
     section_id: str | None        # which Section.id this belongs to
     parent_label_cell: str | None # hierarchy: the parent metric row's label_cell
     canonical_metric: str | None  # e.g. "reported_ebitda","adjusted_ebitda","net_debt","leverage","revenue"
-    metric_type: MetricType
-    value_role: ValueRole
+    metric_type: LenientMetricType
+    value_role: LenientValueRole
     unit: str | None              # "£m","%","x","#"
     sign_convention: str | None   # e.g. "costs entered negative"
     # --- interpretation layer (business logic) — populate for INPUT / non-obvious
@@ -121,7 +148,7 @@ class MetricRow(_Strict):
     definition: str | None = None              # what this line item means
     qualification_criteria: str | None = None  # what would / would NOT qualify to be entered here
     expected_source: str | None = None         # where the value comes from ("management accounts", "deal model"…)
-    interpretation_source: InterpretationSource | None = None
+    interpretation_source: LenientInterpSource = None
     confidence: float = 0.5
     evidence: list[str]
 
@@ -147,7 +174,7 @@ class InputField(_Strict):
 
 
 class AuthorRule(_Strict):
-    rule_category: RuleCategory
+    rule_category: LenientRuleCategory
     raw_text: str                 # VERBATIM author wording (from a text box / validation / instruction)
     summary: str                  # one-line normalised version
     source_cell: str | None       # anchor of the text box / the validated cell, if locatable
@@ -158,7 +185,7 @@ class AuthorRule(_Strict):
 
 class SheetUnderstanding(_Strict):
     sheet_name: str
-    role: SheetRole
+    role: LenientSheetRole
     label_columns: list[int]      # which columns hold row labels (may NOT be A/B/C)
     summary: str                  # 2-4 sentences: what this sheet is and does
     sections: list[Section]
@@ -172,7 +199,7 @@ class SheetUnderstanding(_Strict):
 
 class SheetRoleAssessment(_Strict):
     sheet: str
-    role: SheetRole
+    role: LenientSheetRole
     one_line: str                 # what this sheet does, in the workbook's data flow
 
 

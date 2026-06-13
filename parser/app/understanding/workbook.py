@@ -193,7 +193,7 @@ def verify(wb: WorkbookUnderstanding, snap: dict) -> dict:
 # --- Orchestrator ---------------------------------------------------------
 
 @traceable(name="understand_workbook", run_type="chain")
-def understand_workbook(template_id: str, *, max_sheets: int = 8, per_sheet_workers: int = 4) -> dict:
+def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_workers: int = 4) -> dict:
     version_id, storage_path, filename = sb.get_latest_file(template_id)
     snap = json.loads(gzip.decompress(sb.download_snapshot(version_id)))
     by_name = {s["name"]: s for s in snap["sheets"]}

@@ -87,7 +87,7 @@ def _critical_inputs(understandings, input_surface: set[str], snippet_paths: dic
     return rows
 
 
-def understand_and_persist(template_id: str, *, max_sheets: int = 8) -> dict:
+def understand_and_persist(template_id: str, *, max_sheets: int = 16) -> dict:
     version_id, storage_path, filename = sb.get_latest_file(template_id)
     job_id = sb.create_job(version_id, job_type="understand")
     try:

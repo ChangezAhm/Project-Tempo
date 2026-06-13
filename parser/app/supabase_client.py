@@ -252,3 +252,10 @@ def upsert_understanding(version_id: str, row: dict) -> None:
     sb = get_client()
     sb.table("template_understanding").delete().eq("template_version_id", version_id).execute()
     sb.table("template_understanding").insert({**row, "template_version_id": version_id}).execute()
+
+
+def upsert_data_model(version_id: str, row: dict) -> None:
+    """One data-model summary row per version: replace it."""
+    sb = get_client()
+    sb.table("template_data_model").delete().eq("template_version_id", version_id).execute()
+    sb.table("template_data_model").insert({**row, "template_version_id": version_id}).execute()

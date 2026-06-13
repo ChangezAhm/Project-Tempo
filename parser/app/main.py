@@ -23,6 +23,7 @@ from app.pipeline import (
     parse_and_persist,
     run_structure,
 )
+from app.datamodel.persist import derive_and_persist, get_data_model
 from app.supabase_client import TemplateNotFound
 from app.understanding.persist import get_understanding, understand_and_persist
 
@@ -188,6 +189,34 @@ def understanding_route(template_id: str) -> dict:
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
     try:
         return get_understanding(template_id)
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Read failed: {e}")
+
+
+# --- Layer 4: dimensional data model ---------------------------------------
+
+# Derive the data model (facts at metric/period/scenario coordinates) from the
+# persisted L2 structure + L3 understanding. Deterministic + fast (no LLM yet).
+@app.post("/datamodel/{template_id}", dependencies=[Depends(require_api_key)])
+def datamodel_route(template_id: str) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    try:
+        return derive_and_persist(template_id)
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Data model derivation failed: {e}")
+
+
+@app.get("/datamodel/{template_id}", dependencies=[Depends(require_api_key)])
+def get_datamodel_route(template_id: str, sheet: str | None = None, limit: int = 2000) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    try:
+        return get_data_model(template_id, sheet=sheet, limit=limit)
     except TemplateNotFound as e:
         raise HTTPException(404, str(e))
     except Exception as e:  # noqa: BLE001

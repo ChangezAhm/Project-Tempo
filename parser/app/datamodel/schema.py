@@ -71,6 +71,9 @@ class DataPoint(_Model):
     definition: str | None
     expected_source: str | None
     needs_value: bool
+    # data | config | exclude — a correction can re-categorise a slot (e.g. a
+    # selector/control input that isn't a reporting data point).
+    category: str = "data"
     # --- provenance / audit ---
     scenario_source: Provenance
     basis_source: Provenance

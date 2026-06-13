@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Body, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import supabase_client as sb
 from app.config import apply_aspose_license, settings
 from app.pipeline import (
     SheetNotFound,
@@ -23,7 +24,7 @@ from app.pipeline import (
     parse_and_persist,
     run_structure,
 )
-from app.datamodel.persist import derive_and_persist, get_data_model
+from app.datamodel.persist import derive_and_persist, get_contract, get_data_model
 from app.supabase_client import TemplateNotFound
 from app.understanding.persist import get_understanding, understand_and_persist
 
@@ -221,3 +222,72 @@ def get_datamodel_route(template_id: str, sheet: str | None = None, limit: int =
         raise HTTPException(404, str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"Read failed: {e}")
+
+
+# --- Layer 4b: Template Contract + corrections -----------------------------
+
+# Read the contract: status, the template-level corrections, and the model
+# summary (the reviewable surface).
+@app.get("/contract/{template_id}", dependencies=[Depends(require_api_key)])
+def contract_route(template_id: str) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    try:
+        return get_contract(template_id)
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Read failed: {e}")
+
+
+# Set contract status / notes. status="approved" pins the current latest version.
+@app.patch("/contract/{template_id}", dependencies=[Depends(require_api_key)])
+def patch_contract_route(template_id: str, body: dict = Body(default={})) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    try:
+        fields: dict = {}
+        if "notes" in body:
+            fields["notes"] = body["notes"]
+        if "status" in body:
+            fields["status"] = body["status"]
+            if body["status"] == "approved":
+                fields["approved_version_id"] = sb.get_latest_file(template_id)[0]
+        return sb.upsert_contract(template_id, fields)
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Update failed: {e}")
+
+
+# Add a correction (content match + patch). Re-run POST /datamodel to apply it.
+#   body: {match: {...}, patch: {...}, note?, target?, created_by?}
+@app.post("/datamodel/{template_id}/corrections", dependencies=[Depends(require_api_key)])
+def add_correction_route(template_id: str, body: dict = Body(...)) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    if not isinstance(body.get("match"), dict) or not isinstance(body.get("patch"), dict):
+        raise HTTPException(422, "Correction requires object `match` and `patch`.")
+    try:
+        return sb.add_correction(template_id, {
+            "target": body.get("target", "fact"),
+            "match": body["match"],
+            "patch": body["patch"],
+            "note": body.get("note"),
+            "created_by": body.get("created_by"),
+        })
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Add correction failed: {e}")
+
+
+@app.delete("/datamodel/{template_id}/corrections/{correction_id}", dependencies=[Depends(require_api_key)])
+def delete_correction_route(template_id: str, correction_id: str) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    try:
+        sb.supersede_correction(correction_id)
+        return {"superseded": correction_id}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Delete failed: {e}")

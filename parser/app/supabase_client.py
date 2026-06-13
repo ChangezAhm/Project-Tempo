@@ -259,3 +259,42 @@ def upsert_data_model(version_id: str, row: dict) -> None:
     sb = get_client()
     sb.table("template_data_model").delete().eq("template_version_id", version_id).execute()
     sb.table("template_data_model").insert({**row, "template_version_id": version_id}).execute()
+
+
+# --- Template contract + corrections (template-level, span versions) -------
+
+def get_contract(template_id: str) -> dict | None:
+    sb = get_client()
+    r = sb.table("template_contract").select("*").eq("template_id", template_id).limit(1).execute().data
+    return r[0] if r else None
+
+
+def upsert_contract(template_id: str, fields: dict) -> dict:
+    """Create or update the template's contract row; returns it."""
+    sb = get_client()
+    existing = get_contract(template_id)
+    payload = {**fields, "updated_at": _now()}
+    if existing:
+        sb.table("template_contract").update(payload).eq("template_id", template_id).execute()
+    else:
+        sb.table("template_contract").insert({"template_id": template_id, **payload}).execute()
+    return get_contract(template_id)
+
+
+def list_corrections(template_id: str, *, include_superseded: bool = False) -> list[dict]:
+    sb = get_client()
+    q = sb.table("template_corrections").select("*").eq("template_id", template_id)
+    if not include_superseded:
+        q = q.eq("superseded", False)
+    return q.order("created_at").execute().data or []
+
+
+def add_correction(template_id: str, row: dict) -> dict:
+    sb = get_client()
+    res = sb.table("template_corrections").insert({"template_id": template_id, **row}).execute()
+    return res.data[0]
+
+
+def supersede_correction(correction_id: str) -> None:
+    sb = get_client()
+    sb.table("template_corrections").update({"superseded": True}).eq("id", correction_id).execute()

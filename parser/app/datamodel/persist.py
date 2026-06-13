@@ -12,6 +12,7 @@ import logging
 
 from app import supabase_client as sb
 from app.datamodel.derive import derive_data_model
+from app.datamodel.merge import apply_corrections
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +22,22 @@ def derive_and_persist(template_id: str) -> dict:
     job_id = sb.create_job(version_id, job_type="datamodel")
     try:
         result = derive_data_model(template_id)
-        rows = [{**f.model_dump(mode="json"), "template_version_id": version_id} for f in result.facts]
+        fact_dicts = [f.model_dump(mode="json") for f in result.facts]
+
+        # Re-apply the template's stored corrections to this version's facts.
+        corrections = sb.list_corrections(template_id)
+        fact_dicts, applied, unmatched = apply_corrections(fact_dicts, corrections)
+
+        rows = [{**d, "template_version_id": version_id} for d in fact_dicts]
         sb.replace_rows("template_data_points", version_id, rows)
+
         dims = result.dimensions
+        flags = list(dims.review_flags)
+        if unmatched:
+            flags.append(
+                f"{len(unmatched)} stored correction(s) matched no fact in this version "
+                f"(template may have changed): {[c.get('note') or c['id'] for c in unmatched]}"
+            )
         sb.upsert_data_model(version_id, {
             "archetype": dims.archetype,
             "timeline_relative": dims.timeline_relative,
@@ -32,7 +46,7 @@ def derive_and_persist(template_id: str) -> dict:
             "scenarios": dims.scenarios,
             "period_grains": dims.period_grains,
             "entities": dims.entities,
-            "review_flags": dims.review_flags,
+            "review_flags": flags,
             "dimensions": dims.model_dump(mode="json"),
         })
         summary = {
@@ -41,13 +55,33 @@ def derive_and_persist(template_id: str) -> dict:
             "scenarios": dims.scenarios,
             "period_grains": dims.period_grains,
             "base_currency": dims.base_currency,
-            "review_flags": dims.review_flags,
+            "corrections_applied": len(applied),
+            "corrections_unmatched": len(unmatched),
+            "review_flags": flags,
         }
         sb.complete_job(job_id, summary)
         return summary
     except Exception as e:
         sb.fail_job(job_id, str(e))
         raise
+
+
+def get_contract(template_id: str) -> dict:
+    version_id, _, _ = sb.get_latest_file(template_id)
+    contract = sb.get_contract(template_id) or {"template_id": template_id, "status": "draft"}
+    corrections = sb.list_corrections(template_id)
+    model = (
+        sb.get_client().table("template_data_model").select(
+            "archetype, timeline_relative, base_currency, fact_count, scenarios, period_grains, review_flags")
+        .eq("template_version_id", version_id).limit(1).execute().data
+    )
+    return {
+        "template_id": template_id,
+        "latest_version_id": version_id,
+        "contract": contract,
+        "corrections": corrections,
+        "model": model[0] if model else None,
+    }
 
 
 def get_data_model(template_id: str, *, sheet: str | None = None, limit: int = 2000) -> dict:

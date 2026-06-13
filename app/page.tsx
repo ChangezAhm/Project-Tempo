@@ -6,23 +6,56 @@ import {
   deleteTemplate,
   formatSize,
   getTemplates,
+  parseTemplate,
+  type ParseSummary,
   type Template,
 } from "@/lib/templates";
 
 export default function LibraryPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [results, setResults] = useState<Record<string, ParseSummary>>({});
 
   useEffect(() => {
-    setTemplates(getTemplates());
-    setReady(true);
+    let active = true;
+    getTemplates()
+      .then((t) => active && setTemplates(t))
+      .catch((e) => active && setError(e instanceof Error ? e.message : "Failed to load templates"))
+      .finally(() => active && setReady(true));
+    return () => {
+      active = false;
+    };
   }, []);
 
-  function handleDelete(id: string) {
-    deleteTemplate(id);
-    setTemplates(getTemplates());
-    setConfirmId(null);
+  async function handleAnalyze(id: string) {
+    setAnalyzingId(id);
+    setError(null);
+    try {
+      const summary = await parseTemplate(id);
+      setResults((r) => ({ ...r, [id]: summary }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to analyze template");
+    } finally {
+      setAnalyzingId(null);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    setError(null);
+    try {
+      await deleteTemplate(id);
+      setTemplates(await getTemplates());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete template");
+    } finally {
+      setDeletingId(null);
+      setConfirmId(null);
+    }
   }
 
   return (
@@ -33,6 +66,10 @@ export default function LibraryPage() {
           Sponsor reporting templates onboarded for contract creation.
         </p>
       </div>
+
+      {error ? (
+        <p className="mb-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+      ) : null}
 
       {!ready ? null : templates.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-white px-6 py-16 text-center">
@@ -94,10 +131,35 @@ export default function LibraryPage() {
               {t.note ? (
                 <p className="mt-2 line-clamp-2 text-xs text-neutral-500">{t.note}</p>
               ) : null}
-              <div className="mt-auto flex items-center gap-2 pt-4 text-xs text-neutral-400">
-                <span>{formatSize(t.sizeBytes)}</span>
-                <span>·</span>
-                <span>{new Date(t.uploadedAt).toLocaleDateString()}</span>
+              <div className="mt-auto pt-4">
+                <div className="flex items-center gap-2 text-xs text-neutral-400">
+                  <span>{formatSize(t.sizeBytes)}</span>
+                  <span>·</span>
+                  <span>{new Date(t.uploadedAt).toLocaleDateString()}</span>
+                </div>
+
+                {results[t.id] ? (
+                  <p className="mt-3 rounded-md bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-600">
+                    {results[t.id].sheet_count} sheets ·{" "}
+                    {results[t.id].total_cells.toLocaleString()} cells ·{" "}
+                    {results[t.id].total_formulas.toLocaleString()} formulas
+                  </p>
+                ) : (
+                  <button
+                    onClick={() => handleAnalyze(t.id)}
+                    disabled={analyzingId === t.id}
+                    className="mt-3 w-full rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    {analyzingId === t.id ? "Analyzing…" : "Analyze structure"}
+                  </button>
+                )}
+
+                <Link
+                  href={`/template/${t.id}`}
+                  className="mt-2 block w-full rounded-md bg-neutral-900 px-3 py-1.5 text-center text-xs font-medium text-white transition hover:bg-neutral-700"
+                >
+                  Understanding →
+                </Link>
               </div>
 
               {confirmId === t.id ? (
@@ -109,13 +171,15 @@ export default function LibraryPage() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleDelete(t.id)}
-                      className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-red-700"
+                      disabled={deletingId === t.id}
+                      className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
                     >
-                      Delete
+                      {deletingId === t.id ? "Deleting…" : "Delete"}
                     </button>
                     <button
                       onClick={() => setConfirmId(null)}
-                      className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50"
+                      disabled={deletingId === t.id}
+                      className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
                     >
                       Cancel
                     </button>

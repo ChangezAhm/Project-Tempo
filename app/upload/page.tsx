@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { formatSize, saveTemplate } from "@/lib/templates";
+import { formatSize, uploadTemplate } from "@/lib/templates";
 
 const ACCEPT = ".xlsx,.xls,.xlsm";
 
@@ -14,6 +14,8 @@ export default function UploadPage() {
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function pickFile(f: File | null) {
     if (!f) return;
@@ -27,18 +29,22 @@ export default function UploadPage() {
     pickFile(e.dataTransfer.files?.[0] ?? null);
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!file) return;
-    saveTemplate({
-      id: crypto.randomUUID(),
-      name: name.trim() || file.name,
-      fileName: file.name,
-      sizeBytes: file.size,
-      uploadedAt: new Date().toISOString(),
-      note: note.trim() || undefined,
-    });
-    router.push("/");
+    if (!file || uploading) return;
+    setUploading(true);
+    setError(null);
+    try {
+      await uploadTemplate({
+        file,
+        name: name.trim() || file.name,
+        note: note.trim() || undefined,
+      });
+      router.push("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+      setUploading(false);
+    }
   }
 
   return (
@@ -122,13 +128,17 @@ export default function UploadPage() {
           />
         </div>
 
+        {error ? (
+          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+        ) : null}
+
         <div className="flex items-center gap-3">
           <button
             type="submit"
-            disabled={!file}
+            disabled={!file || uploading}
             className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Add to library
+            {uploading ? "Uploading…" : "Add to library"}
           </button>
           <Link
             href="/"

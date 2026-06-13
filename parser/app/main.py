@@ -24,6 +24,7 @@ from app.pipeline import (
     parse_and_persist,
     run_structure,
 )
+from app.datamodel.dimensions_llm import enrich_and_persist
 from app.datamodel.persist import derive_and_persist, get_contract, get_data_model
 from app.supabase_client import TemplateNotFound
 from app.understanding.persist import get_understanding, understand_and_persist
@@ -210,6 +211,21 @@ def datamodel_route(template_id: str) -> dict:
         raise HTTPException(404, str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"Data model derivation failed: {e}")
+
+
+# LLM-enrichment pass: auto-fill basis / canonical_metric / category for the
+# ambiguous slots the deterministic derivation left unknown, stored as
+# (fill-only, overridable) llm corrections, then re-derive. One Opus call.
+@app.post("/datamodel/{template_id}/enrich", dependencies=[Depends(require_api_key)])
+def enrich_route(template_id: str) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    try:
+        return enrich_and_persist(template_id)
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Enrichment failed: {e}")
 
 
 @app.get("/datamodel/{template_id}", dependencies=[Depends(require_api_key)])

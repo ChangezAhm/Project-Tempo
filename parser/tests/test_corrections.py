@@ -41,6 +41,21 @@ def test_unmatched_correction_surfaced():
     assert facts[0]["basis"] == "unknown"                              # nothing changed
 
 
+def test_llm_enrichment_is_fill_only_and_user_overrides():
+    # deterministic value present (flow) + empty value (unknown); llm fills only the empty.
+    facts = [_fact(cell="AD20", basis="flow"), _fact(cell="AD24", basis="unknown")]
+    llm = {"id": "L", "created_by": "llm-enrichment", "match": {"canonical_metric": "fixed_assets"},
+           "patch": {"basis": "point_in_time"}}
+    facts, applied, _ = apply_corrections(facts, [llm])
+    assert facts[0]["basis"] == "flow"                    # deterministic NOT overridden by llm
+    assert facts[1]["basis"] == "point_in_time" and facts[1]["basis_source"] == "llm"  # empty filled
+
+    # a user correction overrides even a deterministic value, and beats llm ordering.
+    user = {"id": "U", "match": {"cell": "AD20"}, "patch": {"basis": "ytd"}}
+    facts, _, _ = apply_corrections(facts, [llm, user])
+    assert facts[0]["basis"] == "ytd" and facts[0]["basis_source"] == "user"
+
+
 def test_scenario_patch_marks_source_and_category():
     facts = [_fact(scenario="actual")]
     corr = [{"id": "s", "match": {"sheet_name": "BS"}, "patch": {"scenario": "forecast", "category": "config"}}]

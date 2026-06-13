@@ -295,6 +295,24 @@ def add_correction(template_id: str, row: dict) -> dict:
     return res.data[0]
 
 
+def add_corrections(template_id: str, rows: list[dict], chunk: int = 500) -> int:
+    """Batch-insert corrections (e.g. an LLM-enrichment pass). Returns count."""
+    if not rows:
+        return 0
+    sb = get_client()
+    payload = [{"template_id": template_id, **r} for r in rows]
+    for i in range(0, len(payload), chunk):
+        sb.table("template_corrections").insert(payload[i:i + chunk]).execute()
+    return len(payload)
+
+
+def supersede_corrections_by(template_id: str, created_by: str) -> None:
+    """Supersede all corrections from a given author (e.g. re-running enrichment)."""
+    sb = get_client()
+    sb.table("template_corrections").update({"superseded": True}).eq(
+        "template_id", template_id).eq("created_by", created_by).eq("superseded", False).execute()
+
+
 def supersede_correction(correction_id: str) -> None:
     sb = get_client()
     sb.table("template_corrections").update({"superseded": True}).eq("id", correction_id).execute()

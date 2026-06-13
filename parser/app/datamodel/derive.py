@@ -115,6 +115,45 @@ def _basis(period: dict | None) -> tuple[Basis, Provenance]:
     return Basis.unknown, Provenance.default   # flow vs point-in-time → LLM/user
 
 
+# Data-connector functions: a cell whose formula calls one is fed from the
+# connected system (Chronograph / Power-BI), not typed by hand.
+_CONNECTOR = re.compile(r"(?i)CX_GET|CVC\.GET|GETPIVOTDATA|CUBEVALUE|CUBEMEMBER")
+
+
+def _bounds(rng: str | None) -> tuple[int, int, int, int] | None:
+    """'W17:BN41' -> (r1, c1, r2, c2). Handles a single-cell range too."""
+    if not rng:
+        return None
+    parts = str(rng).split(":")
+    a = _rc(parts[0])
+    b = _rc(parts[1]) if len(parts) > 1 else a
+    if not a or not b:
+        return None
+    return (min(a[1], b[1]), min(a[0], b[0]), max(a[1], b[1]), max(a[0], b[0]))
+
+
+def _section_scenario(title: str | None) -> Scenario | None:
+    t = (title or "").lower()
+    if "budget" in t:
+        return Scenario.budget
+    if "forecast" in t or "outlook" in t:
+        return Scenario.forecast
+    if "actual" in t:
+        return Scenario.actual
+    return None
+
+
+def _section_category(section_type: str | None, title: str | None) -> str | None:
+    """Region-level category hint from the LLM's own section labels."""
+    st = (section_type or "").lower()
+    t = (title or "").lower()
+    if st in ("instructions", "cover"):
+        return "exclude"
+    if st == "reconciliation" or "automatic" in t or "calculation" in t or "calc" in t:
+        return "computed"
+    return None
+
+
 def derive_data_model(template_id: str) -> DataModelResult:
     und = get_understanding(template_id)
     if not und.get("available"):
@@ -125,12 +164,15 @@ def derive_data_model(template_id: str) -> DataModelResult:
     # Snapshot cell values — to read the real period-header label for every column.
     snap = json.loads(gzip.decompress(sb.download_snapshot(version_id)))
     cell_val: dict[tuple[str, int, int], object] = {}
+    cell_formula: dict[tuple[str, int, int], str] = {}
     for s in snap.get("sheets", []):
         nm = s["name"]
         for c in s.get("cells", []):
             rc = _rc(c.get("address", ""))
             if rc:
                 cell_val[(nm, rc[1], rc[0])] = c.get("value")
+                if c.get("formula"):
+                    cell_formula[(nm, rc[1], rc[0])] = c["formula"]
 
     period_idx: dict[str, dict[int, dict]] = {}     # L2 parsed_date by (sheet, col)
     for p in structure.get("periods", []):
@@ -167,6 +209,23 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 grains[p["granularity"]] += 1
         default_ptype = grains.most_common(1)[0][0] if grains else None
         sorted_headers = sorted(header_rows)
+
+        # Section regions: the LLM ranged the Actual/Budget blocks and the
+        # calc/instruction blocks — smallest (most specific) wins on overlap.
+        secs = []
+        for sec in u.get("sections", []):
+            b = _bounds(sec.get("cell_range"))
+            if b:
+                area = (b[2] - b[0] + 1) * (b[3] - b[1] + 1)
+                secs.append((area, b, _section_scenario(sec.get("title")),
+                             _section_category(sec.get("section_type"), sec.get("title"))))
+        secs.sort(key=lambda x: x[0])
+
+        def section_for(col: int, row: int):
+            for _area, (r1, c1, r2, c2), sc, cat in secs:
+                if r1 <= row <= r2 and c1 <= col <= c2:
+                    return sc, cat
+            return None, None
 
         def _label(v: object) -> str | None:
             # Period headers are often dynamic array formulas (a timeline computed
@@ -210,14 +269,21 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 if period is None:
                     orphan_cells += 1
 
-                scenario = _scenario_from_status(period)
+                sec_scenario, sec_cat = section_for(col, row)
+                # scenario precedence: explicit row/field label > section region > period status
+                scenario = (_scenario_from_label(f.get("label"), metric_label)
+                            or sec_scenario or _scenario_from_status(period))
                 sc_src = Provenance.deterministic if scenario else Provenance.default
-                if scenario is None:
-                    scenario = _scenario_from_label(f.get("label"), metric_label)
-                    sc_src = Provenance.deterministic if scenario else Provenance.default
                 scenario = scenario or Scenario.unknown
                 basis, b_src = _basis(period)
                 unit = l3m.get("unit") or l2mr.get("unit") or f.get("unit")
+                # category: a connector-fed cell (CX_GET …) is sourced from the data
+                # system (may be overridable); calc/reconciliation regions are computed;
+                # instructions/cover are excluded; otherwise it's a data slot.
+                if _CONNECTOR.search(cell_formula.get((sheet, row, col), "")):
+                    category = "sourced"
+                else:
+                    category = sec_cat or "data"
 
                 facts.append(DataPoint(
                     fact_key=fact_key(
@@ -233,7 +299,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
                     period_index=None,  # assigned post-loop (relative ordinal on the timeline)
                     period_label=(period or {}).get("label"), parsed_date=(period or {}).get("parsed_date"),
                     period_type=(period or {}).get("period_type"),
-                    scenario=scenario, basis=basis,
+                    scenario=scenario, basis=basis, category=category,
                     entity=None, unit=unit, currency=_currency(unit, l2mr.get("number_format")),
                     value_role=l3m.get("value_role"), sign_convention=l3m.get("sign_convention"),
                     qualification_criteria=l3m.get("qualification_criteria"),

@@ -183,6 +183,19 @@ class AuthorRule(_Strict):
     evidence: list[str] = []      # supporting cells (the model often supplies these)
 
 
+class ScenarioRegion(_Strict):
+    # A contiguous area of the sheet that holds ONE scenario (Actual / Budget /
+    # Forecast / Plan…). Read this from the sheet's own labelling — column-group
+    # headers, block headers, banners. Cover EVERY data area when the sheet mixes
+    # scenarios; one region if the whole sheet is a single scenario; omit if
+    # scenario does not apply (lookup/reference/cover sheets).
+    scenario: str                 # actual | budget | forecast | plan | other
+    cell_range: str               # the area this scenario covers, e.g. "W17:BN66" or "AD11:BA40"
+    label: str | None             # the header text that marks it ("Actual", "Budget FY25"…)
+    confidence: float = 0.5
+    evidence: list[str] = []
+
+
 class SheetUnderstanding(_Strict):
     sheet_name: str
     role: LenientSheetRole
@@ -191,6 +204,7 @@ class SheetUnderstanding(_Strict):
     sections: list[Section]
     metric_rows: list[MetricRow]
     periods: list[Period]
+    scenario_regions: list[ScenarioRegion] = []
     input_fields: list[InputField]
     author_rules: list[AuthorRule]
 

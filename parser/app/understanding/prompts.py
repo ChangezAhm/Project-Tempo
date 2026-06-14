@@ -130,6 +130,16 @@ Set granularity (monthly/quarterly/annual/LTM/YTD/other) and status \
 (historical/current/future/budget) RELATIVE TO the reporting date in WORKBOOK \
 CONTEXT. If no reporting date was provided, set status to "unknown" rather than \
 guessing.
+- scenario_regions — if the sheet presents data under more than one SCENARIO \
+(Actual, Budget, Forecast, Plan…), delineate each one. Read it from the sheet's \
+own labelling — a scenario header row/column, a block banner ("Budget Monthly \
+P&L"), a column-group header. Output ONE region per scenario with the cell_range \
+it covers, and COVER EVERY data area that holds inputs/values (the whole block, \
+not just the header). Scenarios may be laid out as stacked row-blocks OR \
+side-by-side column-groups — give ranges accordingly. If the entire sheet is a \
+single scenario, emit one region spanning the data. If scenario does not apply \
+(lookup/reference/cover/instructions sheets), leave it empty. This is usually \
+visually obvious in the image — use it.
 - input_fields — the cells the portfolio company actually FILLS IN. Combine the \
 image's input-styled cells, "please provide" prompts, validations, and the \
 deterministic hints. Use exact addresses. When ONE logical input repeats across \

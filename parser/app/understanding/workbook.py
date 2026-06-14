@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -30,6 +31,16 @@ from app.understanding.schema import WorkbookUnderstanding
 from app.understanding.sheet_image import render_sheet_tiles
 
 logger = logging.getLogger(__name__)
+
+_MAX_SHEET_ATTEMPTS = 3
+_TRANSIENT = ("connection", "peer closed", "incomplete chunked", "timeout", "timed out",
+              "overloaded", "econnreset", "reset by peer", "503", "502", "529", "remote end closed")
+
+
+def _is_transient(e: Exception) -> bool:
+    s = f"{type(e).__name__} {e}".lower()
+    return any(t in s for t in _TRANSIENT)
+
 
 _DUMP_NAME_RE = re.compile(r"(?i)(pbi|raw|dump|backup|_old|^old|depr)")
 _SYNTH_SCHEMA = to_strict_schema(WorkbookUnderstanding)
@@ -225,11 +236,20 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
         tmp.unlink(missing_ok=True)
 
     def _run(job):
-        try:
-            return understand_sheet(*job)
-        except Exception as e:  # noqa: BLE001 — one bad sheet shouldn't kill the workbook
-            logger.warning("per-sheet understanding failed for %s: %s", job[0]["name"], e)
-            return None
+        # Retry transient API/connection failures (flaky network, dropped streams,
+        # overloaded) — these are common with large image payloads and shouldn't
+        # lose a whole sheet. A genuine error fails after the retries.
+        for attempt in range(_MAX_SHEET_ATTEMPTS):
+            try:
+                return understand_sheet(*job)
+            except Exception as e:  # noqa: BLE001
+                transient = _is_transient(e)
+                if transient and attempt < _MAX_SHEET_ATTEMPTS - 1:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                logger.warning("per-sheet understanding failed for %s (%stransient): %s",
+                               job[0]["name"], "" if transient else "non-", e)
+                return None
 
     with ThreadPoolExecutor(max_workers=per_sheet_workers) as ex:
         results = list(ex.map(_run, jobs))

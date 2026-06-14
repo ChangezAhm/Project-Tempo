@@ -17,7 +17,7 @@ from langsmith import traceable
 
 from app import supabase_client as sb
 from app.understanding.per_sheet import understand_sheet
-from app.understanding.sheet_image import render_sheet_png
+from app.understanding.sheet_image import render_sheet_tiles
 
 _CAP = 40  # cap list lengths fed to the prompt
 
@@ -109,13 +109,13 @@ def understand_template_sheet(template_id: str, sheet_name: str, *, max_tokens: 
     tmp = Path(name)
     try:
         tmp.write_bytes(data)
-        image_png = render_sheet_png(tmp, sheet_name)
+        images = render_sheet_tiles(tmp, sheet_name)
     finally:
         tmp.unlink(missing_ok=True)
 
     return understand_sheet(
         sheet,
-        image_png,
+        images,
         annotations=_annotations(sheet),
         workbook_ctx=_workbook_ctx(snap),
         hints=_hints(snap, sheet_name),

@@ -106,6 +106,21 @@ def _scenario_from_label(*texts: str | None) -> Scenario | None:
     return None
 
 
+def _region_scenario(scenario: str | None) -> Scenario | None:
+    """Map a scenario_region's declared scenario, strictly. Ambiguous labels
+    ('selectable', 'Actual/Budget', 'segment-driven') stay unknown — honest."""
+    s = (scenario or "").strip().lower()
+    if not s or "select" in s or "driven" in s or "/" in s or " or " in s:
+        return None
+    if s.startswith("actual"):
+        return Scenario.actual
+    if s.startswith("budget"):
+        return Scenario.budget
+    if s.startswith("forecast") or s.startswith("plan") or s.startswith("outlook"):
+        return Scenario.forecast
+    return None
+
+
 def _basis(period: dict | None) -> tuple[Basis, Provenance]:
     ptype = (period.get("period_type") or "").lower() if period else ""
     if ptype == "ytd":
@@ -151,6 +166,17 @@ def _section_category(section_type: str | None, title: str | None) -> str | None
         return "exclude"
     if st == "reconciliation" or "automatic" in t or "calculation" in t or "calc" in t:
         return "computed"
+    return None
+
+
+def _basis_from_section_type(section_type: str | None) -> Basis | None:
+    """A line item's basis follows the statement it lives in: balance-sheet-style
+    statements are point-in-time stocks; P&L / cash-flow are period flows."""
+    st = (section_type or "").lower()
+    if st in ("balance_sheet", "cap_table", "debt_schedule"):
+        return Basis.point_in_time
+    if st in ("income_statement", "cash_flow"):
+        return Basis.flow
     return None
 
 
@@ -210,22 +236,39 @@ def derive_data_model(template_id: str) -> DataModelResult:
         default_ptype = grains.most_common(1)[0][0] if grains else None
         sorted_headers = sorted(header_rows)
 
-        # Section regions: the LLM ranged the Actual/Budget blocks and the
-        # calc/instruction blocks — smallest (most specific) wins on overlap.
+        # Sections: the LLM's blocks — used for category + statement-type basis;
+        # smallest (most specific) wins on overlap.
         secs = []
         for sec in u.get("sections", []):
             b = _bounds(sec.get("cell_range"))
             if b:
                 area = (b[2] - b[0] + 1) * (b[3] - b[1] + 1)
-                secs.append((area, b, _section_scenario(sec.get("title")),
-                             _section_category(sec.get("section_type"), sec.get("title"))))
+                secs.append((area, b, _section_category(sec.get("section_type"), sec.get("title")),
+                             sec.get("section_type") or ""))
         secs.sort(key=lambda x: x[0])
 
         def section_for(col: int, row: int):
-            for _area, (r1, c1, r2, c2), sc, cat in secs:
+            for _area, (r1, c1, r2, c2), cat, st in secs:
                 if r1 <= row <= r2 and c1 <= col <= c2:
-                    return sc, cat
+                    return cat, st
             return None, None
+
+        # Scenario regions: the LLM delineated Actual/Budget/Forecast areas from
+        # the image — the primary, general scenario signal (any layout).
+        scen_regions = []
+        for sr in u.get("scenario_regions", []):
+            b = _bounds(sr.get("cell_range"))
+            sc = _region_scenario(sr.get("scenario"))
+            if b and sc:
+                area = (b[2] - b[0] + 1) * (b[3] - b[1] + 1)
+                scen_regions.append((area, b, sc))
+        scen_regions.sort(key=lambda x: x[0])
+
+        def scenario_region_for(col: int, row: int):
+            for _area, (r1, c1, r2, c2), sc in scen_regions:
+                if r1 <= row <= r2 and c1 <= col <= c2:
+                    return sc
+            return None
 
         def _label(v: object) -> str | None:
             # Period headers are often dynamic array formulas (a timeline computed
@@ -269,13 +312,20 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 if period is None:
                     orphan_cells += 1
 
-                sec_scenario, sec_cat = section_for(col, row)
-                # scenario precedence: explicit row/field label > section region > period status
-                scenario = (_scenario_from_label(f.get("label"), metric_label)
-                            or sec_scenario or _scenario_from_status(period))
+                sec_cat, sec_type = section_for(col, row)
+                # scenario precedence: LLM scenario region (primary, read from the
+                # image) > explicit row/field label > period status.
+                scenario = (scenario_region_for(col, row)
+                            or _scenario_from_label(f.get("label"), metric_label)
+                            or _scenario_from_status(period))
                 sc_src = Provenance.deterministic if scenario else Provenance.default
                 scenario = scenario or Scenario.unknown
+                # basis: period_type (ytd/ltm) first, else the statement type the line sits in.
                 basis, b_src = _basis(period)
+                if basis == Basis.unknown:
+                    bt = _basis_from_section_type(sec_type)
+                    if bt:
+                        basis, b_src = bt, Provenance.deterministic
                 unit = l3m.get("unit") or l2mr.get("unit") or f.get("unit")
                 # category: a connector-fed cell (CX_GET …) is sourced from the data
                 # system (may be overridable); calc/reconciliation regions are computed;

@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 from app import supabase_client as sb
-from app.datamodel.persist import get_data_model
+from app.datamodel.persist import derive_and_persist, get_data_model
 from app.population.apply import apply_mapping
 from app.population.match import build_mapping
 
@@ -25,7 +25,18 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
     not computed/config/exclude."""
     dm = get_data_model(template_id, limit=30000)
     if not dm.get("available"):
-        raise RuntimeError("No data model — derive it first (/datamodel).")
+        # Auto-derive the data model (deterministic; needs the L3 understanding,
+        # which exists if the template was 'Understood'). No separate step needed.
+        logger.info("No data model for %s — deriving it now", template_id)
+        try:
+            derive_and_persist(template_id)
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(
+                f"Target has no data model and it can't be derived — run 'Understand' on the target first. ({e})"
+            )
+        dm = get_data_model(template_id, limit=30000)
+        if not dm.get("available"):
+            raise RuntimeError("Could not build a data model for the target.")
     inputs = [f for f in dm["facts"] if f.get("category") in ("data", "sourced")]
     metrics: dict[str, dict] = {}
     for f in inputs:

@@ -62,3 +62,15 @@ def test_scenario_patch_marks_source_and_category():
     facts, _, _ = apply_corrections(facts, corr)
     assert facts[0]["scenario"] == "forecast" and facts[0]["scenario_source"] == "user"
     assert facts[0]["category"] == "config"
+
+
+def test_match_tolerates_label_drift():
+    # Same metric, label drifted (case / trailing space / punctuation) between runs.
+    facts = [_fact(metric_label="Net Revenue")]
+    corr = [{"id": "n", "match": {"metric_label": "net revenue :"}, "patch": {"basis": "flow"}}]
+    facts, applied, unmatched = apply_corrections(facts, corr)
+    assert facts[0]["basis"] == "flow" and applied == {"n"} and unmatched == []
+
+    # but genuinely different metrics still don't match
+    _, applied2, unmatched2 = apply_corrections([_fact(metric_label="Net Sales")], corr)
+    assert applied2 == set() and len(unmatched2) == 1

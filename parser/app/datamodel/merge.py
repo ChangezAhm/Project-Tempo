@@ -11,16 +11,29 @@ Operates on fact dicts (post model_dump) so enum patches stay simple.
 
 from __future__ import annotations
 
+import re
+
 # When these dimensions are patched, mark their provenance.
 _SOURCE_FIELD = {"scenario": "scenario_source", "basis": "basis_source"}
 _LLM = "llm-enrichment"           # created_by marker for the LLM-enrichment pass
 _EMPTY = {None, "", "unknown"}    # values an LLM fill is allowed to overwrite
+_WS = re.compile(r"\s+")
+
+
+def _norm(v):
+    """Normalise a string for tolerant matching — the LLM's verbatim labels
+    wobble between understand runs (case, whitespace, trailing punctuation), so
+    exact-match corrections would go stale. Non-strings pass through unchanged."""
+    if not isinstance(v, str):
+        return v
+    return _WS.sub(" ", v.strip()).lower().rstrip(":;.,-–— ").strip()
 
 
 def _matches(fact: dict, match: dict) -> bool:
-    # A fact matches when every specified field equals the fact's value. An empty
+    # A fact matches when every specified field equals the fact's value (compared
+    # normalised, so minor label drift doesn't break a correction). An empty
     # match {} matches every fact (a workbook-wide correction, e.g. base currency).
-    return all(fact.get(k) == v for k, v in match.items())
+    return all(_norm(fact.get(k)) == _norm(v) for k, v in match.items())
 
 
 def _is_empty(field: str, value) -> bool:

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { parserFetch } from "@/lib/parserFetch";
 
 // Server-side only. Kicks off the Layer-3 understanding run on the parser.
 // This is long-running (multiple Opus calls, ~minutes) — there is no platform
@@ -15,7 +16,7 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const res = await fetch(`${PARSER_URL}/understand/${id}`, {
+    const res = await parserFetch(`${PARSER_URL}/understand/${id}`, {
       method: "POST",
       headers: PARSER_API_KEY ? { "X-API-Key": PARSER_API_KEY } : {},
     });

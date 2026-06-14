@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { parserFetch } from "@/lib/parserFetch";
 
 // Server-side only. Runs population on the parser: LLM maps the source workbook
 // to this template's inputs, fills the cells, returns a download URL + report.
@@ -21,7 +22,7 @@ export async function POST(
   const qs = new URLSearchParams({ source_id: sourceId });
   if (body?.as_of_date) qs.set("as_of_date", body.as_of_date);
   try {
-    const res = await fetch(`${PARSER_URL}/populate/${id}?${qs.toString()}`, {
+    const res = await parserFetch(`${PARSER_URL}/populate/${id}?${qs.toString()}`, {
       method: "POST",
       headers: PARSER_API_KEY ? { "X-API-Key": PARSER_API_KEY } : {},
     });

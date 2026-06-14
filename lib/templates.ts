@@ -271,3 +271,59 @@ export async function getUnderstanding(id: string): Promise<Understanding> {
   }
   return body as Understanding;
 }
+
+// --- Population -------------------------------------------------------------
+
+export type FilledCell = {
+  template_sheet: string;
+  template_cell: string;
+  value: number | string;
+  raw_source_value: number | string;
+  source_sheet: string;
+  source_cell: string;
+  metric: string;
+  period_index: number | null;
+  scenario: string | null;
+  confidence: number;
+};
+
+export type PopulateResult = {
+  target_template_id: string;
+  source_template_id: string;
+  as_of_date: string | null;
+  demand_metrics: number;
+  summary: { facts: number; filled: number; unmatched: number };
+  mapping: {
+    metric_matches: {
+      template_metric: string; source_sheet: string; source_row: number;
+      source_label: string | null; unit_scale: number; sign_flip: boolean;
+      scenario: string | null; confidence: number;
+    }[];
+    period_aligns: { source_sheet: string; source_col: number; period_index: number; source_period_label: string | null }[];
+    unmatched_metrics: string[];
+    notes: string[];
+  };
+  filled: FilledCell[];
+  filled_truncated: boolean;
+  unmatched_count: number;
+  filled_url: string | null;
+};
+
+// Fills `targetId` from source workbook `sourceId` (another uploaded+parsed
+// template). Long-running (LLM). Returns the mapping, attribution + a download URL.
+export async function populateTemplate(
+  targetId: string,
+  sourceId: string,
+  asOf: string | null
+): Promise<PopulateResult> {
+  const res = await fetch(`/api/v1/template/${targetId}/populate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_id: sourceId, as_of_date: asOf || null }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Population failed (${res.status})`);
+  }
+  return body as PopulateResult;
+}

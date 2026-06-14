@@ -237,14 +237,54 @@ def upload_snippet(version_id: str, sheet_name: str, png: bytes) -> str:
 
 def signed_snippet_url(path: str, expires_in: int = 3600) -> str | None:
     """Time-limited URL for a private snippet, for the browser to <img>."""
+    return _signed_url(SNIPPET_BUCKET, path, expires_in)
+
+
+def _signed_url(bucket: str, path: str, expires_in: int) -> str | None:
     if not path:
         return None
-    sb = get_client()
     try:
-        res = sb.storage.from_(SNIPPET_BUCKET).create_signed_url(path, expires_in)
+        res = get_client().storage.from_(bucket).create_signed_url(path, expires_in)
     except Exception:
         return None
     return res.get("signedURL") or res.get("signedurl") or res.get("signed_url")
+
+
+# --- Filled workbooks (population output) ----------------------------------
+
+FILLED_BUCKET = "template-filled"
+_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def upload_filled(target_version_id: str, source_template_id: str, data: bytes) -> str:
+    """Store a populated workbook; returns its storage path (private bucket)."""
+    sb = get_client()
+    try:
+        existing = {b.name for b in sb.storage.list_buckets()}
+    except Exception:
+        existing = set()
+    if FILLED_BUCKET not in existing:
+        for opts in ({"public": False}, None):
+            try:
+                sb.storage.create_bucket(FILLED_BUCKET, options=opts) if opts else sb.storage.create_bucket(FILLED_BUCKET)
+                break
+            except Exception:
+                continue
+    path = f"{target_version_id}/{source_template_id}.xlsx"
+    store = sb.storage.from_(FILLED_BUCKET)
+    try:
+        store.upload(path, data, {"content-type": _XLSX, "upsert": "true"})
+    except Exception:
+        try:
+            store.remove([path])
+        except Exception:
+            pass
+        store.upload(path, data, {"content-type": _XLSX})
+    return path
+
+
+def signed_filled_url(path: str, expires_in: int = 3600) -> str | None:
+    return _signed_url(FILLED_BUCKET, path, expires_in)
 
 
 def upsert_understanding(version_id: str, row: dict) -> None:

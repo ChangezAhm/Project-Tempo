@@ -4,10 +4,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
+  getTemplates,
   getUnderstanding,
+  populateTemplate,
   understandTemplate,
   type CriticalInput,
+  type PopulateResult,
   type SheetUnderstanding,
+  type Template,
   type Understanding,
 } from "@/lib/templates";
 
@@ -106,6 +110,120 @@ function SheetPanel({
           <p className="text-sm text-neutral-400">No distinct input areas captured for this sheet.</p>
         )}
       </div>
+    </section>
+  );
+}
+
+function PopulatePanel({ templateId }: { templateId: string }) {
+  const [sources, setSources] = useState<Template[]>([]);
+  const [sourceId, setSourceId] = useState("");
+  const [asOf, setAsOf] = useState("");
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<PopulateResult | null>(null);
+
+  useEffect(() => {
+    getTemplates()
+      .then((t) => setSources(t.filter((x) => x.id !== templateId)))
+      .catch(() => {});
+  }, [templateId]);
+
+  async function run() {
+    if (!sourceId) return;
+    setRunning(true);
+    setError(null);
+    setResult(null);
+    try {
+      setResult(await populateTemplate(templateId, sourceId, asOf || null));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Population failed");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white p-4">
+      <h2 className="text-lg font-medium">Populate from a source file</h2>
+      <p className="mt-1 text-xs text-neutral-500">
+        Pick a source workbook you’ve uploaded &amp; analysed, set the as-of date, and fill this template’s inputs.
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="text-xs text-neutral-600">
+          Source
+          <select
+            value={sourceId}
+            onChange={(e) => setSourceId(e.target.value)}
+            className="mt-1 block w-64 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          >
+            <option value="">— select —</option>
+            {sources.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs text-neutral-600">
+          As-of date
+          <input
+            type="date"
+            value={asOf}
+            onChange={(e) => setAsOf(e.target.value)}
+            className="mt-1 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+        </label>
+        <button
+          onClick={run}
+          disabled={running || !sourceId}
+          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50"
+        >
+          {running ? "Populating… (a few minutes)" : "Populate"}
+        </button>
+      </div>
+
+      {error ? <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p> : null}
+
+      {result ? (
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">{result.summary.filled} filled</span>
+            <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.unmatched_count} unmatched</span>
+            <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.mapping.metric_matches.length} metrics mapped</span>
+            {result.filled_url ? (
+              <a href={result.filled_url} className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700">
+                Download filled workbook
+              </a>
+            ) : null}
+          </div>
+          {result.filled.length > 0 ? (
+            <div className="max-h-80 overflow-auto rounded-md border border-neutral-200">
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 bg-neutral-50 text-neutral-500">
+                  <tr>
+                    <th className="px-2 py-1">template cell</th>
+                    <th className="px-2 py-1">← source</th>
+                    <th className="px-2 py-1">value</th>
+                    <th className="px-2 py-1">metric</th>
+                    <th className="px-2 py-1">period · scenario</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.filled.slice(0, 100).map((f, i) => (
+                    <tr key={i} className="border-t border-neutral-100">
+                      <td className="px-2 py-1 font-mono">{f.template_sheet}!{f.template_cell}</td>
+                      <td className="px-2 py-1 font-mono text-neutral-400">{f.source_sheet}!{f.source_cell}</td>
+                      <td className="px-2 py-1">{String(f.value)}</td>
+                      <td className="px-2 py-1">{f.metric}</td>
+                      <td className="px-2 py-1 text-neutral-500">{f.period_index ?? "—"} · {f.scenario ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-500">Nothing matched — check the source has the metrics this template needs.</p>
+          )}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -215,6 +333,8 @@ export default function TemplatePage() {
               </p>
             ) : null}
           </header>
+
+          <PopulatePanel templateId={id} />
 
           {wb?.review_flags?.length ? (
             <section className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">

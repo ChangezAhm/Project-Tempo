@@ -85,11 +85,29 @@ def populate(target_template_id: str, source_template_id: str, as_of_date: str |
 
     result = apply_mapping(target_inputs, source_snapshot, mapping)
 
+    # render the filled workbook + upload for download
+    t_vid, t_path, t_fn = sb.get_latest_file(target_template_id)
+    tgt_tmp = _download_to_temp(t_path, t_fn)
+    filled_url = None
+    try:
+        filled_bytes = render_filled(tgt_tmp, result.filled)
+        filled_path = sb.upload_filled(t_vid, source_template_id, filled_bytes)
+        filled_url = sb.signed_filled_url(filled_path)
+    except Exception as e:  # noqa: BLE001 — rendering failure shouldn't lose the mapping/report
+        logger.warning("filled-workbook render/upload failed: %s", e)
+    finally:
+        tgt_tmp.unlink(missing_ok=True)
+
+    filled = [fc.model_dump(mode="json") for fc in result.filled]
     return {
         "target_template_id": target_template_id,
         "source_template_id": source_template_id,
         "as_of_date": as_of_date,
         "demand_metrics": len(demand["metrics"]),
+        "summary": result.summary,
         "mapping": mapping.model_dump(mode="json"),
-        "result": result.model_dump(mode="json"),
+        "filled": filled[:500],
+        "filled_truncated": len(filled) > 500,
+        "unmatched_count": len(result.unmatched),
+        "filled_url": filled_url,
     }

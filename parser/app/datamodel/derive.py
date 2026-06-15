@@ -327,13 +327,25 @@ def derive_data_model(template_id: str) -> DataModelResult:
                     if bt:
                         basis, b_src = bt, Provenance.deterministic
                 unit = l3m.get("unit") or l2mr.get("unit") or f.get("unit")
-                # category: a connector-fed cell (CX_GET …) is sourced from the data
-                # system (may be overridable); calc/reconciliation regions are computed;
-                # instructions/cover are excluded; otherwise it's a data slot.
-                if _CONNECTOR.search(cell_formula.get((sheet, row, col), "")):
+                # Category is decided per CELL by what the cell actually IS, so
+                # population only ever writes into genuine data-entry inputs:
+                #   - connector-fed (CX_GET …)      → sourced  (system-fed, overridable → fillable)
+                #   - instructions/cover region     → exclude  (never filled)
+                #   - holds a real (non-connector) formula → computed (a calculated OUTPUT — NEVER
+                #                                     overwrite it; this is what stops population
+                #                                     clobbering formula-driven frontend sheets)
+                #   - blank / typed literal         → data     (a data-entry slot → fillable;
+                #                                     e.g. the EBITDA-adjustment lines, which are
+                #                                     plain numbers, stay in scope)
+                formula = cell_formula.get((sheet, row, col), "")
+                if _CONNECTOR.search(formula):
                     category = "sourced"
+                elif sec_cat == "exclude":
+                    category = "exclude"
+                elif formula:
+                    category = "computed"
                 else:
-                    category = sec_cat or "data"
+                    category = "data"
 
                 facts.append(DataPoint(
                     fact_key=fact_key(

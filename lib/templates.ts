@@ -289,37 +289,37 @@ export type FilledCell = {
 
 export type PopulateResult = {
   target_template_id: string;
-  source_template_id: string;
+  source_filename: string;
   as_of_date: string | null;
   demand_metrics: number;
-  summary: { facts: number; filled: number; unmatched: number };
-  mapping: {
-    metric_matches: {
-      template_metric: string; source_sheet: string; source_row: number;
-      source_label: string | null; unit_scale: number; sign_flip: boolean;
-      scenario: string | null; confidence: number;
-    }[];
-    period_aligns: { source_sheet: string; source_col: number; period_index: number; source_period_label: string | null }[];
-    unmatched_metrics: string[];
-    notes: string[];
-  };
+  summary: { facts: number; filled: number; unmatched: number; skipped: number };
+  routing: Record<string, string[]> | null;
+  links_count: number;
   filled: FilledCell[];
   filled_truncated: boolean;
+  unmatched: { reason: string; template_sheet?: string; template_cell?: string; metric?: string }[];
   unmatched_count: number;
+  skipped: { template_sheet: string; template_cell: string; reason: string }[];
+  skipped_count: number;
+  notes: string[];
   filled_url: string | null;
+  audit_url: string | null;
 };
 
-// Fills `targetId` from source workbook `sourceId` (another uploaded+parsed
-// template). Long-running (LLM). Returns the mapping, attribution + a download URL.
+// Fills `targetId` directly from a dropped data file. The file is parsed in
+// memory by the parser and never stored as a template. Long-running (LLM).
+// Returns the mapping, attribution + a download URL.
 export async function populateTemplate(
   targetId: string,
-  sourceId: string,
+  file: File,
   asOf: string | null
 ): Promise<PopulateResult> {
+  const form = new FormData();
+  form.append("file", file);
+  if (asOf) form.append("as_of_date", asOf);
   const res = await fetch(`/api/v1/template/${targetId}/populate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_id: sourceId, as_of_date: asOf || null }),
+    body: form,
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {

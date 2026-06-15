@@ -256,8 +256,16 @@ FILLED_BUCKET = "template-filled"
 _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-def upload_filled(target_version_id: str, source_template_id: str, data: bytes) -> str:
-    """Store a populated workbook; returns its storage path (private bucket)."""
+def _safe_label(label: str) -> str:
+    """A storage-safe slug from an arbitrary source filename/label."""
+    base = (label or "source").rsplit(".", 1)[0]  # drop extension
+    slug = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in base)[:80]
+    return slug.strip("_") or "source"
+
+
+def upload_filled(target_version_id: str, source_label: str, data: bytes) -> str:
+    """Store a populated workbook; returns its storage path (private bucket).
+    ``source_label`` is an arbitrary source filename — slugged into a safe key."""
     sb = get_client()
     try:
         existing = {b.name for b in sb.storage.list_buckets()}
@@ -270,7 +278,7 @@ def upload_filled(target_version_id: str, source_template_id: str, data: bytes) 
                 break
             except Exception:
                 continue
-    path = f"{target_version_id}/{source_template_id}.xlsx"
+    path = f"{target_version_id}/{_safe_label(source_label)}.xlsx"
     store = sb.storage.from_(FILLED_BUCKET)
     try:
         store.upload(path, data, {"content-type": _XLSX, "upsert": "true"})
@@ -280,6 +288,22 @@ def upload_filled(target_version_id: str, source_template_id: str, data: bytes) 
         except Exception:
             pass
         store.upload(path, data, {"content-type": _XLSX})
+    return path
+
+
+def upload_audit(target_version_id: str, source_label: str, data: bytes) -> str:
+    """Store a population run's JSON audit alongside its filled workbook; returns
+    the storage path (same private bucket)."""
+    store = get_client().storage.from_(FILLED_BUCKET)
+    path = f"{target_version_id}/{_safe_label(source_label)}.audit.json"
+    try:
+        store.upload(path, data, {"content-type": "application/json", "upsert": "true"})
+    except Exception:
+        try:
+            store.remove([path])
+        except Exception:
+            pass
+        store.upload(path, data, {"content-type": "application/json"})
     return path
 
 

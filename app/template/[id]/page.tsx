@@ -2,16 +2,14 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  getTemplates,
   getUnderstanding,
   populateTemplate,
   understandTemplate,
   type CriticalInput,
   type PopulateResult,
   type SheetUnderstanding,
-  type Template,
   type Understanding,
 } from "@/lib/templates";
 
@@ -115,26 +113,27 @@ function SheetPanel({
 }
 
 function PopulatePanel({ templateId }: { templateId: string }) {
-  const [sources, setSources] = useState<Template[]>([]);
-  const [sourceId, setSourceId] = useState("");
   const [asOf, setAsOf] = useState("");
+  const [dragging, setDragging] = useState(false);
   const [running, setRunning] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PopulateResult | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    getTemplates()
-      .then((t) => setSources(t.filter((x) => x.id !== templateId)))
-      .catch(() => {});
-  }, [templateId]);
+  const VALID = /\.(xlsx|xlsm|xls)$/i;
 
-  async function run() {
-    if (!sourceId) return;
+  async function handleFile(file: File) {
+    if (!VALID.test(file.name)) {
+      setError("Drop an Excel file (.xlsx, .xlsm, .xls).");
+      return;
+    }
     setRunning(true);
     setError(null);
     setResult(null);
+    setFileName(file.name);
     try {
-      setResult(await populateTemplate(templateId, sourceId, asOf || null));
+      setResult(await populateTemplate(templateId, file, asOf || null));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Population failed");
     } finally {
@@ -142,28 +141,25 @@ function PopulatePanel({ templateId }: { templateId: string }) {
     }
   }
 
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    if (running) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) void handleFile(file);
+  }
+
   return (
     <section className="rounded-xl border border-neutral-200 bg-white p-4">
-      <h2 className="text-lg font-medium">Populate from a source file</h2>
-      <p className="mt-1 text-xs text-neutral-500">
-        Pick a source workbook you’ve uploaded &amp; analysed, set the as-of date, and fill this template’s inputs.
-      </p>
-      <div className="mt-3 flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-medium">Populate this template</h2>
+          <p className="mt-1 text-xs text-neutral-500">
+            Drop a portfolio company’s data file and it fills this template’s inputs. The file isn’t saved as a template.
+          </p>
+        </div>
         <label className="text-xs text-neutral-600">
-          Source
-          <select
-            value={sourceId}
-            onChange={(e) => setSourceId(e.target.value)}
-            className="mt-1 block w-64 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-          >
-            <option value="">— select —</option>
-            {sources.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs text-neutral-600">
-          As-of date
+          As-of date (optional)
           <input
             type="date"
             value={asOf}
@@ -171,13 +167,49 @@ function PopulatePanel({ templateId }: { templateId: string }) {
             className="mt-1 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
           />
         </label>
-        <button
-          onClick={run}
-          disabled={running || !sourceId}
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50"
-        >
-          {running ? "Populating… (a few minutes)" : "Populate"}
-        </button>
+      </div>
+
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => !running && inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if ((e.key === "Enter" || e.key === " ") && !running) inputRef.current?.click();
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!running) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        className={`mt-3 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition ${
+          dragging
+            ? "border-neutral-900 bg-neutral-50"
+            : "border-neutral-300 hover:border-neutral-400 hover:bg-neutral-50/50"
+        } ${running ? "pointer-events-none opacity-60" : ""}`}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".xlsx,.xlsm,.xls"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void handleFile(file);
+            e.target.value = "";
+          }}
+        />
+        {running ? (
+          <>
+            <p className="text-sm font-medium text-neutral-700">Populating from {fileName}…</p>
+            <p className="mt-1 text-xs text-neutral-500">Reading the file and matching it to this template — a few minutes.</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-medium text-neutral-700">Drop an Excel file here</p>
+            <p className="mt-1 text-xs text-neutral-500">or click to choose · .xlsx, .xlsm, .xls</p>
+          </>
+        )}
       </div>
 
       {error ? <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p> : null}
@@ -187,10 +219,16 @@ function PopulatePanel({ templateId }: { templateId: string }) {
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">{result.summary.filled} filled</span>
             <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.unmatched_count} unmatched</span>
-            <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.mapping.metric_matches.length} metrics mapped</span>
+            <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.skipped_count} skipped</span>
+            <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.links_count} links</span>
             {result.filled_url ? (
               <a href={result.filled_url} className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700">
                 Download filled workbook
+              </a>
+            ) : null}
+            {result.audit_url ? (
+              <a href={result.audit_url} className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
+                Download audit (JSON)
               </a>
             ) : null}
           </div>

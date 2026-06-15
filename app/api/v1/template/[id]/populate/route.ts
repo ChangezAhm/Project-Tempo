@@ -14,17 +14,24 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const body = await req.json().catch(() => ({}));
-  const sourceId = body?.source_id;
-  if (!sourceId) {
-    return NextResponse.json({ error: "source_id is required" }, { status: 400 });
+  const form = await req.formData().catch(() => null);
+  const file = form?.get("file");
+  if (!(file instanceof File)) {
+    return NextResponse.json({ error: "A source file is required" }, { status: 400 });
   }
-  const qs = new URLSearchParams({ source_id: sourceId });
-  if (body?.as_of_date) qs.set("as_of_date", body.as_of_date);
+  const asOf = form?.get("as_of_date");
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
+  const qs = new URLSearchParams({ filename: file.name || "source.xlsx" });
+  if (typeof asOf === "string" && asOf) qs.set("as_of_date", asOf);
   try {
     const res = await parserFetch(`${PARSER_URL}/populate/${id}?${qs.toString()}`, {
       method: "POST",
-      headers: PARSER_API_KEY ? { "X-API-Key": PARSER_API_KEY } : {},
+      headers: {
+        "Content-Type": "application/octet-stream",
+        ...(PARSER_API_KEY ? { "X-API-Key": PARSER_API_KEY } : {}),
+      },
+      body: bytes,
     });
     const out = await res.json().catch(() => ({}));
     if (!res.ok) {

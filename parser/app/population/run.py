@@ -4,7 +4,6 @@ match (LLM) → apply (deterministic) → render filled workbook + attribution.
 
 from __future__ import annotations
 
-import gzip
 import json
 import logging
 import os
@@ -13,8 +12,10 @@ from pathlib import Path
 
 from app import supabase_client as sb
 from app.datamodel.persist import derive_and_persist, get_data_model
-from app.population.apply import apply_mapping
-from app.population.match import build_mapping
+from app.population.apply import apply_links
+from app.population.match import build_links
+from app.raw_extraction.workbook_parser import parse_workbook
+from app.snapshot import workbook_to_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -80,45 +81,92 @@ def _download_to_temp(storage_path: str, filename: str) -> Path:
     return p
 
 
-def populate(target_template_id: str, source_template_id: str, as_of_date: str | None = None) -> dict:
-    """First-run population: LLM maps the source to the template's inputs, then
-    deterministic apply fills the cells. Returns the mapping + attribution + the
-    filled workbook (uploaded as a snippet-style artifact)."""
+def _bytes_to_temp(filename: str, data: bytes) -> Path:
+    fd, name = tempfile.mkstemp(suffix=Path(filename).suffix or ".xlsx")
+    os.close(fd)
+    p = Path(name)
+    p.write_bytes(data)
+    return p
+
+
+def _run_population(target_template_id: str, source_snapshot: dict, source_path: Path,
+                    source_label: str, as_of_date: str | None) -> dict:
+    """Core: locate the target's already-analysed inputs in the parsed source (the
+    AI reads ONLY the source, driven by the saved analysis), read values
+    deterministically, render + upload the filled workbook + a JSON audit. The
+    template is NOT re-read; we only need its workbook to write the values into."""
     demand, target_inputs = build_demand(target_template_id, as_of_date)
 
-    s_vid, s_path, s_fn = sb.get_latest_file(source_template_id)
-    source_snapshot = json.loads(gzip.decompress(sb.download_snapshot(s_vid)))
-    src_tmp = _download_to_temp(s_path, s_fn)
-    try:
-        mapping = build_mapping(demand, source_snapshot, src_tmp)
-    finally:
-        src_tmp.unlink(missing_ok=True)
-
-    result = apply_mapping(target_inputs, source_snapshot, mapping)
-
-    # render the filled workbook + upload for download
+    # We only need the template WORKBOOK to write the filled values into — the
+    # template's content is already captured in the data model (demand), so the
+    # matcher never re-reads it.
     t_vid, t_path, t_fn = sb.get_latest_file(target_template_id)
-    tgt_tmp = _download_to_temp(t_path, t_fn)
-    filled_url = None
     try:
-        filled_bytes = render_filled(tgt_tmp, result.filled)
-        filled_path = sb.upload_filled(t_vid, source_template_id, filled_bytes)
-        filled_url = sb.signed_filled_url(filled_path)
-    except Exception as e:  # noqa: BLE001 — rendering failure shouldn't lose the mapping/report
-        logger.warning("filled-workbook render/upload failed: %s", e)
+        tgt_tmp = _download_to_temp(t_path, t_fn)
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError("Template workbook is missing from storage — re-upload this template.") from e
+
+    links = skipped = routing = notes = None
+    filled_url = audit_url = None
+    try:
+        links, skipped, routing, notes = build_links(target_inputs, source_snapshot, source_path, demand)
+        result = apply_links(target_inputs, source_snapshot, links, skipped)
+
+        try:
+            filled_bytes = render_filled(tgt_tmp, result.filled)
+            filled_path = sb.upload_filled(t_vid, source_label, filled_bytes)
+            filled_url = sb.signed_filled_url(filled_path)
+        except Exception as e:  # noqa: BLE001 — render failure shouldn't lose the mapping/report
+            logger.warning("filled-workbook render/upload failed: %s", e)
+
+        # Persist the full audit (demand, routing, every link, skipped, unmatched).
+        try:
+            audit = {
+                "target_template_id": target_template_id, "source_filename": source_label,
+                "as_of_date": as_of_date, "demand": demand, "routing": routing,
+                "links": [lk.model_dump(mode="json") for lk in links],
+                "filled": [fc.model_dump(mode="json") for fc in result.filled],
+                "unmatched": result.unmatched, "skipped": result.skipped,
+                "notes": notes, "summary": result.summary,
+            }
+            audit_path = sb.upload_audit(t_vid, source_label, json.dumps(audit, default=str).encode())
+            audit_url = sb.signed_filled_url(audit_path)
+        except Exception as e:  # noqa: BLE001 — audit is best-effort
+            logger.warning("audit upload failed: %s", e)
     finally:
         tgt_tmp.unlink(missing_ok=True)
 
     filled = [fc.model_dump(mode="json") for fc in result.filled]
     return {
         "target_template_id": target_template_id,
-        "source_template_id": source_template_id,
+        "source_filename": source_label,
         "as_of_date": as_of_date,
         "demand_metrics": len(demand["metrics"]),
         "summary": result.summary,
-        "mapping": mapping.model_dump(mode="json"),
+        "routing": routing,
+        "links_count": len(links),
         "filled": filled[:500],
         "filled_truncated": len(filled) > 500,
+        "unmatched": result.unmatched[:200],
         "unmatched_count": len(result.unmatched),
+        "skipped": result.skipped[:200],
+        "skipped_count": len(result.skipped),
+        "notes": notes,
         "filled_url": filled_url,
+        "audit_url": audit_url,
     }
+
+
+def populate_from_bytes(target_template_id: str, source_filename: str, source_bytes: bytes,
+                        as_of_date: str | None = None) -> dict:
+    """Populate a template directly from an uploaded data file's bytes. Parses
+    the source in-memory (Aspose → snapshot) — it is never stored as a template.
+    This is the drag-a-file-onto-a-template path."""
+    src_tmp = _bytes_to_temp(source_filename, source_bytes)
+    try:
+        parsed = parse_workbook(src_tmp)
+        snapshot = workbook_to_snapshot(parsed)
+        return _run_population(target_template_id, snapshot, src_tmp,
+                               source_filename or "source.xlsx", as_of_date)
+    finally:
+        src_tmp.unlink(missing_ok=True)

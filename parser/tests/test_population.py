@@ -1,10 +1,10 @@
-from app.population.apply import apply_mapping
-from app.population.schema import MetricMatch, PeriodAlign, PopulationMapping
+from app.population.apply import apply_links
+from app.population.schema import CellLink
 
 
 def _source():
     # A source workbook: row 5 = Revenue (C/D/E = three months, in thousands),
-    # row 6 = Cost of Sales.
+    # row 6 = Cost of Sales (positive), E6 empty.
     cells = [
         {"address": "B5", "value": "Revenue"},
         {"address": "C5", "value": 1000}, {"address": "D5", "value": 1100}, {"address": "E5", "value": 1200},
@@ -15,7 +15,6 @@ def _source():
 
 
 def _facts():
-    # template wants Revenue (rev canonical) for period 0/1/2 and COGS for 0/1
     return [
         {"sheet_name": "PL", "cell": "AD20", "canonical_metric": "revenue", "metric_label": "Net Revenue", "period_index": 0, "scenario": "actual"},
         {"sheet_name": "PL", "cell": "AE20", "canonical_metric": "revenue", "metric_label": "Net Revenue", "period_index": 1, "scenario": "actual"},
@@ -24,63 +23,56 @@ def _facts():
     ]
 
 
-def _mapping():
-    return PopulationMapping(
-        metric_matches=[
-            MetricMatch(template_metric="revenue", source_sheet="MgmtAccts", source_row=5, unit_scale=0.001),
-            MetricMatch(template_metric="cost_of_sales", source_sheet="MgmtAccts", source_row=6, unit_scale=0.001),
-        ],
-        period_aligns=[
-            PeriodAlign(source_sheet="MgmtAccts", source_col=3, period_index=0),
-            PeriodAlign(source_sheet="MgmtAccts", source_col=4, period_index=1),
-            PeriodAlign(source_sheet="MgmtAccts", source_col=5, period_index=2),
-        ],
-    )
+def _link(tc, sc, **kw):
+    return CellLink(template_sheet="PL", template_cell=tc, source_sheet="MgmtAccts", source_cell=sc, **kw)
 
 
 def test_apply_reads_values_deterministically_with_transform():
-    r = apply_mapping(_facts(), _source(), _mapping())
+    links = [
+        _link("AD20", "C5", unit_scale=0.001), _link("AE20", "D5", unit_scale=0.001),
+        _link("AF20", "E5", unit_scale=0.001), _link("AD21", "C6", unit_scale=0.001),
+    ]
+    r = apply_links(_facts(), _source(), links, skipped=[])
     by_cell = {f.template_cell: f for f in r.filled}
-    # values read from source, scaled thousands->millions (x0.001)
     assert by_cell["AD20"].value == 1.0 and by_cell["AD20"].source_cell == "C5"
     assert by_cell["AE20"].value == 1.1 and by_cell["AF20"].value == 1.2
     assert by_cell["AD21"].value == 0.4 and by_cell["AD21"].source_cell == "C6"
-    assert r.summary == {"facts": 4, "filled": 4, "unmatched": 0}
+    assert r.summary == {"facts": 4, "filled": 4, "unmatched": 0, "skipped": 0}
 
 
-def test_apply_flags_unmatched():
-    facts = _facts() + [
-        {"sheet_name": "PL", "cell": "AE21", "canonical_metric": "cost_of_sales", "metric_label": "Cost of Sales", "period_index": 2, "scenario": "actual"},  # no source col mapped? col3 exists; src E6 empty
-        {"sheet_name": "PL", "cell": "AD99", "canonical_metric": "ebitda", "metric_label": "EBITDA", "period_index": 0, "scenario": "actual"},  # metric not in source
-    ]
-    r = apply_mapping(facts, _source(), _mapping())
+def test_sign_flip_and_sheet_prefix_and_range_are_normalised():
+    # source cell cited as "MgmtAccts!C6:C6" with a sign flip (costs +ve in source).
+    links = [_link("AD21", "MgmtAccts!C6:C6", unit_scale=0.001, sign_flip=True)]
+    r = apply_links(_facts(), _source(), links, skipped=[])
+    f = r.filled[0]
+    assert f.template_cell == "AD21" and f.source_cell == "C6" and f.value == -0.4
+
+
+def test_unmatched_empty_source_and_no_link():
+    links = [_link("AD20", "C5", unit_scale=0.001), _link("AF20", "E6", unit_scale=0.001)]  # E6 empty
+    r = apply_links(_facts(), _source(), links, skipped=[])
     reasons = {u["template_cell"]: u["reason"] for u in r.unmatched}
-    assert reasons["AD99"] == "no metric match"
-    assert reasons["AE21"] == "empty source cell"   # COGS period 2 -> col E -> E6 is empty
+    assert reasons["AF20"] == "empty/absent source cell"
+    assert reasons["AE20"] == "no source match"   # never linked
+    assert reasons["AD21"] == "no source match"
 
 
-def test_scenario_agnostic_match_does_not_bleed_into_budget():
-    # source is actuals-only (scenario=None on the match); budget slots must NOT
-    # be filled from it, but actual slots should.
-    facts = [
-        {"sheet_name": "PL", "cell": "AD20", "canonical_metric": "revenue", "metric_label": "Revenue", "period_index": 0, "scenario": "actual"},
-        {"sheet_name": "PL", "cell": "BD20", "canonical_metric": "revenue", "metric_label": "Revenue", "period_index": 0, "scenario": "budget"},
+def test_skipped_cells_are_not_unmatched():
+    facts = _facts() + [
+        {"sheet_name": "PL", "cell": "A1", "canonical_metric": None, "metric_label": "Budget", "period_index": 0, "scenario": "budget"},
     ]
-    mapping = PopulationMapping(
-        metric_matches=[MetricMatch(template_metric="revenue", scenario=None, source_sheet="MgmtAccts", source_row=5)],
-        period_aligns=[PeriodAlign(source_sheet="MgmtAccts", source_col=3, period_index=0)],
-    )
-    r = apply_mapping(facts, _source(), mapping)
-    cells = {f.template_cell for f in r.filled}
-    assert "AD20" in cells and "BD20" not in cells
-    assert any(u["template_cell"] == "BD20" for u in r.unmatched)
+    links = [_link("AD20", "C5", unit_scale=0.001)]
+    skipped = [{"template_sheet": "PL", "template_cell": "A1", "reason": "column header, not an input"}]
+    r = apply_links(facts, _source(), links, skipped=skipped)
+    unmatched_cells = {u["template_cell"] for u in r.unmatched}
+    assert "A1" not in unmatched_cells          # header was skipped, not unmatched
+    assert r.summary["skipped"] == 1
 
 
-def test_label_match_when_no_canonical():
-    facts = [{"sheet_name": "PL", "cell": "Z1", "canonical_metric": None, "metric_label": "Revenue", "period_index": 0, "scenario": "actual"}]
-    mapping = PopulationMapping(
-        metric_matches=[MetricMatch(template_metric="revenue", source_sheet="MgmtAccts", source_row=5)],
-        period_aligns=[PeriodAlign(source_sheet="MgmtAccts", source_col=3, period_index=0)],
-    )
-    r = apply_mapping(facts, _source(), mapping)
-    assert len(r.filled) == 1 and r.filled[0].raw_source_value == 1000
+def test_link_to_non_input_cell_is_not_written():
+    # the model cites a template cell that isn't a known input — never write into it.
+    links = [_link("AD20", "C5", unit_scale=0.001), _link("ZZ99", "D5")]
+    r = apply_links(_facts(), _source(), links, skipped=[])
+    assert {f.template_cell for f in r.filled} == {"AD20"}
+    assert any(u.get("template_cell") == "ZZ99" and "not a known template input" in u["reason"]
+               for u in r.unmatched)

@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 
 from app import supabase_client as sb
 from app.config import apply_aspose_license, settings
@@ -26,7 +27,7 @@ from app.pipeline import (
 )
 from app.datamodel.dimensions_llm import enrich_and_persist
 from app.datamodel.persist import derive_and_persist, get_contract, get_data_model
-from app.population.run import populate
+from app.population.run import populate_from_bytes
 from app.supabase_client import TemplateNotFound
 from app.understanding.persist import get_understanding, understand_and_persist
 
@@ -231,15 +232,27 @@ def enrich_route(template_id: str) -> dict:
 
 # --- Population: fill a template's inputs from a source workbook -----------
 
-# LLM maps the source to the template's data-model inputs, then deterministic
-# apply reads the real values + renders a filled workbook (download URL). Source
-# is just another uploaded+parsed workbook (source_id). Long-running (LLM).
+# Drag a data file onto a template. The raw workbook bytes are POSTed directly
+# (application/octet-stream) — the source is parsed in-memory and NEVER stored
+# as a template. LLM maps the source to the template's data-model inputs, then
+# deterministic apply reads the real values + renders a filled workbook
+# (download URL). Long-running (LLM) → offloaded to a worker thread.
 @app.post("/populate/{target_template_id}", dependencies=[Depends(require_api_key)])
-def populate_route(target_template_id: str, source_id: str, as_of_date: str | None = None) -> dict:
+async def populate_route(
+    target_template_id: str,
+    request: Request,
+    filename: str = "source.xlsx",
+    as_of_date: str | None = None,
+) -> dict:
     if not settings.configured:
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    data = await request.body()
+    if not data:
+        raise HTTPException(400, "No source file in request body")
     try:
-        return populate(target_template_id, source_id, as_of_date)
+        return await run_in_threadpool(
+            populate_from_bytes, target_template_id, filename, data, as_of_date
+        )
     except TemplateNotFound as e:
         raise HTTPException(404, str(e))
     except Exception as e:  # noqa: BLE001

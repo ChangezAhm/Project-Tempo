@@ -1,11 +1,17 @@
 // Server-only fetch for LONG-running parser calls (understand / populate run for
-// minutes). Node's default undici header timeout (~300s) aborts these mid-run
-// even though the parser finishes — so use a dispatcher with timeouts disabled.
-import { Agent } from "undici";
+// minutes). Node's built-in fetch aborts these at its ~300s header timeout even
+// though the parser finishes. We use undici's OWN fetch + Agent (same package,
+// so the dispatcher is compatible — passing an undici Agent to Node's built-in
+// fetch fails instantly) with the timeouts disabled.
+import { Agent, fetch as undiciFetch } from "undici";
 
 const longLived = new Agent({ headersTimeout: 0, bodyTimeout: 0 });
 
-export function parserFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  // Node's fetch accepts an undici `dispatcher`; it isn't in the DOM RequestInit type.
-  return fetch(url, { ...init, dispatcher: longLived } as RequestInit & { dispatcher: unknown });
+export async function parserFetch(
+  url: string,
+  init: { method?: string; headers?: Record<string, string>; body?: Uint8Array | string } = {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<{ ok: boolean; status: number; json: () => Promise<any> }> {
+  const res = await undiciFetch(url, { ...init, dispatcher: longLived });
+  return { ok: res.ok, status: res.status, json: () => res.json() };
 }

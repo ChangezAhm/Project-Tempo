@@ -1,9 +1,15 @@
-"""Population (Build A) — fill a template's input slots from a source workbook.
+"""Population (Build A, v2) — fill a template's input slots from a source workbook.
 
-The LLM produces a MAPPING (where each template metric lives in the source +
-how source columns align to template periods + transforms). It never reads the
-numbers. Deterministic code then reads the real values from the source snapshot
-and writes them into the template's bound cells, with full attribution.
+The matcher is BILATERAL and CELL-LEVEL: the LLM sees the template sheet (image +
+grid + the list of input cells to fill) AND the routed source sheet(s) (image +
+grid), and emits DIRECT links — template_cell → source_sheet!source_cell — with
+transforms. It never reads or writes numbers. Deterministic code then reads the
+real value from the source snapshot at the cited address and writes it into the
+template's cell, with full attribution.
+
+This replaces the previous design (metric-name list → per-sheet blind match →
+triple exact-join on metric×scenario×period), which discarded the template's
+visual context and lost cells whenever any one join key was imperfect.
 """
 
 from __future__ import annotations
@@ -15,32 +21,56 @@ class _M(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class PeriodAlign(_M):
-    """One source column supplies one template (relative) period."""
-    source_sheet: str
-    source_col: int               # 1-based
-    period_index: int             # the template's relative period this column maps to
-    source_period_label: str | None = None
+# --- LLM outputs (forced via prompt + Pydantic validation) -----------------
+
+class RouteOut(_M):
+    """Which source sheet(s) feed one template sheet (stage 1)."""
+    template_sheet: str
+    source_sheets: list[str] = []
 
 
-class MetricMatch(_M):
-    """A template metric is found at this source sheet+row, with transforms."""
-    template_metric: str          # the canonical_metric or metric_label being matched
-    scenario: str | None = None   # template scenario this supplies (None = any/single-scenario source)
+class RoutingOut(_M):
+    routes: list[RouteOut] = []
+
+
+class LinkOut(_M):
+    """One template input cell ← one source cell, with transforms (stage 2).
+
+    The template_sheet is fixed by the call (the batch is one template sheet), so
+    the model emits only the template CELL; the sheet is attached in code.
+    """
+    template_cell: str            # exact A1 in the template sheet being matched
+    source_sheet: str             # source sheet name (from the provided list)
+    source_cell: str              # exact A1 in that source sheet
+    unit_scale: float = 1.0       # multiply source→template units (thousands→millions = 0.001)
+    sign_flip: bool = False       # source/template sign conventions differ
+    confidence: float = 0.5
+    note: str | None = None
+
+
+class SkipOut(_M):
+    """A listed target cell the model judges is NOT a real input (header/total/etc.)."""
+    template_cell: str
+    reason: str
+
+
+class SheetMatchOut(_M):
+    links: list[LinkOut] = []
+    skipped: list[SkipOut] = []
+    notes: list[str] = []
+
+
+# --- Resolved link (sheet attached) + results ------------------------------
+
+class CellLink(_M):
+    template_sheet: str
+    template_cell: str
     source_sheet: str
-    source_row: int
-    source_label: str | None = None    # verbatim source label, for audit
-    unit_scale: float = 1.0       # multiply source value (e.g. thousands→millions = 0.001)
+    source_cell: str
+    unit_scale: float = 1.0
     sign_flip: bool = False
     confidence: float = 0.5
-    notes: str | None = None
-
-
-class PopulationMapping(_M):
-    metric_matches: list[MetricMatch] = []
-    period_aligns: list[PeriodAlign] = []
-    unmatched_metrics: list[str] = []   # template metrics the LLM could not find in the source
-    notes: list[str] = []
+    note: str | None = None
 
 
 class FilledCell(_M):
@@ -58,5 +88,6 @@ class FilledCell(_M):
 
 class PopulationResult(_M):
     filled: list[FilledCell] = []
-    unmatched: list[dict] = []    # template facts with no source value, + reason
+    unmatched: list[dict] = []    # template input facts with no usable source value, + reason
+    skipped: list[dict] = []      # target cells the matcher rejected as non-inputs, + reason
     summary: dict = {}

@@ -32,7 +32,7 @@ _ROUTE_SCHEMA = to_strict_schema(RoutingOut)
 _MATCH_SCHEMA = to_strict_schema(SheetMatchOut)
 _MAX_IMAGE_BYTES = 5_000_000
 
-_CELLS_PER_CALL = 200        # template inputs per match call (bounds output size)
+_CELLS_PER_CALL = 100        # template inputs per match call (bounds output size)
 _SRC_SHEETS_SHOWN = 3        # source sheets shown with image+grid per call
 _MAX_PARALLEL = 6            # concurrent match calls (independent post-routing; calls are light)
 
@@ -63,6 +63,10 @@ SYSTEM_MATCH = (
     "each template period to the matching source column. Align SCENARIO: an actuals / management-"
     "accounts source supplies 'actual'; only fill a budget or forecast input if the source actually "
     "shows that scenario.\n"
+    "Prefer source cells that hold an ACTUAL VALUE. If a candidate is a display/output cell whose "
+    "formula merely references another sheet (e.g. a presentation tab pulling from a '_'-prefixed "
+    "staging sheet), cite the UNDERLYING value cell it reads from instead — that's where the real "
+    "number lives. Keep each note under ~12 words.\n"
     "If an input's value is genuinely not present in the source, omit it (it is reported unmatched). "
     "If a listed input is obviously not a real metric (a stray label/placeholder), put it in skipped.\n"
     "CRITICAL: output LOCATIONS ONLY — never values or numbers. Cite real source addresses you can "
@@ -70,7 +74,7 @@ SYSTEM_MATCH = (
 )
 
 
-def _call(system: str, user_text: str, images: list[tuple[str, bytes]], max_tokens: int = 16000):
+def _call(system: str, user_text: str, images: list[tuple[str, bytes]], max_tokens: int = 24000):
     content: list[dict] = []
     for cap, png in images or []:
         if not png or len(png) > _MAX_IMAGE_BYTES:

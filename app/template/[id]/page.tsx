@@ -218,6 +218,7 @@ function PopulatePanel({ templateId }: { templateId: string }) {
         <div className="mt-4 space-y-3">
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">{result.summary.filled} filled</span>
+            <span className="rounded bg-amber-50 px-2 py-1 text-amber-700">{result.cleared_count} cleared</span>
             <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.unmatched_count} unmatched</span>
             <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.skipped_count} skipped</span>
             <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.links_count} links</span>

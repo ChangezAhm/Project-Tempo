@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from app import supabase_client as sb
+from app.datamodel.derive import DERIVATION_VERSION
 from app.datamodel.persist import derive_and_persist, get_data_model
 from app.population.apply import apply_links
 from app.population.match import build_links
@@ -25,16 +26,20 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
     the input facts to fill. Targets the data/sourced cells (the actual inputs),
     not computed/config/exclude."""
     dm = get_data_model(template_id, limit=30000)
-    if not dm.get("available"):
-        # Auto-derive the data model (deterministic; needs the L3 understanding,
-        # which exists if the template was 'Understood'). No separate step needed.
-        logger.info("No data model for %s — deriving it now", template_id)
+    stored_ver = ((dm.get("model") or {}).get("dimensions") or {}).get("derivation_version", 0)
+    # Auto-(re)derive when the data model is missing OR was built by older logic, so
+    # population always uses an up-to-date map (deterministic; no separate step).
+    if not dm.get("available") or stored_ver < DERIVATION_VERSION:
+        logger.info("data model for %s missing/stale (v%s < v%s) — (re)deriving now",
+                    template_id, stored_ver, DERIVATION_VERSION)
         try:
             derive_and_persist(template_id)
         except Exception as e:  # noqa: BLE001
-            raise RuntimeError(
-                f"Target has no data model and it can't be derived — run 'Understand' on the target first. ({e})"
-            )
+            if not dm.get("available"):
+                raise RuntimeError(
+                    f"Target has no data model and it can't be derived — run 'Understand' on the target first. ({e})"
+                )
+            logger.warning("re-derive failed (%s) — using the existing (stale) data model", e)
         dm = get_data_model(template_id, limit=30000)
         if not dm.get("available"):
             raise RuntimeError("Could not build a data model for the target.")
@@ -53,21 +58,45 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
     return demand, inputs
 
 
-def render_filled(template_workbook_path, filled) -> bytes:
-    """Write the filled values into the template workbook and return the bytes."""
+def _is_clearable_value(value, is_formula: bool) -> bool:
+    """Stale data to wipe on refresh = a plain NUMBER sitting in an input cell.
+    Never clear a formula (computed/connector cell) or text (a label/header) — only
+    numeric literals, so structure and computed cells are untouched."""
+    if is_formula:
+        return False
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def render_filled(template_workbook_path, filled, clear_facts=()) -> tuple[bytes, int]:
+    """Refresh-then-fill: first wipe stale numeric values in the in-scope input
+    cells (``clear_facts`` = the template's data/sourced facts) so a previously
+    populated template doesn't leak another company's numbers, then write the
+    matched values. Formulas and text are never cleared. Returns (bytes, cleared)."""
     from aspose.cells import Workbook
     wb = Workbook(str(template_workbook_path))
     ws_by_name = {w.name: w for w in wb.worksheets}
+
+    cleared = 0
+    for f in clear_facts:
+        ws = ws_by_name.get(f.get("sheet_name"))
+        if ws is None or not f.get("cell"):
+            continue
+        cell = ws.cells.get(f["cell"])
+        if _is_clearable_value(cell.value, cell.is_formula):
+            ws.cells.clear_contents(cell.row, cell.column, cell.row, cell.column)
+            cleared += 1
+
     for fc in filled:
         ws = ws_by_name.get(fc.template_sheet)
         if ws is not None:
             ws.cells.get(fc.template_cell).put_value(fc.value)
+
     fd, name = tempfile.mkstemp(suffix=".xlsx")
     os.close(fd)
     out = Path(name)
     try:
         wb.save(str(out))
-        return out.read_bytes()
+        return out.read_bytes(), cleared
     finally:
         out.unlink(missing_ok=True)
 
@@ -108,12 +137,15 @@ def _run_population(target_template_id: str, source_snapshot: dict, source_path:
 
     links = skipped = routing = notes = None
     filled_url = audit_url = None
+    cleared = 0
     try:
         links, skipped, routing, notes = build_links(target_inputs, source_snapshot, source_path, demand)
         result = apply_links(target_inputs, source_snapshot, links, skipped)
 
         try:
-            filled_bytes = render_filled(tgt_tmp, result.filled)
+            # refresh-then-fill: wipe stale numeric values across ALL in-scope inputs,
+            # then write the matches — so uncovered inputs end up empty, not stale.
+            filled_bytes, cleared = render_filled(tgt_tmp, result.filled, target_inputs)
             filled_path = sb.upload_filled(t_vid, source_label, filled_bytes)
             filled_url = sb.signed_filled_url(filled_path)
         except Exception as e:  # noqa: BLE001 — render failure shouldn't lose the mapping/report
@@ -127,7 +159,7 @@ def _run_population(target_template_id: str, source_snapshot: dict, source_path:
                 "links": [lk.model_dump(mode="json") for lk in links],
                 "filled": [fc.model_dump(mode="json") for fc in result.filled],
                 "unmatched": result.unmatched, "skipped": result.skipped,
-                "notes": notes, "summary": result.summary,
+                "notes": notes, "summary": result.summary, "cleared_count": cleared,
             }
             audit_path = sb.upload_audit(t_vid, source_label, json.dumps(audit, default=str).encode())
             audit_url = sb.signed_filled_url(audit_path)
@@ -151,6 +183,7 @@ def _run_population(target_template_id: str, source_snapshot: dict, source_path:
         "unmatched_count": len(result.unmatched),
         "skipped": result.skipped[:200],
         "skipped_count": len(result.skipped),
+        "cleared_count": cleared,
         "notes": notes,
         "filled_url": filled_url,
         "audit_url": audit_url,

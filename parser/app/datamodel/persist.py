@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 from app import supabase_client as sb
-from app.datamodel.derive import derive_data_model
+from app.datamodel.derive import DERIVATION_VERSION, derive_data_model
 from app.datamodel.merge import apply_corrections
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,8 @@ def derive_and_persist(template_id: str) -> dict:
                 f"{len(unmatched)} stored correction(s) matched no fact in this version "
                 f"(template may have changed): {[c.get('note') or c['id'] for c in unmatched]}"
             )
+        dim_json = dims.model_dump(mode="json")
+        dim_json["derivation_version"] = DERIVATION_VERSION   # for auto-re-derive-on-stale
         sb.upsert_data_model(version_id, {
             "archetype": dims.archetype,
             "timeline_relative": dims.timeline_relative,
@@ -47,7 +49,7 @@ def derive_and_persist(template_id: str) -> dict:
             "period_grains": dims.period_grains,
             "entities": dims.entities,
             "review_flags": flags,
-            "dimensions": dims.model_dump(mode="json"),
+            "dimensions": dim_json,
         })
         summary = {
             "template_version_id": version_id,

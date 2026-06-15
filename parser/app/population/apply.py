@@ -73,10 +73,17 @@ def apply_links(facts: list[dict], source_snapshot: dict, links: list[CellLink],
             unmatched.append({"reason": "empty/absent source cell",
                               "source_sheet": ssheet, "source_cell": saddr, **_ref(f)})
             continue
+        # Never write a formula/error string into the template. The source cell's
+        # cached value can be the formula text or an error (e.g. uncomputable
+        # custom functions) — that's not a real value, so report it unmatched.
+        if isinstance(raw, str) and raw.strip()[:1] in ("=", "#"):
+            unmatched.append({"reason": "source cell holds a formula/error, not a value",
+                              "source_sheet": ssheet, "source_cell": saddr, **_ref(f)})
+            continue
         try:
             value = float(raw) * lk.unit_scale * (-1.0 if lk.sign_flip else 1.0)
         except (TypeError, ValueError):
-            value = raw   # non-numeric passes through unchanged
+            value = raw   # genuine non-numeric text passes through unchanged
         filled.append(FilledCell(
             template_sheet=f["sheet_name"], template_cell=f["cell"], value=value, raw_source_value=raw,
             source_sheet=ssheet, source_cell=saddr,

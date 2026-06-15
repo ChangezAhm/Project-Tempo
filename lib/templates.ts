@@ -301,6 +301,7 @@ export type PopulateResult = {
   unmatched_count: number;
   skipped: { template_sheet: string; template_cell: string; reason: string }[];
   skipped_count: number;
+  cleared_count: number;
   notes: string[];
   filled_url: string | null;
   audit_url: string | null;

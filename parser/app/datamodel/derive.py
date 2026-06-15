@@ -17,17 +17,27 @@ from __future__ import annotations
 import gzip
 import json
 import logging
+import os
 import re
-from collections import Counter
+import tempfile
+from collections import Counter, defaultdict
+from pathlib import Path
 
 from app import supabase_client as sb
 from app.datamodel.identity import fact_key
 from app.datamodel.schema import Basis, DataModelResult, DataPoint, DetectedDimensions, Provenance, Scenario
 from app.pipeline import get_structure
 from app.raw_extraction.column_utils import column_index, column_letter
+from app.raw_extraction.workbook_parser import parse_workbook
+from app.snapshot import workbook_to_snapshot
 from app.understanding.persist import get_understanding
 
 logger = logging.getLogger(__name__)
+
+# Bump whenever the derivation logic changes — population auto-re-derives a data
+# model whose stored version is older than this, so code changes take effect on the
+# next run instead of silently using a stale map.
+DERIVATION_VERSION = 2
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -180,6 +190,24 @@ def _basis_from_section_type(section_type: str | None) -> Basis | None:
     return None
 
 
+def _load_snapshot(version_id: str, template_id: str) -> dict:
+    """The parsed snapshot, re-parsing the workbook if none is stored — so a
+    missing/deleted snapshot never blocks derivation (the workbook is truth)."""
+    try:
+        return json.loads(gzip.decompress(sb.download_snapshot(version_id)))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("no stored snapshot for %s (%s) — parsing workbook in-memory", version_id, e)
+        _, path, fn = sb.get_latest_file(template_id)
+        fd, tmp = tempfile.mkstemp(suffix=Path(fn).suffix or ".xlsx")
+        os.close(fd)
+        p = Path(tmp)
+        p.write_bytes(sb.download_workbook(path))
+        try:
+            return workbook_to_snapshot(parse_workbook(p))
+        finally:
+            p.unlink(missing_ok=True)
+
+
 def derive_data_model(template_id: str) -> DataModelResult:
     und = get_understanding(template_id)
     if not und.get("available"):
@@ -188,7 +216,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
     version_id = und["template_version_id"]
 
     # Snapshot cell values — to read the real period-header label for every column.
-    snap = json.loads(gzip.decompress(sb.download_snapshot(version_id)))
+    snap = _load_snapshot(version_id, template_id)
     cell_val: dict[tuple[str, int, int], object] = {}
     cell_formula: dict[tuple[str, int, int], str] = {}
     for s in snap.get("sheets", []):
@@ -206,6 +234,14 @@ def derive_data_model(template_id: str) -> DataModelResult:
     l2_metric_idx: dict[str, dict[int, dict]] = {}
     for m in structure.get("metric_rows", []):
         l2_metric_idx.setdefault(m["sheet_name"], {})[m["row"]] = m
+
+    # Deterministic input fields (the six-signal metadata detector) — UNIONed with
+    # the LLM's input_fields below. The LLM under-enumerates on big/repetitive
+    # sheets; the metadata signals (unlocked, fill colour, formula-graph, validation)
+    # are exhaustive, so combining them stops "missing data points".
+    det_by_sheet: dict[str, list[dict]] = defaultdict(list)
+    for df in structure.get("fields", []):
+        det_by_sheet[df.get("sheet_name")].append(df)
 
     facts: list[DataPoint] = []
     flags: list[str] = []
@@ -292,84 +328,101 @@ def derive_data_model(template_id: str) -> DataModelResult:
             return {"label": _label(cell_val.get((sheet, max(above), col))),
                     "period_type": default_ptype, "status": None, "parsed_date": parsed}
 
+        def _emit(col: int, row: int, llm_field: dict | None) -> None:
+            """Create one DataPoint for an input cell. ``llm_field`` carries the
+            LLM's semantics when the cell came from understanding; None for a
+            cell found purely by the deterministic metadata detector."""
+            nonlocal orphan_cells
+            cell = f"{column_letter(col)}{row}"
+            if (sheet, cell) in seen:
+                return
+            seen.add((sheet, cell))
+
+            l3m = l3_by_row.get(row, {})
+            l2mr = l2m.get(row, {})
+            metric_label = (l3m.get("label_as_written") or l3m.get("label")
+                            or l2mr.get("label_text") or _row_label(cell_val, sheet, row)
+                            or (llm_field or {}).get("label") or f"row {row}")
+            canonical = l3m.get("canonical_metric")
+            period = period_for(col, row)
+            if period is None:
+                orphan_cells += 1
+
+            sec_cat, sec_type = section_for(col, row)
+            # scenario precedence: LLM scenario region (primary, read from the
+            # image) > explicit row/field label > period status.
+            scenario = (scenario_region_for(col, row)
+                        or _scenario_from_label((llm_field or {}).get("label"), metric_label)
+                        or _scenario_from_status(period))
+            sc_src = Provenance.deterministic if scenario else Provenance.default
+            scenario = scenario or Scenario.unknown
+            # basis: period_type (ytd/ltm) first, else the statement type the line sits in.
+            basis, b_src = _basis(period)
+            if basis == Basis.unknown:
+                bt = _basis_from_section_type(sec_type)
+                if bt:
+                    basis, b_src = bt, Provenance.deterministic
+            unit = l3m.get("unit") or l2mr.get("unit") or (llm_field or {}).get("unit")
+            # Category is decided per CELL by what the cell actually IS, so population
+            # only ever writes into genuine data-entry inputs:
+            #   - connector-fed (CX_GET …)      → sourced  (system-fed, overridable → fillable)
+            #   - instructions/cover region     → exclude  (never filled)
+            #   - holds a real (non-connector) formula → computed (a calculated OUTPUT — NEVER
+            #                                     overwrite it; stops clobbering formula sheets)
+            #   - blank / typed literal         → data     (a data-entry slot → fillable)
+            formula = cell_formula.get((sheet, row, col), "")
+            if _CONNECTOR.search(formula):
+                category = "sourced"
+            elif sec_cat == "exclude":
+                category = "exclude"
+            elif formula:
+                category = "computed"
+            else:
+                category = "data"
+
+            needs = (bool(llm_field.get("needs_value", True)) if llm_field
+                     else cell_val.get((sheet, row, col)) in (None, "", 0))
+
+            facts.append(DataPoint(
+                fact_key=fact_key(
+                    sheet_role=role, metric=canonical or metric_label,
+                    # period identity falls back to the column when the label is
+                    # dynamic (timeline-driven), so each month stays a distinct fact.
+                    period=((period or {}).get("parsed_date") or (period or {}).get("label")
+                            or (f"c{column_letter(col)}" if period else None)),
+                    scenario=scenario.value, basis=basis.value, entity=None,
+                ),
+                sheet_name=sheet, cell=cell, row=row, col=col, metric_row_id=l2mr.get("id"),
+                metric_label=metric_label, canonical_metric=canonical,
+                period_index=None,  # assigned post-loop (relative ordinal on the timeline)
+                period_label=(period or {}).get("label"), parsed_date=(period or {}).get("parsed_date"),
+                period_type=(period or {}).get("period_type"),
+                scenario=scenario, basis=basis, category=category,
+                entity=None, unit=unit, currency=_currency(unit, l2mr.get("number_format")),
+                value_role=l3m.get("value_role"), sign_convention=l3m.get("sign_convention"),
+                qualification_criteria=l3m.get("qualification_criteria"),
+                definition=l3m.get("definition"), expected_source=l3m.get("expected_source"),
+                needs_value=needs,
+                scenario_source=sc_src, basis_source=b_src,
+                confidence=float(l3m.get("confidence", 0.5) or 0.5),
+            ))
+
+        # 1) LLM-detected inputs (semantic, image-grounded).
         for f in u.get("input_fields", []):
             cells = _expand(f.get("cells", []))
             if len(cells) >= _MAX_CELLS_PER_FIELD:
                 flags.append(f"{sheet}: field '{f.get('label')}' exceeded {_MAX_CELLS_PER_FIELD} cells; truncated.")
             for col, row in cells:
-                cell = f"{column_letter(col)}{row}"
-                if (sheet, cell) in seen:
-                    continue
-                seen.add((sheet, cell))
+                _emit(col, row, f)
 
-                l3m = l3_by_row.get(row, {})
-                l2mr = l2m.get(row, {})
-                metric_label = (l3m.get("label_as_written") or l3m.get("label")
-                                or l2mr.get("label_text") or _row_label(cell_val, sheet, row)
-                                or f.get("label") or f"row {row}")
-                canonical = l3m.get("canonical_metric")
-                period = period_for(col, row)
-                if period is None:
-                    orphan_cells += 1
-
-                sec_cat, sec_type = section_for(col, row)
-                # scenario precedence: LLM scenario region (primary, read from the
-                # image) > explicit row/field label > period status.
-                scenario = (scenario_region_for(col, row)
-                            or _scenario_from_label(f.get("label"), metric_label)
-                            or _scenario_from_status(period))
-                sc_src = Provenance.deterministic if scenario else Provenance.default
-                scenario = scenario or Scenario.unknown
-                # basis: period_type (ytd/ltm) first, else the statement type the line sits in.
-                basis, b_src = _basis(period)
-                if basis == Basis.unknown:
-                    bt = _basis_from_section_type(sec_type)
-                    if bt:
-                        basis, b_src = bt, Provenance.deterministic
-                unit = l3m.get("unit") or l2mr.get("unit") or f.get("unit")
-                # Category is decided per CELL by what the cell actually IS, so
-                # population only ever writes into genuine data-entry inputs:
-                #   - connector-fed (CX_GET …)      → sourced  (system-fed, overridable → fillable)
-                #   - instructions/cover region     → exclude  (never filled)
-                #   - holds a real (non-connector) formula → computed (a calculated OUTPUT — NEVER
-                #                                     overwrite it; this is what stops population
-                #                                     clobbering formula-driven frontend sheets)
-                #   - blank / typed literal         → data     (a data-entry slot → fillable;
-                #                                     e.g. the EBITDA-adjustment lines, which are
-                #                                     plain numbers, stay in scope)
-                formula = cell_formula.get((sheet, row, col), "")
-                if _CONNECTOR.search(formula):
-                    category = "sourced"
-                elif sec_cat == "exclude":
-                    category = "exclude"
-                elif formula:
-                    category = "computed"
-                else:
-                    category = "data"
-
-                facts.append(DataPoint(
-                    fact_key=fact_key(
-                        sheet_role=role, metric=canonical or metric_label,
-                        # period identity falls back to the column when the label is
-                        # dynamic (timeline-driven), so each month stays a distinct fact.
-                        period=((period or {}).get("parsed_date") or (period or {}).get("label")
-                                or (f"c{column_letter(col)}" if period else None)),
-                        scenario=scenario.value, basis=basis.value, entity=None,
-                    ),
-                    sheet_name=sheet, cell=cell, row=row, col=col, metric_row_id=l2mr.get("id"),
-                    metric_label=metric_label, canonical_metric=canonical,
-                    period_index=None,  # assigned post-loop (relative ordinal on the timeline)
-                    period_label=(period or {}).get("label"), parsed_date=(period or {}).get("parsed_date"),
-                    period_type=(period or {}).get("period_type"),
-                    scenario=scenario, basis=basis, category=category,
-                    entity=None, unit=unit, currency=_currency(unit, l2mr.get("number_format")),
-                    value_role=l3m.get("value_role"), sign_convention=l3m.get("sign_convention"),
-                    qualification_criteria=l3m.get("qualification_criteria"),
-                    definition=l3m.get("definition"), expected_source=l3m.get("expected_source"),
-                    needs_value=bool(f.get("needs_value", True)),
-                    scenario_source=sc_src, basis_source=b_src,
-                    confidence=float(l3m.get("confidence", 0.5) or 0.5),
-                ))
+        # 2) Deterministic metadata-detected inputs (UNION) — captures the cells the
+        # LLM under-enumerated; already-seen cells are skipped (LLM semantics win).
+        for df in det_by_sheet.get(sheet, []):
+            drow = df.get("row")
+            if drow is None:
+                continue
+            for col in (df.get("input_columns") or []):
+                _emit(int(col), int(drow), None)
 
     if orphan_cells:
         flags.append(f"{orphan_cells} input cells got no period (no header row above them) — review period detection.")

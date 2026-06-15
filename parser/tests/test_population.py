@@ -1,4 +1,5 @@
 from app.population.apply import apply_links
+from app.population.run import _is_clearable_value
 from app.population.schema import CellLink
 
 
@@ -57,6 +58,22 @@ def test_unmatched_empty_source_and_no_link():
     assert reasons["AD21"] == "no source match"
 
 
+def test_formula_or_error_source_value_is_not_written():
+    src = {"sheets": [{"name": "MgmtAccts", "cells": [
+        {"address": "C5", "value": "=TODECIMAL(IFBLANK(_BS!BC39,\"\"))"},   # a formula string
+        {"address": "C6", "value": "#REF!"},                                # an error
+    ]}]}
+    facts = [
+        {"sheet_name": "PL", "cell": "AD20", "canonical_metric": "revenue", "metric_label": "Revenue", "period_index": 0, "scenario": "actual"},
+        {"sheet_name": "PL", "cell": "AD21", "canonical_metric": "cost_of_sales", "metric_label": "CoS", "period_index": 0, "scenario": "actual"},
+    ]
+    links = [_link("AD20", "C5"), _link("AD21", "C6")]
+    r = apply_links(facts, src, links, skipped=[])
+    assert r.filled == []   # neither formula text nor error is written
+    reasons = {u["template_cell"]: u["reason"] for u in r.unmatched}
+    assert "formula/error" in reasons["AD20"] and "formula/error" in reasons["AD21"]
+
+
 def test_skipped_cells_are_not_unmatched():
     facts = _facts() + [
         {"sheet_name": "PL", "cell": "A1", "canonical_metric": None, "metric_label": "Budget", "period_index": 0, "scenario": "budget"},
@@ -67,6 +84,18 @@ def test_skipped_cells_are_not_unmatched():
     unmatched_cells = {u["template_cell"] for u in r.unmatched}
     assert "A1" not in unmatched_cells          # header was skipped, not unmatched
     assert r.summary["skipped"] == 1
+
+
+def test_is_clearable_value():
+    # stale numbers in input cells get wiped on refresh...
+    assert _is_clearable_value(123, False) is True
+    assert _is_clearable_value(1.5, False) is True
+    assert _is_clearable_value(0, False) is True
+    # ...but never formulas (computed/connector), text labels, blanks, or bools.
+    assert _is_clearable_value(100, True) is False
+    assert _is_clearable_value("Revenue", False) is False
+    assert _is_clearable_value(None, False) is False
+    assert _is_clearable_value(True, False) is False
 
 
 def test_link_to_non_input_cell_is_not_written():

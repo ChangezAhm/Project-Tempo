@@ -132,6 +132,56 @@ def test_bind_applies_sign_flip():
     assert result.filled[0].value == -4.0   # 4,000,000 raw, flipped, scaled
 
 
+# --- sign: template evidence beats the LLM's guess -------------------------
+def _rev_cat_positive():
+    # Revenue series with clearly positive samples (3 months)
+    return build_catalogue(_source_snapshot(), _periods_by_sheet())
+
+
+def test_sign_row_evidence_overrides_llm_no_flip():
+    # Template row already holds NEGATIVES (prior fill: costs negative), source
+    # is positive, and the LLM guessed no flip -> the row's evidence wins.
+    cat = _rev_cat_positive()
+    maps = [MetricMap(metric="revenue", series_id="P&L!r5", sign_flip=False, confidence=0.9)]
+    fact = _fact("revenue", "B10")
+    fact["row"] = 10
+    ctx = ({}, {("Template", 10): [-8.2, -8.5, -8.9]}, {})
+    links, _ = bind([fact], cat, maps, _demand(), template_context=ctx)
+    assert links and links[0].sign_flip is True
+    assert "sign:template-evidence" in (links[0].note or "")
+
+
+def test_sign_row_evidence_prevents_wrong_llm_flip():
+    # Both sides positive but the LLM said flip -> evidence corrects it to False.
+    cat = _rev_cat_positive()
+    maps = [MetricMap(metric="revenue", series_id="P&L!r5", sign_flip=True, confidence=0.9)]
+    fact = _fact("revenue", "B10")
+    fact["row"] = 10
+    ctx = ({}, {("Template", 10): [8.2, 8.5]}, {})
+    links, _ = bind([fact], cat, maps, _demand(), template_context=ctx)
+    assert links and links[0].sign_flip is False
+
+
+def test_sign_l3_convention_used_when_row_is_empty():
+    # Fresh template row (no prior values): the L3 sign_convention — derived
+    # from the template's own formulas (GP = E8+E9) — decides the flip.
+    cat = _rev_cat_positive()
+    maps = [MetricMap(metric="revenue", series_id="P&L!r5", sign_flip=False, confidence=0.9)]
+    fact = _fact("revenue", "B10")
+    fact["sign_convention"] = "negative (entered as negative, added in Gross Profit formula E8+E9)"
+    links, _ = bind([fact], cat, maps, _demand())
+    assert links and links[0].sign_flip is True
+
+
+def test_sign_falls_back_to_llm_when_no_evidence():
+    # No row values, no convention, single-sample source (no dominant sign on
+    # one side is enough to defer): the LLM's sign_flip stands.
+    cat = _rev_cat_positive()
+    maps = [MetricMap(metric="cogs", series_id="P&L!r6", sign_flip=True, confidence=0.9)]
+    links, _ = bind([_fact("cogs", "B11")], cat, maps, _demand())
+    assert links and links[0].sign_flip is True
+
+
 def test_bind_writes_cross_currency_but_flags_it():
     # No FX in the system: differing declared currencies still fill (scale only),
     # but the link carries a review note so the audit can't hide it.

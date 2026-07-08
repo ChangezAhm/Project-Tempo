@@ -36,6 +36,33 @@ def _metric_key(fact: dict) -> str | None:
     return fact.get("canonical_metric") or fact.get("metric_label")
 
 
+def _dominant_sign(vals, min_n: int = 2) -> int:
+    """-1 / +1 when ≥70% of the nonzero values share a sign (and there are at
+    least ``min_n``), else 0 (no verdict). Mixed rows (variances) stay 0."""
+    xs = [float(v) for v in (vals or [])
+          if isinstance(v, (int, float)) and not isinstance(v, bool) and v]
+    if len(xs) < min_n:
+        return 0
+    neg = sum(1 for v in xs if v < 0)
+    if neg >= 0.7 * len(xs):
+        return -1
+    if neg <= 0.3 * len(xs):
+        return 1
+    return 0
+
+
+def _convention_sign(text) -> int:
+    """The L3 sign_convention is prose derived from the template's own formulas
+    ('negative (entered as negative, added in Gross Profit formula E8+E9)').
+    Leading word wins — later clauses qualify exceptions, not the convention."""
+    t = (str(text or "")).strip().lower()
+    if t.startswith("negative"):
+        return -1
+    if t.startswith("positive"):
+        return 1
+    return 0
+
+
 def _unmatched(fact: dict, reason: str) -> dict:
     return {
         "template_sheet": fact.get("sheet_name"),
@@ -161,19 +188,36 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             if series.unit.kind == "money" and src_ccy and tpl_ccy and src_ccy != tpl_ccy:
                 ccy_flag = f"currency_unverified:{src_ccy}->{tpl_ccy}"
 
+        # SIGN, deterministic-first. The LLM's sign_flip is a guess from labels;
+        # the template itself knows better: (1) the dominant sign of the values
+        # already in the row (a prior fill is ground truth for the convention),
+        # (2) the L3 sign_convention read from the template's own formulas
+        # (GP = E8+E9 means costs are entered negative). LLM only as fallback.
+        src_sign = _dominant_sign(series.sample)
+        tpl_sign = _dominant_sign(tpl_mags) or _convention_sign(f.get("sign_convention"))
+        sign_note = None
+        if src_sign and tpl_sign:
+            sign_flip = src_sign != tpl_sign
+            if sign_flip != mm.sign_flip:
+                sign_note = "sign:template-evidence"   # we overrode the LLM's guess
+        else:
+            sign_flip = mm.sign_flip
+
         source_cell = f"{_col_letters(col)}{series.row}"
         note = f"{series.label} @ {series.sheet}"
         if sflag:
             note += f" [{sflag}]"
         if ccy_flag:   # written as-is despite differing declared currencies — review it
             note += f" [{ccy_flag}]"
+        if sign_note:
+            note += f" [{sign_note}]"
         links.append(CellLink(
             template_sheet=f.get("sheet_name"),
             template_cell=f.get("cell"),
             source_sheet=series.sheet,
             source_cell=source_cell,
             unit_scale=scale,
-            sign_flip=mm.sign_flip,
+            sign_flip=sign_flip,
             confidence=mm.confidence,
             note=note,
         ))

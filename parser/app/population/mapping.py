@@ -66,6 +66,9 @@ def _metric_lines(metrics: list[dict]) -> str:
         meta = f" | unit: {unit}" if unit else ""
         if kind != "unknown":
             meta += f" ({kind})"
+        sign = m.get("sign_convention")
+        if sign:   # the template's own convention — informs the sign_flip guess
+            meta += f" | sign: {str(sign)[:60]}"
         out.append(f"{m.get('metric')} | {label}{meta}")
     return "\n".join(out)
 

@@ -60,7 +60,8 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
     for f in inputs:
         key = f.get("canonical_metric") or f.get("metric_label")
         if key and key not in metrics:
-            metrics[key] = {"metric": key, "label": f.get("metric_label"), "unit": f.get("unit")}
+            metrics[key] = {"metric": key, "label": f.get("metric_label"), "unit": f.get("unit"),
+                            "sign_convention": f.get("sign_convention")}
     # period_index is a PER-SHEET ordinal, so the count used for positional
     # alignment must be per-sheet too — a global max would misalign sheets whose
     # timelines are shorter than the longest one in the workbook.

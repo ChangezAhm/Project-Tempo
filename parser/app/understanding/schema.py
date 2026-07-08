@@ -196,6 +196,26 @@ class ScenarioRegion(_Strict):
     evidence: list[str] = []
 
 
+class ExtensibleRegionClaim(_Strict):
+    # A place the template INVITES the filler to ADD line items: blank repeating
+    # rows under a section with the same column shape as the filled rows above,
+    # "(specify)"/"Other…" labels, dropdowns on label cells, a subtotal whose SUM
+    # already spans the blank rows. The IMAGE is the primary signal (the blank
+    # formatted block under a "Custom KPIs" heading is visual); addresses must
+    # still come from the grid. Claims are verified deterministically against the
+    # snapshot before persisting (occupied rows are rejected) — see
+    # app/authoring/regions.py.
+    kind: str = "other"            # kpi_list | other_adjustments | custom_rows | other
+    label_col_cell: str = ""       # A1 in the label column of the FIRST free row
+    row_start: int = 0
+    row_end: int = 0
+    total_row: int | None = None   # the subtotal row that must NEVER be written
+    value_header_cells: list[str] = []   # period/value header cells new lines must fill
+    rules: str | None = None       # author guidance ("one KPI per row", units, sign)
+    confidence: float = 0.5
+    evidence: list[str] = []
+
+
 class SheetUnderstanding(_Strict):
     sheet_name: str
     role: LenientSheetRole
@@ -207,6 +227,8 @@ class SheetUnderstanding(_Strict):
     scenario_regions: list[ScenarioRegion] = []
     input_fields: list[InputField]
     author_rules: list[AuthorRule]
+    # default [] keeps pre-regions cached per-sheet payloads loadable
+    extensible_regions: list[ExtensibleRegionClaim] = []
 
 
 # --- Workbook-level understanding (Phase 3 synthesize) ---

@@ -202,3 +202,45 @@ def test_detect_raises_after_failed_retry(monkeypatch):
     monkeypatch.setattr(R, "guarded_stream", _reply("still not json"))
     with pytest.raises(ValueError):
         R.detect_sheet_regions(_sheet())
+
+
+def test_digest_exposes_unstored_blank_row_gaps():
+    # A KPI block whose free slots have NO stored cells (no styling) is invisible
+    # to the blank-formatted section — the used-range gap section must show it.
+    sheet = {"name": "KPI", "used_max_row": 40, "cells": [
+        {"address": "B25", "row": 25, "col": 2, "value": "Custom KPIs"},
+        {"address": "B40", "row": 40, "col": 2, "value": "Total"},
+    ]}
+    from app.authoring.regions import _digest
+    d = _digest(sheet)
+    assert "UNSTORED BLANK ROWS" in d
+    assert "rows 26-39" in d
+
+
+def test_sheet_understanding_accepts_payload_without_regions():
+    # Old per-sheet cache entries (pre-regions schema) must still validate —
+    # the field defaults to [] so a cached payload without it loads cleanly.
+    from app.understanding.schema import SheetUnderstanding
+    payload = {"sheet_name": "S", "role": "input", "label_columns": [2],
+               "summary": "x", "sections": [], "metric_rows": [], "periods": [],
+               "input_fields": [], "author_rules": []}
+    u = SheetUnderstanding.model_validate(payload)
+    assert u.extensible_regions == []
+
+
+def test_understanding_claim_converts_through_verifier():
+    # The onboarding path routes ExtensibleRegionClaim through the SAME
+    # deterministic verifier as the standalone detector.
+    from app.authoring.regions import RegionOut, _cell_map, _convert
+    from app.understanding.schema import ExtensibleRegionClaim
+    sheet = {"name": "KPI", "cells": [
+        {"address": "E10", "row": 10, "col": 5, "value": "2026-01-31"},
+        {"address": "B30", "row": 30, "col": 2, "value": "Add KPIs below:"},
+    ]}
+    claim = ExtensibleRegionClaim(kind="kpi_list", label_col_cell="B31",
+                                  row_start=31, row_end=34, total_row=35,
+                                  value_header_cells=["E10"], rules="one per row",
+                                  confidence=0.9, evidence=["B30"])
+    row, reason = _convert(RegionOut(**claim.model_dump()), "KPI", _cell_map(sheet))
+    assert reason is None and row["label_col"] == 2 and row["row_start"] == 31
+    assert row["value_cols"] == [{"col": 5, "parsed_date": "2026-01-31"}]

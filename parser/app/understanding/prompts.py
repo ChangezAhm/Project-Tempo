@@ -149,6 +149,21 @@ stored value; a formula returning "" or a literal 0 is NOT empty.
 - author_rules — rules the author embedded, from text boxes, validation prompts, \
 and instruction cells. Keep `raw_text` VERBATIM; categorise; is_strict=true for \
 imperative rules ("must", "do not", "always").
+- extensible_regions — the places this sheet INVITES the filler to ADD line items \
+(not fill existing ones): a run of blank formatted rows under a section with the \
+same column shape as the filled rows above (a KPI list with empty slots), \
+"(specify)" / "Other…" / "Add KPI" style labels, dropdown validations on label \
+cells, or a subtotal row whose SUM range already spans the blank rows. The IMAGE \
+is your primary signal here — an empty styled block under a heading is visible \
+even when the grid shows nothing — but every address and row number must come \
+from the grid (blank rows appear as GAPS in the grid's row numbers; empty `[in]`/\
+`[unlocked]` tokens mark styled add-slots). Give label_col_cell (A1 in the label \
+column of the FIRST free row), row_start/row_end (blank rows only — never a row \
+whose label cell has text, never the total row), total_row (the spanning subtotal, \
+null if none), value_header_cells (the period/value header cells whose columns a \
+new line must fill), and short `rules` for whoever adds a line. Be conservative: \
+a merely-empty area with no repeating shape, inviting label, validation, or \
+spanning subtotal is NOT a region — an empty list is the normal answer.
 
 # MICRO-EXAMPLE
 

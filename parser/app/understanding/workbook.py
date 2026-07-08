@@ -59,7 +59,7 @@ _SYNTH_SCHEMA = to_strict_schema(WorkbookUnderstanding)
 # key includes the template version, so a re-uploaded template never reuses old
 # results. Bump this constant whenever prompts.SYSTEM or the SheetUnderstanding
 # schema changes shape — that invalidates every cached result built under them.
-_SHEET_CACHE_VERSION = 1
+_SHEET_CACHE_VERSION = 2   # v2: extensible_regions added to schema + prompt
 
 
 def _sheet_cache_key(version_id: str, sheet_name: str) -> str:
@@ -349,8 +349,31 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
     in_tok = sum(r["usage"]["input_tokens"] for r in sheet_results)
     out_tok = sum(r["usage"]["output_tokens"] for r in sheet_results)
 
+    # Extensible regions: the per-sheet agent's claims (it SEES the blank
+    # invitation blocks in the image) become authoring surface only after the
+    # SAME deterministic verification the standalone detector uses — code owns
+    # the facts, so a claim over occupied rows is dropped, never persisted.
+    from app.authoring.regions import RegionOut, _cell_map, _convert
+    region_rows, region_skipped = [], []
+    for u in understandings:
+        sheet = by_name.get(u.sheet_name)
+        if sheet is None:
+            continue
+        cmap = _cell_map(sheet)
+        for claim in (getattr(u, "extensible_regions", None) or []):
+            row, reason = _convert(RegionOut(**claim.model_dump()), u.sheet_name, cmap)
+            if row is not None:
+                region_rows.append(row)
+            else:
+                region_skipped.append(reason)
+
     wb, synth_usage = synthesize(snap, understandings)
     verify_summary = verify(wb, snap)
+    if region_skipped:
+        wb.review_flags.append(
+            f"{len(region_skipped)} extensible-region claim(s) failed verification and were "
+            f"dropped: {region_skipped[:3]}"
+        )
     if failed_sheets:
         wb.review_flags.append(
             "Per-sheet understanding FAILED for these routed sheets, so they are "
@@ -367,6 +390,7 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
         "workbook": wb,
         "sheet_understandings": understandings,
         "sheet_groundings": groundings,
+        "extensible_regions": region_rows,
         "routes": routes,
         "deep_sheets": deep,
         "skipped_sheets": skipped_sheets,

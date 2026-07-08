@@ -192,6 +192,19 @@ def _digest(sheet: dict) -> str:
             span = f"rows {a}-{b}" if b > a else f"row {a}"
             lines.append(f"  {span} | cols {','.join(letters)}")
 
+    # TRUE gaps: rows inside the used range with NO stored cells at all. The
+    # snapshot only keeps an empty cell when the author styled it, so a KPI
+    # block whose free slots carry no styling is invisible to the sections
+    # above — these gaps are exactly where such add-slots hide.
+    used_max = int(sheet.get("used_max_row") or 0)
+    if by_row and used_max:
+        lo, hi = min(by_row), min(max(by_row), used_max)
+        gaps = [r for r in range(lo, hi + 1) if r not in by_row and r not in blank_only]
+        if gaps:
+            lines.append("UNSTORED BLANK ROWS (no cells at all inside the used range — possible add slots):")
+            for a, b in _runs(gaps)[:_MAX_BLANK_RUNS]:
+                lines.append(f"  rows {a}-{b}" if b > a else f"  row {a}")
+
     dvs = sheet.get("data_validations") or []
     if dvs:
         lines.append("DATA VALIDATIONS (range | type | allowed | prompt):")
@@ -223,20 +236,25 @@ def _parse(text: str) -> RegionsOut:
     return RegionsOut(**json.loads(t[a:b + 1]))
 
 
-def _detect(digest: str, model: str) -> RegionsOut:
-    """One guarded Sonnet call for one sheet, with ONE corrective retry when the
-    reply doesn't parse (mirrors population/mapping.py). Raises after the retry
-    fails — the caller decides whether that skips the sheet."""
-    _, text = guarded_stream(model=model, system=_SYSTEM, content=digest,
+def _detect(digest: str, model: str, tiles: list[tuple[str, bytes]] = ()) -> RegionsOut:
+    """One guarded Sonnet call for one sheet — sheet-image tiles first when
+    available (the blank invitation block under a "Custom KPIs" heading is a
+    VISUAL signal a text digest can miss), digest last — with ONE corrective
+    retry when the reply doesn't parse (mirrors population/mapping.py). Raises
+    after the retry fails — the caller decides whether that skips the sheet."""
+    from app.population.source_understanding import _build_content
+    content, n_images = _build_content(digest, list(tiles or []))
+    _, text = guarded_stream(model=model, system=_SYSTEM, content=content,
                              max_tokens=_MAX_TOKENS,
-                             est_input_chars=len(_SYSTEM) + len(digest))
+                             est_input_chars=len(_SYSTEM) + len(digest),
+                             n_images=n_images)
     try:
         return _parse(text)
     except Exception as e:  # noqa: BLE001 — malformed JSON from the model
         err = str(e)
     logger.warning("regions reply didn't parse (%s) — one corrective retry", err)
     messages = [
-        {"role": "user", "content": digest},
+        {"role": "user", "content": content},
         {"role": "assistant", "content": text[:4000]},
         {"role": "user", "content": (
             f"That reply was not usable ({err}). Return ONLY the JSON object "
@@ -309,10 +327,11 @@ def _convert(r: RegionOut, sheet_name: str,
     }, None
 
 
-def detect_sheet_regions(sheet: dict, *, model: str = MODEL_MAP) -> tuple[list[dict], list[str]]:
-    """One sheet end-to-end: digest → guarded call (one retry) → verified rows.
-    Returns (rows_without_version_stamp, skip_reasons)."""
-    out = _detect(_digest(sheet), model)
+def detect_sheet_regions(sheet: dict, *, model: str = MODEL_MAP,
+                         tiles: list[tuple[str, bytes]] = ()) -> tuple[list[dict], list[str]]:
+    """One sheet end-to-end: digest (+ image tiles) → guarded call (one retry) →
+    verified rows. Returns (rows_without_version_stamp, skip_reasons)."""
+    out = _detect(_digest(sheet), model, tiles)
     cmap = _cell_map(sheet)
     name = sheet.get("name") or ""
     rows, skipped = [], []
@@ -334,10 +353,15 @@ def detect_and_persist(template_id: str) -> dict:
     (data/sourced) facts in the data model: a sheet population can't write has
     nothing to extend. A single sheet that errors is skipped (not fatal); a
     spend-cap breach still aborts the run."""
+    import os
+    import tempfile
+    from pathlib import Path
+
     from app.datamodel.derive import _load_snapshot   # lazy: pulls the Aspose parse chain
     from app.datamodel.persist import get_data_model
 
     set_guard(SpendGuard(default_cap_usd()))
+    wb_tmp: Path | None = None
     try:
         dm = get_data_model(template_id, limit=30000)
         if not dm.get("available"):
@@ -347,14 +371,37 @@ def detect_and_persist(template_id: str) -> dict:
                            if f.get("category") in _FILLABLE}
 
         snapshot = _load_snapshot(version_id, template_id)
+
+        # The template workbook, once, for sheet images: the blank invitation
+        # block under a heading is a VISUAL signal the text digest can miss
+        # (a KPI sheet whose free slots carry no stored cells). Best-effort —
+        # a failed download/render just runs that sheet text-only.
+        try:
+            _, storage_path, filename = sb.get_latest_file(template_id)
+            data = sb.download_workbook(storage_path)
+            fd, name_ = tempfile.mkstemp(suffix=Path(filename).suffix or ".xlsx")
+            os.close(fd)
+            wb_tmp = Path(name_)
+            wb_tmp.write_bytes(data)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("template workbook unavailable for region images (%s) — text-only", e)
+            wb_tmp = None
+
         rows: list[dict] = []
         skipped: list[str] = []
         for sheet in snapshot.get("sheets", []):
             name = sheet.get("name")
             if name not in fillable_sheets:
                 continue
+            tiles: list = []
+            if wb_tmp is not None:
+                try:
+                    from app.understanding.sheet_image import render_sheet_tiles
+                    tiles = render_sheet_tiles(wb_tmp, name, max_tiles=3)
+                except Exception as e:  # noqa: BLE001 — image is optional
+                    logger.warning("region image render failed for %s (%s) — text-only", name, e)
             try:
-                srows, sskip = detect_sheet_regions(sheet)
+                srows, sskip = detect_sheet_regions(sheet, tiles=tiles)
             except SpendCapExceeded:
                 raise
             except Exception as e:  # noqa: BLE001 — one odd sheet can't sink the run
@@ -372,6 +419,8 @@ def detect_and_persist(template_id: str) -> dict:
                 "count": len(payload), "skipped": skipped}
     finally:
         set_guard(None)
+        if wb_tmp is not None:
+            wb_tmp.unlink(missing_ok=True)
 
 
 def get_regions(template_id: str) -> dict:

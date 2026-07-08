@@ -146,12 +146,21 @@ def understand_and_persist(template_id: str, *, max_sheets: int = 16) -> dict:
         sb.replace_rows("template_critical_inputs", version_id,
                         [{**c, "template_version_id": version_id} for c in crit])
 
+        # Extensible regions are PART of understanding a template (the per-sheet
+        # agent sees the blank invitation blocks in the image); already verified
+        # against the snapshot in understand_workbook. Idempotent replace, so a
+        # re-understand clears stale regions too.
+        regions = out.get("extensible_regions") or []
+        sb.replace_extensible_regions(
+            version_id, [{**r, "template_version_id": version_id} for r in regions])
+
         summary = {
             "template_version_id": version_id,
             "deep_sheets": out["deep_sheets"],
             "sheet_count": len(understandings),
             "failed_sheets": out.get("failed_sheets", []),
             "critical_input_count": len(crit),
+            "extensible_region_count": len(regions),
             "verify": out["verify"],
             "usage": out["usage"],
         }

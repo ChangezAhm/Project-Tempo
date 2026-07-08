@@ -114,6 +114,8 @@ function SheetPanel({
 
 function PopulatePanel({ templateId }: { templateId: string }) {
   const [asOf, setAsOf] = useState("");
+  const [targetCurrency, setTargetCurrency] = useState("");
+  const [fxRate, setFxRate] = useState("");
   const [dragging, setDragging] = useState(false);
   const [running, setRunning] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -133,7 +135,11 @@ function PopulatePanel({ templateId }: { templateId: string }) {
     setResult(null);
     setFileName(file.name);
     try {
-      setResult(await populateTemplate(templateId, file, asOf || null));
+      setResult(await populateTemplate(templateId, file, {
+        asOf: asOf || null,
+        targetCurrency: targetCurrency.trim() || null,
+        fxRate: fxRate.trim() ? Number(fxRate) : null,
+      }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Population failed");
     } finally {
@@ -158,16 +164,43 @@ function PopulatePanel({ templateId }: { templateId: string }) {
             Drop a portfolio company’s data file and it fills this template’s inputs. The file isn’t saved as a template.
           </p>
         </div>
-        <label className="text-xs text-neutral-600">
-          As-of date (optional)
-          <input
-            type="date"
-            value={asOf}
-            onChange={(e) => setAsOf(e.target.value)}
-            className="mt-1 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-          />
-        </label>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-xs text-neutral-600">
+            As-of date (optional)
+            <input
+              type="date"
+              value={asOf}
+              onChange={(e) => setAsOf(e.target.value)}
+              className="mt-1 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-xs text-neutral-600">
+            Output currency
+            <input
+              type="text"
+              value={targetCurrency}
+              onChange={(e) => setTargetCurrency(e.target.value.toUpperCase())}
+              placeholder="EUR"
+              className="mt-1 block w-20 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-xs text-neutral-600">
+            FX rate (source→output)
+            <input
+              type="number"
+              step="any"
+              value={fxRate}
+              onChange={(e) => setFxRate(e.target.value)}
+              placeholder="e.g. 1.08"
+              className="mt-1 block w-28 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+        </div>
       </div>
+      <p className="mt-2 text-xs text-amber-700">
+        If the source and your template use different currencies, set the output currency + FX rate —
+        otherwise those cells are left blank (never converted with a guessed rate).
+      </p>
 
       <div
         role="button"

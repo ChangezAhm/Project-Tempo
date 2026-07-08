@@ -20,6 +20,9 @@ from pydantic import BaseModel, ConfigDict
 from app import supabase_client as sb
 from app.datamodel.persist import derive_and_persist, get_data_model
 from app.llm import MODEL, get_client
+from app.population.cost import (
+    SpendGuard, default_onboarding_cap_usd, estimate_call_usd, get_guard, set_guard,
+)
 from app.understanding.per_sheet import _extract_json, to_strict_schema
 
 logger = logging.getLogger(__name__)
@@ -58,11 +61,16 @@ SYSTEM = (
 
 
 def _call(user_text: str, max_tokens: int = 32000):
+    guard = get_guard()
+    if guard is not None:
+        guard.check(estimate_call_usd(MODEL, len(SYSTEM) + len(user_text), max_tokens))
     with get_client().messages.stream(
         model=MODEL, max_tokens=max_tokens, thinking={"type": "adaptive"},
         system=SYSTEM, messages=[{"role": "user", "content": user_text}],
     ) as stream:
         msg = stream.get_final_message()
+    if guard is not None and getattr(msg, "usage", None) is not None:
+        guard.record_actual(MODEL, msg.usage.input_tokens, msg.usage.output_tokens)
     if msg.stop_reason == "max_tokens":
         raise RuntimeError(f"Enrichment truncated at max_tokens={max_tokens} — raise it.")
     return msg, next((b.text for b in msg.content if b.type == "text"), "")
@@ -70,6 +78,7 @@ def _call(user_text: str, max_tokens: int = 32000):
 
 def enrich(template_id: str) -> dict:
     """Run the enrichment pass and store its assignments as llm corrections."""
+    set_guard(SpendGuard(default_onboarding_cap_usd()))   # cap the enrichment call (onboarding-tier)
     dm = get_data_model(template_id, limit=30000)
     if not dm.get("available"):
         raise RuntimeError("No data model yet — run /datamodel first.")

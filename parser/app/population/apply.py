@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 
+from app.population.catalogue import effective_value
 from app.population.schema import CellLink, FilledCell, PopulationResult
 
 _CELL = re.compile(r"([A-Z]{1,3}\d+)")
@@ -36,7 +37,7 @@ def apply_links(facts: list[dict], source_snapshot: dict, links: list[CellLink],
         for c in s.get("cells", []):
             a = (c.get("address") or "").strip().upper()
             if a:
-                sval[(s["name"], a)] = c.get("value")
+                sval[(s["name"], a)] = effective_value(c)   # computed result, not formula text
 
     fact_by: dict[tuple[str, str], dict] = {
         (f["sheet_name"], (f.get("cell") or "").upper()): f for f in facts

@@ -23,6 +23,10 @@ from langsmith import traceable
 
 from app import supabase_client as sb
 from app.llm import MODEL, get_client
+from app.population.cost import (
+    SpendCapExceeded, SpendGuard, default_onboarding_cap_usd, estimate_call_usd,
+    get_guard, set_guard,
+)
 from app.pipeline import _cell_rc, build_dependents_index, trace_impact
 from app.understanding.per_sheet import _extract_json, to_strict_schema, understand_sheet
 from app.understanding.prompts import SYNTHESIZE_SYSTEM, build_synth_user
@@ -120,6 +124,9 @@ def _compact(u) -> dict:
 
 
 def _call_synth(user_text: str, max_tokens: int) -> tuple[object, str]:
+    guard = get_guard()
+    if guard is not None:
+        guard.check(estimate_call_usd(MODEL, len(SYNTHESIZE_SYSTEM) + len(user_text), max_tokens))
     with get_client().messages.stream(
         model=MODEL,
         max_tokens=max_tokens,
@@ -128,6 +135,8 @@ def _call_synth(user_text: str, max_tokens: int) -> tuple[object, str]:
         messages=[{"role": "user", "content": user_text}],
     ) as stream:
         msg = stream.get_final_message()
+    if guard is not None and getattr(msg, "usage", None) is not None:
+        guard.record_actual(MODEL, msg.usage.input_tokens, msg.usage.output_tokens)
     if msg.stop_reason == "max_tokens":
         raise RuntimeError(f"Synthesis truncated at max_tokens={max_tokens} — raise it.")
     return msg, next((b.text for b in msg.content if b.type == "text"), "")
@@ -205,6 +214,11 @@ def verify(wb: WorkbookUnderstanding, snap: dict) -> dict:
 
 @traceable(name="understand_workbook", run_type="chain")
 def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_workers: int = 4) -> dict:
+    # Arm the spend firewall for onboarding (Opus + per-sheet vision — legitimately
+    # costs more than a populate, so it has its own higher ceiling). Every LLM call
+    # below — per-sheet (in worker threads) and synthesis — checks against it.
+    set_guard(SpendGuard(default_onboarding_cap_usd()))
+
     version_id, storage_path, filename = sb.get_latest_file(template_id)
     snap = json.loads(gzip.decompress(sb.download_snapshot(version_id)))
     by_name = {s["name"]: s for s in snap["sheets"]}
@@ -242,6 +256,8 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
         for attempt in range(_MAX_SHEET_ATTEMPTS):
             try:
                 return understand_sheet(*job)
+            except SpendCapExceeded:
+                raise  # the cap is a hard stop, never a per-sheet "failure" to retry/swallow
             except Exception as e:  # noqa: BLE001
                 transient = _is_transient(e)
                 if transient and attempt < _MAX_SHEET_ATTEMPTS - 1:
@@ -251,7 +267,11 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
                                job[0]["name"], "" if transient else "non-", e)
                 return None
 
-    with ThreadPoolExecutor(max_workers=per_sheet_workers) as ex:
+    # initializer propagates the spend guard into each worker — a contextvar set in
+    # the main thread is NOT visible in pool workers, so without this the bulk of
+    # the onboarding spend (per-sheet vision calls) would run UNCAPPED.
+    with ThreadPoolExecutor(max_workers=per_sheet_workers,
+                            initializer=set_guard, initargs=(get_guard(),)) as ex:
         results = list(ex.map(_run, jobs))
 
     sheet_results = [r for r in results if r]

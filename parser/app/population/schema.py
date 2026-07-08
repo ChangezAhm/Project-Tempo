@@ -1,15 +1,10 @@
-"""Population (Build A, v2) — fill a template's input slots from a source workbook.
+"""Population schema — types for filling a template's input slots from a source.
 
-The matcher is BILATERAL and CELL-LEVEL: the LLM sees the template sheet (image +
-grid + the list of input cells to fill) AND the routed source sheet(s) (image +
-grid), and emits DIRECT links — template_cell → source_sheet!source_cell — with
-transforms. It never reads or writes numbers. Deterministic code then reads the
-real value from the source snapshot at the cited address and writes it into the
-template's cell, with full attribution.
-
-This replaces the previous design (metric-name list → per-sheet blind match →
-triple exact-join on metric×scenario×period), which discarded the template's
-visual context and lost cells whenever any one join key was imperfect.
+The LLM never reads or writes numbers: its only output is a meaning mapping
+(MetricMap) from a template metric to a source SERIES. Deterministic code
+(catalogue → binding → apply) reads the real value from the source snapshot at the
+bound address, scales/signs/FX-converts it, and writes it into the template cell
+with full attribution.
 """
 
 from __future__ import annotations
@@ -21,46 +16,7 @@ class _M(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-# --- LLM outputs (forced via prompt + Pydantic validation) -----------------
-
-class RouteOut(_M):
-    """Which source sheet(s) feed one template sheet (stage 1)."""
-    template_sheet: str
-    source_sheets: list[str] = []
-
-
-class RoutingOut(_M):
-    routes: list[RouteOut] = []
-
-
-class LinkOut(_M):
-    """One template input cell ← one source cell, with transforms (stage 2).
-
-    The template_sheet is fixed by the call (the batch is one template sheet), so
-    the model emits only the template CELL; the sheet is attached in code.
-    """
-    template_cell: str            # exact A1 in the template sheet being matched
-    source_sheet: str             # source sheet name (from the provided list)
-    source_cell: str              # exact A1 in that source sheet
-    unit_scale: float = 1.0       # multiply source→template units (thousands→millions = 0.001)
-    sign_flip: bool = False       # source/template sign conventions differ
-    confidence: float = 0.5
-    note: str | None = None
-
-
-class SkipOut(_M):
-    """A listed target cell the model judges is NOT a real input (header/total/etc.)."""
-    template_cell: str
-    reason: str
-
-
-class SheetMatchOut(_M):
-    links: list[LinkOut] = []
-    skipped: list[SkipOut] = []
-    notes: list[str] = []
-
-
-# --- Resolved link (sheet attached) + results ------------------------------
+# --- Resolved link + results ------------------------------------------------
 
 class CellLink(_M):
     template_sheet: str
@@ -91,3 +47,20 @@ class PopulationResult(_M):
     unmatched: list[dict] = []    # template input facts with no usable source value, + reason
     skipped: list[dict] = []      # target cells the matcher rejected as non-inputs, + reason
     summary: dict = {}
+
+
+# --- v4 matcher: text-only metric->series mapping (no images, no values) ----
+
+class MetricMap(_M):
+    """One template metric mapped to one source SERIES (a labelled row across the
+    source's period columns). The LLM decides MEANING only; deterministic binding
+    reads the values, scales, aligns periods, and applies FX."""
+    metric: str                   # template metric key (canonical_metric or metric_label)
+    series_id: str | None = None  # source series id from the catalogue, or null if none fits
+    sign_flip: bool = False       # source/template sign conventions differ (e.g. costs +ve in source)
+    confidence: float = 0.5
+    note: str | None = None
+
+
+class MappingOut(_M):
+    mappings: list[MetricMap] = []

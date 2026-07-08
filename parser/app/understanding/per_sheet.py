@@ -140,10 +140,35 @@ def _extract_json(text: str) -> str:
     return t[start : end + 1] if start != -1 and end != -1 else t
 
 
+def _est(messages, max_tokens: int) -> tuple[int, int]:
+    """(input_chars, n_images) across the message content for a spend estimate."""
+    chars = len(SYSTEM)
+    n_images = 0
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, str):
+            chars += len(content)
+            continue
+        for b in content or []:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "image":
+                n_images += 1
+            elif b.get("type") == "text":
+                chars += len(b.get("text", ""))
+    return chars, n_images
+
+
 def _call(client, messages, max_tokens: int, sheet_name: str):
     # Schema enforced by prompt + Pydantic validation (not output_config) — the
     # strict-grammar compiler rejects schemas this large. Adaptive thinking stays
     # on (a forced tool_choice would disable it).
+    from app.population.cost import estimate_call_usd, get_guard
+
+    guard = get_guard()
+    if guard is not None:
+        chars, n_images = _est(messages, max_tokens)
+        guard.check(estimate_call_usd(MODEL, chars, max_tokens, n_images))
     with client.messages.stream(
         model=MODEL,
         max_tokens=max_tokens,
@@ -152,6 +177,8 @@ def _call(client, messages, max_tokens: int, sheet_name: str):
         messages=messages,
     ) as stream:
         msg = stream.get_final_message()
+    if guard is not None and getattr(msg, "usage", None) is not None:
+        guard.record_actual(MODEL, msg.usage.input_tokens, msg.usage.output_tokens)
     if msg.stop_reason == "max_tokens":
         raise RuntimeError(
             f"Understanding truncated at max_tokens={max_tokens} for '{sheet_name}' — raise max_tokens."

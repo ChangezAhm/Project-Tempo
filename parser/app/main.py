@@ -9,6 +9,7 @@ Run:  uvicorn app.main:app --reload --port 8000   (from parser/)
 from __future__ import annotations
 
 import logging
+from functools import partial
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +28,7 @@ from app.pipeline import (
 )
 from app.datamodel.dimensions_llm import enrich_and_persist
 from app.datamodel.persist import derive_and_persist, get_contract, get_data_model
+from app.population.cost import SpendCapExceeded
 from app.population.run import populate_from_bytes
 from app.supabase_client import TemplateNotFound
 from app.understanding.persist import get_understanding, understand_and_persist
@@ -151,6 +153,7 @@ def structure_route(template_id: str, sheet: str | None = None) -> dict:
     except TemplateNotFound as e:
         raise HTTPException(404, str(e))
     except Exception as e:  # noqa: BLE001
+        logger.exception("Read endpoint failed")
         raise HTTPException(500, f"Read failed: {e}")
 
 
@@ -196,6 +199,7 @@ def understanding_route(template_id: str) -> dict:
     except TemplateNotFound as e:
         raise HTTPException(404, str(e))
     except Exception as e:  # noqa: BLE001
+        logger.exception("Read endpoint failed")
         raise HTTPException(500, f"Read failed: {e}")
 
 
@@ -243,6 +247,10 @@ async def populate_route(
     request: Request,
     filename: str = "source.xlsx",
     as_of_date: str | None = None,
+    dry_run: bool = False,
+    display_unit: str | None = None,
+    target_currency: str | None = None,
+    fx_rate: float | None = None,
 ) -> dict:
     if not settings.configured:
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
@@ -251,11 +259,17 @@ async def populate_route(
         raise HTTPException(400, "No source file in request body")
     try:
         return await run_in_threadpool(
-            populate_from_bytes, target_template_id, filename, data, as_of_date
+            partial(populate_from_bytes, target_template_id, filename, data, as_of_date,
+                    display_unit=display_unit, target_currency=target_currency,
+                    fx_rate=fx_rate, dry_run=dry_run)
         )
+    except SpendCapExceeded as e:
+        # 402: the run hit its spend cap and was aborted before overspending.
+        raise HTTPException(402, str(e))
     except TemplateNotFound as e:
         raise HTTPException(404, str(e))
     except Exception as e:  # noqa: BLE001
+        logger.exception("Population failed")
         raise HTTPException(500, f"Population failed: {e}")
 
 
@@ -268,6 +282,7 @@ def get_datamodel_route(template_id: str, sheet: str | None = None, limit: int =
     except TemplateNotFound as e:
         raise HTTPException(404, str(e))
     except Exception as e:  # noqa: BLE001
+        logger.exception("Read endpoint failed")
         raise HTTPException(500, f"Read failed: {e}")
 
 
@@ -284,6 +299,7 @@ def contract_route(template_id: str) -> dict:
     except TemplateNotFound as e:
         raise HTTPException(404, str(e))
     except Exception as e:  # noqa: BLE001
+        logger.exception("Read endpoint failed")
         raise HTTPException(500, f"Read failed: {e}")
 
 

@@ -310,14 +310,24 @@ export type PopulateResult = {
 // Fills `targetId` directly from a dropped data file. The file is parsed in
 // memory by the parser and never stored as a template. Long-running (LLM).
 // Returns the mapping, attribution + a download URL.
+export type PopulateOptions = {
+  asOf?: string | null;
+  targetCurrency?: string | null;
+  fxRate?: number | null;
+  displayUnit?: string | null;
+};
+
 export async function populateTemplate(
   targetId: string,
   file: File,
-  asOf: string | null
+  opts: PopulateOptions = {}
 ): Promise<PopulateResult> {
   const form = new FormData();
   form.append("file", file);
-  if (asOf) form.append("as_of_date", asOf);
+  if (opts.asOf) form.append("as_of_date", opts.asOf);
+  if (opts.targetCurrency) form.append("target_currency", opts.targetCurrency);
+  if (opts.fxRate != null && Number.isFinite(opts.fxRate)) form.append("fx_rate", String(opts.fxRate));
+  if (opts.displayUnit) form.append("display_unit", opts.displayUnit);
   const res = await fetch(`/api/v1/template/${targetId}/populate`, {
     method: "POST",
     body: form,

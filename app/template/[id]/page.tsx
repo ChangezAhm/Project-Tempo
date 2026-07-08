@@ -4,10 +4,13 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  detectRegions,
+  getRegions,
   getUnderstanding,
   populateTemplate,
   understandTemplate,
   type CriticalInput,
+  type ExtensibleRegion,
   type PopulateResult,
   type SheetUnderstanding,
   type Understanding,
@@ -114,6 +117,8 @@ function SheetPanel({
 
 function PopulatePanel({ templateId }: { templateId: string }) {
   const [asOf, setAsOf] = useState("");
+  const [reset, setReset] = useState<"values" | "full">("values");
+  const [addLines, setAddLines] = useState<"off" | "propose" | "apply">("propose");
   const [dragging, setDragging] = useState(false);
   const [running, setRunning] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -133,7 +138,7 @@ function PopulatePanel({ templateId }: { templateId: string }) {
     setResult(null);
     setFileName(file.name);
     try {
-      setResult(await populateTemplate(templateId, file, { asOf: asOf || null }));
+      setResult(await populateTemplate(templateId, file, { asOf: asOf || null, reset, addLines }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Population failed");
     } finally {
@@ -167,6 +172,29 @@ function PopulatePanel({ templateId }: { templateId: string }) {
               onChange={(e) => setAsOf(e.target.value)}
               className="mt-1 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
             />
+          </label>
+          <label className="text-xs text-neutral-600">
+            Refresh
+            <select
+              value={reset}
+              onChange={(e) => setReset(e.target.value as "values" | "full")}
+              className="mt-1 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            >
+              <option value="values">Standard clear</option>
+              <option value="full">Full reset</option>
+            </select>
+          </label>
+          <label className="text-xs text-neutral-600">
+            New line items
+            <select
+              value={addLines}
+              onChange={(e) => setAddLines(e.target.value as "off" | "propose" | "apply")}
+              className="mt-1 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            >
+              <option value="propose">Propose only</option>
+              <option value="apply">Apply</option>
+              <option value="off">Off</option>
+            </select>
           </label>
         </div>
       </div>
@@ -218,9 +246,26 @@ function PopulatePanel({ templateId }: { templateId: string }) {
 
       {result ? (
         <div className="mt-4 space-y-3">
+          {result.routing?.hint ? (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">{result.routing.hint}</p>
+          ) : null}
+          {result.additions_applied?.length ? (
+            <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              {result.additions_applied.length} new line item{result.additions_applied.length === 1 ? "" : "s"} written:{" "}
+              {result.additions_applied
+                .map((a) => `${a.sheet_name} row ${a.row} — ${a.label} (${a.cells_written} cells)`)
+                .join("; ")}
+            </p>
+          ) : null}
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">{result.summary.filled} filled</span>
             <span className="rounded bg-amber-50 px-2 py-1 text-amber-700">{result.cleared_count} cleared</span>
+            {result.cleared_values != null ? (
+              <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.cleared_values} values cleared</span>
+            ) : null}
+            {result.cleared_formulas != null ? (
+              <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.cleared_formulas} formulas cleared</span>
+            ) : null}
             <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.unmatched_count} unmatched</span>
             <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.skipped_count} skipped</span>
             <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.links_count} links</span>
@@ -263,6 +308,38 @@ function PopulatePanel({ templateId }: { templateId: string }) {
           ) : (
             <p className="text-sm text-neutral-500">Nothing matched — check the source has the metrics this template needs.</p>
           )}
+          {result.proposed_additions?.length ? (
+            <div className="rounded-md border border-neutral-200">
+              <p className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-600">
+                Proposed new line items (not written)
+              </p>
+              <table className="w-full text-left text-xs">
+                <thead className="text-neutral-500">
+                  <tr>
+                    <th className="px-2 py-1">Sheet</th>
+                    <th className="px-2 py-1">Row</th>
+                    <th className="px-2 py-1">Label</th>
+                    <th className="px-2 py-1">Unit</th>
+                    <th className="px-2 py-1">#values</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.proposed_additions.map((a, i) => (
+                    <tr key={i} className="border-t border-neutral-100">
+                      <td className="px-2 py-1">{a.sheet_name}</td>
+                      <td className="px-2 py-1 font-mono">{a.row}</td>
+                      <td className="px-2 py-1">{a.label}</td>
+                      <td className="px-2 py-1 text-neutral-500">{a.unit ?? "—"}</td>
+                      <td className="px-2 py-1">{a.values.length}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="border-t border-neutral-200 px-3 py-2 text-xs text-neutral-500">
+                Re-run with New line items = Apply to write them.
+              </p>
+            </div>
+          ) : null}
           {result.unmatched_reasons && result.unmatched_reasons.length > 0 ? (
             <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2">
               <p className="mb-1 text-xs font-medium text-neutral-600">Why cells were left blank</p>
@@ -277,6 +354,118 @@ function PopulatePanel({ templateId }: { templateId: string }) {
           ) : null}
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function formatRules(rules: unknown): string | null {
+  if (rules == null) return null;
+  if (typeof rules === "string") return rules;
+  if (Array.isArray(rules)) return rules.map(String).join(" · ");
+  if (typeof rules === "object") {
+    return Object.entries(rules as Record<string, unknown>)
+      .map(([k, v]) => `${k}: ${String(v)}`)
+      .join(" · ");
+  }
+  return String(rules);
+}
+
+function RegionsPanel({ templateId }: { templateId: string }) {
+  const [regions, setRegions] = useState<ExtensibleRegion[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [detecting, setDetecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setRegions(await getRegions(templateId));
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load regions");
+    }
+  }, [templateId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleDetect() {
+    setDetecting(true);
+    setError(null);
+    try {
+      setRegions(await detectRegions(templateId));
+      setLoadError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Region detection failed");
+    } finally {
+      setDetecting(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-medium">Extensible regions</h2>
+          <p className="mt-1 text-xs text-neutral-500">
+            Areas of the template where new line items can be inserted during population.
+          </p>
+        </div>
+        <button
+          onClick={handleDetect}
+          disabled={detecting}
+          className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
+        >
+          {detecting
+            ? "Detecting… (may take a minute)"
+            : regions?.length
+              ? "Re-detect regions"
+              : "Detect extensible regions"}
+        </button>
+      </div>
+
+      {error ? (
+        <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+      ) : null}
+
+      {loadError ? (
+        <p className="mt-3 text-sm text-neutral-500">
+          Couldn’t load regions ({loadError}).{" "}
+          <button onClick={() => void load()} className="font-medium text-neutral-700 underline">
+            Retry
+          </button>
+        </p>
+      ) : regions === null ? (
+        <p className="mt-3 text-sm text-neutral-400">Loading…</p>
+      ) : regions.length === 0 ? (
+        <p className="mt-3 text-sm text-neutral-400">
+          No extensible regions detected yet — run detection to find them.
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {regions.map((r, i) => (
+            <li key={r.id ?? i} className="rounded-lg border border-neutral-200 p-3">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-medium">{r.sheet_name}</span>
+                {r.kind ? (
+                  <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500">
+                    {r.kind}
+                  </span>
+                ) : null}
+                <span className="font-mono text-xs text-neutral-400">
+                  rows {r.row_start}–{r.row_end}
+                </span>
+                {r.capacity != null ? (
+                  <span className="text-xs text-neutral-500">capacity {r.capacity}</span>
+                ) : null}
+              </div>
+              {formatRules(r.rules) ? (
+                <p className="mt-1.5 text-xs text-neutral-500">{formatRules(r.rules)}</p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -389,13 +578,21 @@ export default function TemplatePage() {
               <h1 className="text-2xl font-semibold tracking-tight">
                 {wb?.archetype ?? "Template understanding"}
               </h1>
-              <button
-                onClick={handleRun}
-                disabled={running}
-                className="ml-auto rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
-              >
-                {running ? "Re-analysing…" : "Re-run"}
-              </button>
+              <div className="ml-auto flex items-center gap-2">
+                <Link
+                  href={`/template/${id}/contract`}
+                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50"
+                >
+                  Review contract →
+                </Link>
+                <button
+                  onClick={handleRun}
+                  disabled={running}
+                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  {running ? "Re-analysing…" : "Re-run"}
+                </button>
+              </div>
             </div>
             {wb?.purpose ? <p className="mt-1 text-sm text-neutral-600">{wb.purpose}</p> : null}
             {wb?.audience ? (
@@ -426,6 +623,8 @@ export default function TemplatePage() {
               </ul>
             </section>
           ) : null}
+
+          <RegionsPanel templateId={id} />
 
           <div>
             <h2 className="mb-3 text-lg font-medium">Critical input areas</h2>

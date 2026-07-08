@@ -20,10 +20,14 @@ export async function POST(
     return NextResponse.json({ error: "A source file is required" }, { status: 400 });
   }
   const asOf = form?.get("as_of_date");
+  const reset = form?.get("reset");
+  const addLines = form?.get("add_lines");
   const bytes = new Uint8Array(await file.arrayBuffer());
 
   const qs = new URLSearchParams({ filename: file.name || "source.xlsx" });
   if (typeof asOf === "string" && asOf) qs.set("as_of_date", asOf);
+  if (typeof reset === "string" && reset) qs.set("reset", reset);
+  if (typeof addLines === "string" && addLines) qs.set("add_lines", addLines);
   try {
     const res = await parserFetch(`${PARSER_URL}/populate/${id}?${qs.toString()}`, {
       method: "POST",

@@ -180,13 +180,29 @@ export type FilledCell = {
   confidence: number;
 };
 
+export type ProposedAddition = {
+  sheet_name: string;
+  row: number;
+  label: string;
+  unit: string | null;
+  kind: string | null;
+  values: { col: number; source_sheet: string; source_cell: string }[];
+};
+
+export type AppliedAddition = {
+  sheet_name: string;
+  row: number;
+  label: string;
+  cells_written: number;
+};
+
 export type PopulateResult = {
   target_template_id: string;
   source_filename: string;
   as_of_date: string | null;
   demand_metrics: number;
   summary: { facts: number; filled: number; unmatched: number; skipped: number };
-  routing: Record<string, string[]> | null;
+  routing: (Record<string, unknown> & { hint?: string }) | null;
   links_count: number;
   filled: FilledCell[];
   filled_truncated: boolean;
@@ -196,6 +212,11 @@ export type PopulateResult = {
   skipped: { template_sheet: string; template_cell: string; reason: string }[];
   skipped_count: number;
   cleared_count: number;
+  reset?: string;
+  cleared_values?: number;
+  cleared_formulas?: number;
+  proposed_additions?: ProposedAddition[];
+  additions_applied?: AppliedAddition[];
   notes: string[];
   filled_url: string | null;
   audit_url: string | null;
@@ -206,6 +227,8 @@ export type PopulateResult = {
 // Returns the mapping, attribution + a download URL.
 export type PopulateOptions = {
   asOf?: string | null;
+  reset?: "values" | "full";
+  addLines?: "off" | "propose" | "apply";
 };
 
 export async function populateTemplate(
@@ -216,6 +239,8 @@ export async function populateTemplate(
   const form = new FormData();
   form.append("file", file);
   if (opts.asOf) form.append("as_of_date", opts.asOf);
+  if (opts.reset) form.append("reset", opts.reset);
+  if (opts.addLines) form.append("add_lines", opts.addLines);
   const res = await fetch(`/api/v1/template/${targetId}/populate`, {
     method: "POST",
     body: form,
@@ -225,4 +250,149 @@ export async function populateTemplate(
     throw new Error(body?.error ?? `Population failed (${res.status})`);
   }
   return body as PopulateResult;
+}
+
+// --- Template Contract review ------------------------------------------------
+
+export type ContractCorrection = {
+  id: string;
+  match: Record<string, unknown>;
+  patch: Record<string, unknown>;
+  note: string | null;
+  created_at?: string | null;
+};
+
+export type Contract = {
+  template_version_id?: string;
+  status: string; // "draft" | "approved"
+  notes: string | null;
+  corrections: ContractCorrection[];
+};
+
+export type ContractField = {
+  sheet_name: string;
+  metric_label: string;
+  canonical_metric: string | null;
+  unit: string | null;
+  sign_convention: string | null;
+  scenarios: string[];
+  category_counts: Record<string, number>;
+  fillable_count: number;
+  fact_count: number;
+  cells: string[];
+  corrected: boolean;
+};
+
+// Reads the contract shell: status, notes and the stored corrections.
+export async function getContract(id: string): Promise<Contract> {
+  const res = await fetch(`/api/v1/template/${id}/contract`, { cache: "no-store" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Failed to load contract (${res.status})`);
+  }
+  return body as Contract;
+}
+
+// Reads the reviewable field grid (one row per sheet × metric label).
+export async function getContractFields(id: string): Promise<{ fields: ContractField[] }> {
+  const res = await fetch(`/api/v1/template/${id}/contract/fields`, { cache: "no-store" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Failed to load contract fields (${res.status})`);
+  }
+  return body as { fields: ContractField[] };
+}
+
+// Updates contract status ("draft" | "approved") and/or reviewer notes.
+export async function patchContract(
+  id: string,
+  patch: { status?: string; notes?: string }
+): Promise<Contract> {
+  const res = await fetch(`/api/v1/template/${id}/contract`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Failed to update contract (${res.status})`);
+  }
+  return body as Contract;
+}
+
+// Stores a persistent data-model correction. `match` selects facts
+// (e.g. { sheet_name, metric_label }), `patch` sets the corrected values.
+export async function addCorrection(
+  id: string,
+  input: { match: Record<string, unknown>; patch: Record<string, unknown>; note?: string }
+): Promise<ContractCorrection> {
+  const res = await fetch(`/api/v1/template/${id}/corrections`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Failed to add correction (${res.status})`);
+  }
+  return body as ContractCorrection;
+}
+
+export async function deleteCorrection(id: string, cid: string): Promise<void> {
+  const res = await fetch(`/api/v1/template/${id}/corrections/${cid}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? `Failed to delete correction (${res.status})`);
+  }
+}
+
+// Re-runs the deterministic data-model derivation (re-applies corrections).
+// Takes a few seconds.
+export async function rederiveDataModel(id: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`/api/v1/template/${id}/datamodel`, { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Re-derive failed (${res.status})`);
+  }
+  return body as Record<string, unknown>;
+}
+
+// --- Extensible regions -------------------------------------------------------
+
+export type ExtensibleRegion = {
+  id?: string;
+  sheet_name: string;
+  kind: string | null;
+  row_start: number;
+  row_end: number;
+  capacity: number | null;
+  rules?: unknown;
+};
+
+function normalizeRegions(body: unknown): ExtensibleRegion[] {
+  if (Array.isArray(body)) return body as ExtensibleRegion[];
+  const regions = (body as { regions?: unknown } | null)?.regions;
+  return Array.isArray(regions) ? (regions as ExtensibleRegion[]) : [];
+}
+
+// Reads stored extensible-region annotations (empty if never detected).
+export async function getRegions(id: string): Promise<ExtensibleRegion[]> {
+  const res = await fetch(`/api/v1/template/${id}/regions`, { cache: "no-store" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Failed to load regions (${res.status})`);
+  }
+  return normalizeRegions(body);
+}
+
+// Runs LLM region detection on the parser (may take ~1 minute).
+export async function detectRegions(id: string): Promise<ExtensibleRegion[]> {
+  const res = await fetch(`/api/v1/template/${id}/regions`, { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Region detection failed (${res.status})`);
+  }
+  return normalizeRegions(body);
 }

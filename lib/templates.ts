@@ -3,14 +3,10 @@
 // templates -> template_versions -> template_files hierarchy in Postgres.
 // See docs/Migration-Plan.md §5 "Build Step 1" and §9 schema.
 //
-// We talk to Supabase directly from the browser using the publishable (anon)
-// key. There is no auth yet, so RLS is permissive (see supabase/migrations).
-// A server route (/api/v1/template/upload) can wrap this later once a
-// service-role key + auth exist; the upload flow stays the same.
-
-import { createClient } from "@/utils/supabase/client";
-
-const BUCKET = "template-files";
+// All Supabase access is server-mediated: the browser calls the Next.js
+// routes under /api/v1, which use the service-role key (see
+// utils/supabase/admin.ts). RLS is locked down accordingly in
+// supabase/migrations/0007_lock_rls.sql.
 
 export type Template = {
   id: string;
@@ -22,60 +18,13 @@ export type Template = {
   uploadedAt: string; // ISO string
 };
 
-// Shape of the nested select we read back from Supabase.
-type RawTemplateRow = {
-  id: string;
-  name: string;
-  sponsor_name: string | null;
-  note: string | null;
-  created_at: string;
-  template_versions: {
-    version_number: number;
-    template_files: {
-      original_filename: string;
-      size_bytes: number;
-      created_at: string;
-    }[];
-  }[];
-};
-
-function sanitizeKey(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
-async function sha256Hex(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 export async function getTemplates(): Promise<Template[]> {
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from("templates")
-    .select(
-      "id, name, sponsor_name, note, created_at, template_versions(version_number, template_files(original_filename, size_bytes, created_at))"
-    )
-    .order("created_at", { ascending: false });
-
-  if (error) throw new Error(error.message);
-
-  return ((data as RawTemplateRow[] | null) ?? []).map((row) => {
-    const latestVersion = [...row.template_versions].sort(
-      (a, b) => b.version_number - a.version_number
-    )[0];
-    const file = latestVersion?.template_files?.[0];
-    return {
-      id: row.id,
-      name: row.name,
-      sponsorName: row.sponsor_name,
-      note: row.note,
-      fileName: file?.original_filename ?? "—",
-      sizeBytes: file?.size_bytes ?? 0,
-      uploadedAt: file?.created_at ?? row.created_at,
-    };
-  });
+  const res = await fetch("/api/v1/templates", { cache: "no-store" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Failed to load templates (${res.status})`);
+  }
+  return body as Template[];
 }
 
 // Stores the workbook durably and creates template + version + file rows.
@@ -86,82 +35,26 @@ export async function uploadTemplate(input: {
   note?: string;
   sponsorName?: string;
 }): Promise<string> {
-  const supabase = createClient();
-  const { file } = input;
+  const form = new FormData();
+  form.append("file", input.file);
+  form.append("name", input.name);
+  if (input.note) form.append("note", input.note);
+  if (input.sponsorName) form.append("sponsorName", input.sponsorName);
 
-  // 1. Template row
-  const { data: tmpl, error: tmplErr } = await supabase
-    .from("templates")
-    .insert({
-      name: input.name,
-      sponsor_name: input.sponsorName ?? null,
-      note: input.note ?? null,
-    })
-    .select("id")
-    .single();
-  if (tmplErr || !tmpl) {
-    throw new Error(tmplErr?.message ?? "Failed to create template");
+  const res = await fetch("/api/v1/templates", { method: "POST", body: form });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Upload failed (${res.status})`);
   }
-
-  try {
-    // 2. Version row (v1)
-    const { data: version, error: verErr } = await supabase
-      .from("template_versions")
-      .insert({ template_id: tmpl.id, version_number: 1 })
-      .select("id")
-      .single();
-    if (verErr || !version) {
-      throw new Error(verErr?.message ?? "Failed to create version");
-    }
-
-    // 3. Upload the raw workbook to private storage
-    const storagePath = `${tmpl.id}/${version.id}/${sanitizeKey(file.name)}`;
-    const { error: upErr } = await supabase.storage
-      .from(BUCKET)
-      .upload(storagePath, file, {
-        contentType: file.type || "application/octet-stream",
-        upsert: false,
-      });
-    if (upErr) throw new Error(upErr.message);
-
-    // 4. File row (with integrity hash)
-    const sha256 = await sha256Hex(file);
-    const { error: fileErr } = await supabase.from("template_files").insert({
-      template_version_id: version.id,
-      storage_path: storagePath,
-      original_filename: file.name,
-      content_type: file.type || null,
-      size_bytes: file.size,
-      sha256,
-    });
-    if (fileErr) throw new Error(fileErr.message);
-
-    return tmpl.id as string;
-  } catch (err) {
-    // Best-effort rollback: cascade deletes the version + file rows.
-    await supabase.from("templates").delete().eq("id", tmpl.id);
-    throw err;
-  }
+  return body.id as string;
 }
 
 export async function deleteTemplate(id: string): Promise<void> {
-  const supabase = createClient();
-
-  // Remove stored objects for this template before deleting the rows.
-  const { data: files } = await supabase
-    .from("template_files")
-    .select("storage_path, template_versions!inner(template_id)")
-    .eq("template_versions.template_id", id);
-
-  const paths = ((files as { storage_path: string }[] | null) ?? []).map(
-    (f) => f.storage_path
-  );
-  if (paths.length > 0) {
-    await supabase.storage.from(BUCKET).remove(paths);
+  const res = await fetch(`/api/v1/template/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error ?? `Delete failed (${res.status})`);
   }
-
-  const { error } = await supabase.from("templates").delete().eq("id", id);
-  if (error) throw new Error(error.message);
 }
 
 export function formatSize(bytes: number): string {
@@ -314,7 +207,6 @@ export type PopulateOptions = {
   asOf?: string | null;
   targetCurrency?: string | null;
   fxRate?: number | null;
-  displayUnit?: string | null;
 };
 
 export async function populateTemplate(
@@ -327,7 +219,6 @@ export async function populateTemplate(
   if (opts.asOf) form.append("as_of_date", opts.asOf);
   if (opts.targetCurrency) form.append("target_currency", opts.targetCurrency);
   if (opts.fxRate != null && Number.isFinite(opts.fxRate)) form.append("fx_rate", String(opts.fxRate));
-  if (opts.displayUnit) form.append("display_unit", opts.displayUnit);
   const res = await fetch(`/api/v1/template/${targetId}/populate`, {
     method: "POST",
     body: form,

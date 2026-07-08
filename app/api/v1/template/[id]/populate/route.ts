@@ -22,14 +22,12 @@ export async function POST(
   const asOf = form?.get("as_of_date");
   const targetCurrency = form?.get("target_currency");
   const fxRate = form?.get("fx_rate");
-  const displayUnit = form?.get("display_unit");
   const bytes = new Uint8Array(await file.arrayBuffer());
 
   const qs = new URLSearchParams({ filename: file.name || "source.xlsx" });
   if (typeof asOf === "string" && asOf) qs.set("as_of_date", asOf);
   if (typeof targetCurrency === "string" && targetCurrency) qs.set("target_currency", targetCurrency);
   if (typeof fxRate === "string" && fxRate) qs.set("fx_rate", fxRate);
-  if (typeof displayUnit === "string" && displayUnit) qs.set("display_unit", displayUnit);
   try {
     const res = await parserFetch(`${PARSER_URL}/populate/${id}?${qs.toString()}`, {
       method: "POST",

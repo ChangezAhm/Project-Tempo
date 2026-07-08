@@ -304,14 +304,18 @@ export default function TemplatePage() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<Understanding | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Load failure (e.g. parser unreachable) is distinct from "not analysed":
+  // it must NOT show the run-understanding CTA, which triggers an expensive re-run.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [ready, setReady] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setData(await getUnderstanding(id));
+      setLoadError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load");
+      setLoadError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setReady(true);
     }
@@ -320,6 +324,12 @@ export default function TemplatePage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  function handleRetryLoad() {
+    setReady(false);
+    setLoadError(null);
+    void load();
+  }
 
   async function handleRun() {
     setRunning(true);
@@ -361,6 +371,21 @@ export default function TemplatePage() {
 
       {!ready ? (
         <p className="mt-8 text-sm text-neutral-400">Loading…</p>
+      ) : loadError ? (
+        <div className="mt-8 flex flex-col items-center justify-center rounded-xl border border-dashed border-red-200 bg-white px-6 py-16 text-center">
+          <h2 className="text-base font-medium">Couldn’t reach the analysis service</h2>
+          <p className="mt-1 max-w-md text-sm text-neutral-500">
+            The template’s understanding couldn’t be loaded — the analysis service may be down.
+            This doesn’t mean the template hasn’t been analysed.
+          </p>
+          <p className="mt-2 max-w-md text-xs text-neutral-400">{loadError}</p>
+          <button
+            onClick={handleRetryLoad}
+            className="mt-5 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700"
+          >
+            Retry
+          </button>
+        </div>
       ) : !data?.available ? (
         <div className="mt-8 flex flex-col items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-white px-6 py-16 text-center">
           <h2 className="text-base font-medium">Not analysed yet</h2>

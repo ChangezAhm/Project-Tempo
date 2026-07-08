@@ -17,7 +17,9 @@ export default function LibraryPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  // Set of in-flight analyses — a single id would let two concurrent
+  // Analyze clicks clobber each other's spinner/disabled state.
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
   const [results, setResults] = useState<Record<string, ParseSummary>>({});
 
   useEffect(() => {
@@ -32,7 +34,7 @@ export default function LibraryPage() {
   }, []);
 
   async function handleAnalyze(id: string) {
-    setAnalyzingId(id);
+    setAnalyzingIds((ids) => new Set(ids).add(id));
     setError(null);
     try {
       const summary = await parseTemplate(id);
@@ -40,7 +42,11 @@ export default function LibraryPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to analyze template");
     } finally {
-      setAnalyzingId(null);
+      setAnalyzingIds((ids) => {
+        const next = new Set(ids);
+        next.delete(id);
+        return next;
+      });
     }
   }
 
@@ -147,10 +153,10 @@ export default function LibraryPage() {
                 ) : (
                   <button
                     onClick={() => handleAnalyze(t.id)}
-                    disabled={analyzingId === t.id}
+                    disabled={analyzingIds.has(t.id)}
                     className="mt-3 w-full rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
                   >
-                    {analyzingId === t.id ? "Analyzing…" : "Analyze structure"}
+                    {analyzingIds.has(t.id) ? "Analyzing…" : "Analyze structure"}
                   </button>
                 )}
 

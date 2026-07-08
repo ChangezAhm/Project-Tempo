@@ -6,7 +6,6 @@ free, end to end (with the single LLM 'meaning' step stubbed as a fixed mapping)
 
 from datetime import date
 
-from app.population import fx
 from app.population.apply import apply_links
 from app.population.binding import _col_letters, bind
 from app.population.catalogue import build_catalogue
@@ -58,28 +57,6 @@ def test_pick_column_positional_newest_anchored():
     assert pick_column(0, 3, None, _pcols(), "monthly") == 3   # Oct
     # template wants more periods than source has -> oldest slot falls off
     assert pick_column(0, 4, None, _pcols(), "monthly") is None
-
-
-# --- fx multiplier --------------------------------------------------------
-def test_fx_multiplier():
-    assert fx.multiplier("EUR", "EUR") == (1.0, None)
-    assert fx.multiplier(None, None) == (1.0, None)          # no currency anywhere
-    assert fx.multiplier("USD", "EUR", rate=0.9) == (0.9, None)
-    val, flag = fx.multiplier("USD", "EUR")
-    assert val is None and flag == "currency_mismatch:USD->EUR"
-
-
-def test_fx_one_sided_unknown_fills_but_flags():
-    # can't prove a mismatch -> write at 1.0 but carry a review flag
-    assert fx.multiplier(None, "EUR") == (1.0, "fx_unverified:?->EUR")
-    assert fx.multiplier("USD", None) == (1.0, "fx_unverified:USD->?")
-
-
-def test_fx_rejects_invalid_rate():
-    val, flag = fx.multiplier("USD", "EUR", rate=0)
-    assert val is None and flag.startswith("fx_rate_invalid")
-    val, flag = fx.multiplier("USD", "EUR", rate=-1.1)
-    assert val is None and flag.startswith("fx_rate_invalid")
 
 
 def test_col_letters():
@@ -155,15 +132,15 @@ def test_bind_applies_sign_flip():
     assert result.filled[0].value == -4.0   # 4,000,000 raw, flipped, scaled
 
 
-def test_bind_blocks_currency_mismatch_without_rate():
+def test_bind_writes_cross_currency_but_flags_it():
+    # No FX in the system: differing declared currencies still fill (scale only),
+    # but the link carries a review note so the audit can't hide it.
     cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
     maps = [MetricMap(metric="revenue", series_id="P&L!r5", confidence=0.9)]
     facts = [_fact("revenue", "B10", currency="USD")]   # template USD, source EUR
     links, unmatched = bind(facts, cat, maps, _demand())
-    assert not links and "currency_mismatch:EUR->USD" in unmatched[0]["reason"]
-    # supply a rate -> it converts (folded into the scale)
-    links2, _ = bind(facts, cat, maps, _demand(), fx_rate=1.1)
-    assert links2 and abs(links2[0].unit_scale - 1e-6 * 1.1) < 1e-18
+    assert not unmatched and links[0].unit_scale == 1e-6
+    assert "currency_unverified:EUR->USD" in (links[0].note or "")
 
 
 def test_bind_assumes_no_scaling_for_raw_source_when_unit_unknown():
@@ -202,12 +179,12 @@ def test_bind_blocks_non_actual_scenario():
     assert not links and "budget" in unmatched[0]["reason"]
 
 
-def test_bind_flags_one_sided_unknown_currency():
+def test_bind_one_sided_unknown_currency_is_clean():
     cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
     maps = [MetricMap(metric="revenue", series_id="P&L!r5", confidence=0.9)]
-    # template currency undetected, source declares EUR -> filled but review-flagged
+    # only one side declares a currency -> nothing to compare, no flag
     links, unmatched = bind([_fact("revenue", "B10", currency=None)], cat, maps, _demand())
-    assert links and "fx_unverified" in links[0].note
+    assert links and "currency" not in (links[0].note or "")
 
 
 def test_bind_uses_per_sheet_period_count():
@@ -234,9 +211,9 @@ def test_bind_headcount_is_never_scaled_or_fxed():
     maps = [MetricMap(metric="headcount", series_id="SaaS!r7", confidence=0.95)]
     fact = _fact("headcount", "D6", unit=None, currency=None)
     fact["metric_label"] = "Headcount (FTE)"
-    links, unmatched = bind([fact], cat, maps, _demand(), target_currency="EUR", fx_rate=0.92)
+    links, unmatched = bind([fact], cat, maps, _demand())
     assert not unmatched and links[0].unit_scale == 1.0
-    assert not links[0].note or "unverified" not in links[0].note   # no scale/fx review noise
+    assert not links[0].note or "unverified" not in links[0].note   # no scale review noise
 
 
 def test_is_count_like_words():

@@ -206,8 +206,6 @@ export type PopulateResult = {
 // Returns the mapping, attribution + a download URL.
 export type PopulateOptions = {
   asOf?: string | null;
-  targetCurrency?: string | null;
-  fxRate?: number | null;
 };
 
 export async function populateTemplate(
@@ -218,8 +216,6 @@ export async function populateTemplate(
   const form = new FormData();
   form.append("file", file);
   if (opts.asOf) form.append("as_of_date", opts.asOf);
-  if (opts.targetCurrency) form.append("target_currency", opts.targetCurrency);
-  if (opts.fxRate != null && Number.isFinite(opts.fxRate)) form.append("fx_rate", String(opts.fxRate));
   const res = await fetch(`/api/v1/template/${targetId}/populate`, {
     method: "POST",
     body: form,

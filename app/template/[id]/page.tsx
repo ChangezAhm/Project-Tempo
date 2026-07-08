@@ -114,8 +114,6 @@ function SheetPanel({
 
 function PopulatePanel({ templateId }: { templateId: string }) {
   const [asOf, setAsOf] = useState("");
-  const [targetCurrency, setTargetCurrency] = useState("");
-  const [fxRate, setFxRate] = useState("");
   const [dragging, setDragging] = useState(false);
   const [running, setRunning] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -135,11 +133,7 @@ function PopulatePanel({ templateId }: { templateId: string }) {
     setResult(null);
     setFileName(file.name);
     try {
-      setResult(await populateTemplate(templateId, file, {
-        asOf: asOf || null,
-        targetCurrency: targetCurrency.trim() || null,
-        fxRate: fxRate.trim() ? Number(fxRate) : null,
-      }));
+      setResult(await populateTemplate(templateId, file, { asOf: asOf || null }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Population failed");
     } finally {
@@ -174,33 +168,8 @@ function PopulatePanel({ templateId }: { templateId: string }) {
               className="mt-1 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
             />
           </label>
-          <label className="text-xs text-neutral-600">
-            Output currency
-            <input
-              type="text"
-              value={targetCurrency}
-              onChange={(e) => setTargetCurrency(e.target.value.toUpperCase())}
-              placeholder="EUR"
-              className="mt-1 block w-20 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="text-xs text-neutral-600">
-            FX rate (source→output)
-            <input
-              type="number"
-              step="any"
-              value={fxRate}
-              onChange={(e) => setFxRate(e.target.value)}
-              placeholder="e.g. 1.08"
-              className="mt-1 block w-28 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
         </div>
       </div>
-      <p className="mt-2 text-xs text-amber-700">
-        If the source and your template use different currencies, set the output currency + FX rate —
-        otherwise those cells are left blank (never converted with a guessed rate).
-      </p>
 
       <div
         role="button"
@@ -249,18 +218,6 @@ function PopulatePanel({ templateId }: { templateId: string }) {
 
       {result ? (
         <div className="mt-4 space-y-3">
-          {/* If currency mismatches dominate the blanks, say so up front — a
-              mostly-blank workbook without this reads as "it didn't work". */}
-          {result.unmatched_reasons?.some((r) => r.reason.startsWith("currency_mismatch")) ? (
-            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              {result.unmatched_reasons
-                .filter((r) => r.reason.startsWith("currency_mismatch"))
-                .reduce((n, r) => n + r.count, 0)}{" "}
-              cells were left blank because the source currency differs from the template&apos;s
-              (never converted with a guessed rate). Set <b>Output currency</b> + <b>FX rate</b> above
-              and drop the file again.
-            </div>
-          ) : null}
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">{result.summary.filled} filled</span>
             <span className="rounded bg-amber-50 px-2 py-1 text-amber-700">{result.cleared_count} cleared</span>

@@ -218,11 +218,10 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                     source_periods: dict[str, list[dict]], source_label: str,
                     as_of_date: str | None, *, content_hash: str | None = None,
                     source_path: Path | None = None,
-                    display_unit: str | None = None, target_currency: str | None = None,
-                    fx_rate: float | None = None, dry_run: bool = False) -> dict:
+                    display_unit: str | None = None, dry_run: bool = False) -> dict:
     """Core: understand the SOURCE with AI (period columns + data series + units,
     cached by file), build the catalogue from that, ask the LLM to map template
-    metrics → source series, then bind periods/scale(by magnitude)/sign/FX and read
+    metrics → source series, then bind periods/scale(by magnitude)/sign and read
     the real (cached) values from the snapshot. The template is NOT re-read; we only
     need its workbook to write the values into. Everything is under the spend cap."""
     # Arm the spend firewall for this run (TEMPO_MAX_RUN_USD): source-understanding
@@ -278,8 +277,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             routing["mapping_failed_batches"] = mapping_failed
         links, bind_unmatched = bind(
             target_inputs, catalogue, metric_maps, demand,
-            target_currency=target_currency, fx_rate=fx_rate, display_unit=display_unit,
-            template_context=template_context,
+            display_unit=display_unit, template_context=template_context,
         )
         # Filled cells whose scale couldn't be magnitude-verified — written, but
         # surfaced so a human checks them rather than trusting a label-only scale.
@@ -297,9 +295,8 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             if u.get("reason") == "no source match" and k in reasons:
                 u["reason"] = reasons[k]
 
-        # Reason histogram: the headline of WHY cells are blank ("80× currency
-        # mismatch — supply an FX rate") belongs in the response, not buried in
-        # a 1,000-row audit list.
+        # Reason histogram: the headline of WHY cells are blank belongs in the
+        # response, not buried in a 1,000-row audit list.
         unmatched_reasons = [{"reason": r, "count": n}
                              for r, n in Counter(u.get("reason") for u in result.unmatched).most_common(10)]
 
@@ -368,15 +365,14 @@ def _detect_source_periods(parsed) -> dict[str, list[dict]]:
 
 def populate_from_bytes(target_template_id: str, source_filename: str, source_bytes: bytes,
                         as_of_date: str | None = None, *, display_unit: str | None = None,
-                        target_currency: str | None = None, fx_rate: float | None = None,
                         dry_run: bool = False) -> dict:
     """Populate a template directly from an uploaded data file's bytes. Parses
     the source in-memory (Aspose → snapshot) — it is never stored as a template.
     This is the drag-a-file-onto-a-template path.
 
-    Pass dry_run=True to get a cost estimate without any LLM call. display_unit /
-    target_currency / fx_rate let the consultant declare the output basis (e.g.
-    'EUR millions' + a rate) so scale and currency resolve deterministically."""
+    Pass dry_run=True to get a cost estimate without any LLM call. display_unit
+    lets the consultant declare the output basis (e.g. 'EUR millions') so scale
+    resolves deterministically when the template carries no unit signals."""
     src_tmp = _bytes_to_temp(source_filename, source_bytes)
     try:
         parsed = parse_workbook(src_tmp)
@@ -386,7 +382,6 @@ def populate_from_bytes(target_template_id: str, source_filename: str, source_by
                                source_filename or "source.xlsx", as_of_date,
                                content_hash=source_cache.content_hash(source_bytes),
                                source_path=src_tmp,   # alive until the run returns → images
-                               display_unit=display_unit, target_currency=target_currency,
-                               fx_rate=fx_rate, dry_run=dry_run)
+                               display_unit=display_unit, dry_run=dry_run)
     finally:
         src_tmp.unlink(missing_ok=True)

@@ -4,8 +4,8 @@ This is where correctness is decided, with NO LLM in the loop:
 
   - which source column feeds each template period slot   (periods.pick_column)
   - one unit scale per series (raw->millions etc.)         (units.series_scale)
-  - currency, folded into the scale or blocked if unknown  (fx.multiplier)
   - a confidence floor below which we leave the cell blank
+Currencies are never converted; a declared cross-currency fill is review-noted.
 
 The output CellLinks are consumed by the existing, tested `apply_links`, which
 reads the real value from the source snapshot at the cited address. We never
@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from collections import Counter
 
-from app.population import fx
 from app.population.catalogue import Series
 from app.population.numfmt import parse_number_format
 from app.population.periods import infer_grain, parse_iso_period, pick_column
@@ -49,14 +48,14 @@ def _unmatched(fact: dict, reason: str) -> dict:
 
 
 def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[MetricMap],
-         demand: dict, *, target_currency: str | None = None, fx_rate: float | None = None,
-         display_unit: str | None = None, confidence_floor: float = 0.6,
+         demand: dict, *, display_unit: str | None = None, confidence_floor: float = 0.6,
          template_context: tuple[dict, dict] | None = None,
          ) -> tuple[list[CellLink], list[dict]]:
     """Returns (links, unmatched). Each template input fact becomes a CellLink with
-    a fully-resolved unit_scale (scale*FX) and sign, or an unmatched entry whose
-    reason says exactly why (no mapping / low confidence / no source period /
-    unit unresolved / currency mismatch). Blank-and-explain beats wrong.
+    a fully-resolved unit_scale and sign, or an unmatched entry whose reason says
+    exactly why (no mapping / low confidence / no source period / unit unresolved).
+    Currencies are NOT converted — values are written as-is; when both sides
+    declare a currency and they differ, the link carries a review note.
 
     template_context = (numfmt_by_cell, magnitudes_by_row, dates_by_col) read from the
     template snapshot: lets scale be decided by MAGNITUDE reconciliation (robust) and
@@ -142,12 +141,13 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             tpl_unit = resolve_unit(display_unit)
         tpl_mags = mags_by_row.get((sheet, f.get("row")), [])
 
-        # COUNTS (headcount/FTEs) are dimensionless: never magnitude-rescaled and
-        # never FX-converted — the money-scale fallback once turned 512 FTEs into
-        # 0.000512. Detected from either side's label (the source sheet's currency
-        # banner routinely mislabels count rows as money).
+        # COUNTS (headcount/FTEs) are dimensionless: never magnitude-rescaled —
+        # the money-scale fallback once turned 512 FTEs into 0.000512. Detected
+        # from either side's label (the source sheet's currency banner routinely
+        # mislabels count rows as money).
+        ccy_flag = None
         if is_count_like(f.get("metric_label")) or is_count_like(series.label):
-            scale, sflag, fx_mult, fxflag = 1.0, None, 1.0, None
+            scale, sflag = 1.0, None
         else:
             # SCALE by magnitude reconciliation (labels are unreliable); flag if unverified.
             scale, sflag = resolve_scale(series.sample, tpl_mags, series.unit, tpl_unit,
@@ -155,30 +155,24 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             if scale is None:
                 unmatched.append(_unmatched(f, f"unit/scale unresolved ({sflag}); supply display_unit or check formats"))
                 continue
-
-            # currency, folded into the scale — money only. Percent/ratio rows
-            # would otherwise collect fx flags whenever a target currency is set.
-            if series.unit.kind in ("percent", "ratio") or tpl_unit.kind in ("percent", "ratio"):
-                fx_mult, fxflag = 1.0, None
-            else:
-                tgt_ccy = f.get("currency") or target_currency
-                fx_mult, fxflag = fx.multiplier(series.unit.currency, tgt_ccy, fx_rate)
-                if fx_mult is None:
-                    unmatched.append(_unmatched(f, fxflag))
-                    continue
+            # No FX in the system: values are written as-is. When both sides
+            # declare a currency and they differ, note it so the audit is honest.
+            src_ccy, tpl_ccy = series.unit.currency, f.get("currency")
+            if series.unit.kind == "money" and src_ccy and tpl_ccy and src_ccy != tpl_ccy:
+                ccy_flag = f"currency_unverified:{src_ccy}->{tpl_ccy}"
 
         source_cell = f"{_col_letters(col)}{series.row}"
         note = f"{series.label} @ {series.sheet}"
         if sflag:
             note += f" [{sflag}]"
-        if fxflag:   # filled, but one side's currency was undetectable — review it
-            note += f" [{fxflag}]"
+        if ccy_flag:   # written as-is despite differing declared currencies — review it
+            note += f" [{ccy_flag}]"
         links.append(CellLink(
             template_sheet=f.get("sheet_name"),
             template_cell=f.get("cell"),
             source_sheet=series.sheet,
             source_cell=source_cell,
-            unit_scale=scale * fx_mult,
+            unit_scale=scale,
             sign_flip=mm.sign_flip,
             confidence=mm.confidence,
             note=note,

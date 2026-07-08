@@ -298,8 +298,6 @@ async def populate_route(
     as_of_date: str | None = None,
     dry_run: bool = False,
     display_unit: str | None = None,
-    target_currency: str | None = None,
-    fx_rate: float | None = None,
 ) -> dict:
     if not settings.configured:
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
@@ -310,8 +308,7 @@ async def populate_route(
         with _single_run("populate", target_template_id):
             return await run_in_threadpool(
                 partial(populate_from_bytes, target_template_id, filename, data, as_of_date,
-                        display_unit=display_unit, target_currency=target_currency,
-                        fx_rate=fx_rate, dry_run=dry_run)
+                        display_unit=display_unit, dry_run=dry_run)
             )
     except SpendCapExceeded as e:
         # 402: the run hit its spend cap and was aborted before overspending.

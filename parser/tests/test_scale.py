@@ -121,6 +121,5 @@ def test_bind_uses_template_magnitudes_to_scale_with_no_labels():
     ctx = ({("Model", "B10"): "#,##0.0"}, {("Model", 10): [11.9, 12.0]})
     links, unmatched = bind([_fact()], cat, maps, _demand(), template_context=ctx)
     assert not unmatched and links[0].unit_scale == 1e-6
-    # magnitude-confirmed -> no SCALE review flag. (An fx_unverified flag is fine
-    # here: the source declares no currency, which is a separate review signal.)
+    # magnitude-confirmed -> no SCALE review flag
     assert not (links[0].note and "scale_unverified" in links[0].note)

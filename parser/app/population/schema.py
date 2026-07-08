@@ -3,7 +3,7 @@
 The LLM never reads or writes numbers: its only output is a meaning mapping
 (MetricMap) from a template metric to a source SERIES. Deterministic code
 (catalogue → binding → apply) reads the real value from the source snapshot at the
-bound address, scales/signs/FX-converts it, and writes it into the template cell
+bound address, scales/signs it, and writes it into the template cell
 with full attribution.
 """
 
@@ -54,7 +54,7 @@ class PopulationResult(_M):
 class MetricMap(_M):
     """One template metric mapped to one source SERIES (a labelled row across the
     source's period columns). The LLM decides MEANING only; deterministic binding
-    reads the values, scales, aligns periods, and applies FX."""
+    reads the values, scales, and aligns periods."""
     metric: str                   # template metric key (canonical_metric or metric_label)
     series_id: str | None = None  # source series id from the catalogue, or null if none fits
     sign_flip: bool = False       # source/template sign conventions differ (e.g. costs +ve in source)

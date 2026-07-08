@@ -43,8 +43,8 @@ class Unit:
     kind: str               # money | percent | ratio | unknown
 
 
-# Count-type series (headcount, FTEs): dimensionless — never magnitude-rescaled,
-# never FX-converted. The money words ('Employee costs', 'Revenue per FTE')
+# Count-type series (headcount, FTEs): dimensionless — never magnitude-rescaled.
+# The money words ('Employee costs', 'Revenue per FTE')
 # must NOT match: a count word next to cost/expense/per means money.
 _COUNT = re.compile(r"(?i)\b(headcount|head\s*count|fte|ftes|employees|staff)\b")
 _NOT_COUNT = re.compile(r"(?i)cost|expense|salar|compensation|\bper\b")

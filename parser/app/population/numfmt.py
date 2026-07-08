@@ -37,7 +37,12 @@ def parse_number_format(fmt: str | None) -> Unit:
     f = fmt
     low = f.lower()
 
-    if "%" in f:
+    # Percent must be a BARE '%': '_%' is a spacing directive (gap as wide as %)
+    # and '\%' a displayed literal — neither makes Excel scale the value by 100.
+    # Accounting formats like '_(* #,##0.0_)_%;...' are MONEY; reading them as
+    # percent once blocked every money fill into a production template.
+    semantic = re.sub(r"_.|\\.", "", _BRACKETS_OR_LITERALS.sub("", f))
+    if "%" in semantic:
         return Unit(None, None, "percent")
     # a multiple: 0.00"x" / 0.0x / #,##0.0\x
     if re.search(r'(?:"x"|\\x|(?<=0)x)\s*;?', low) or low.rstrip(';').endswith("x"):

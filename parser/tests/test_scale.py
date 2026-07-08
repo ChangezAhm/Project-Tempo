@@ -24,6 +24,19 @@ def test_parse_number_format_kind_and_currency():
     assert parse_number_format(None).kind == "unknown"
 
 
+def test_accounting_spacing_percent_is_not_percent():
+    # '_%' is an Excel SPACING directive (gap as wide as '%'), not a percent.
+    # This exact format is the production flash template's money format — it was
+    # read as percent and the kind guard then blocked every money fill.
+    acct = r"_(* #,##0.0_)_%;* \(#,##0.0\)_%;_-??_-;_-@_-"
+    u = parse_number_format(acct)
+    assert u.kind == "money" and u.currency is None
+    # an escaped literal '\%' doesn't scale the value either -> money
+    assert parse_number_format(r"0.0\%").kind == "money"
+    # a genuine percent format is unchanged
+    assert parse_number_format("0.0%").kind == "percent"
+
+
 def test_bare_locale_tag_on_date_format_is_not_money():
     # '[$-409]' is a locale prefix (empty symbol before the dash) on a DATE
     # format — its '$' must not read as USD money.

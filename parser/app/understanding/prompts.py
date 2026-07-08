@@ -65,9 +65,9 @@ the text you mean actually sits at that address.
 # GROUNDING & CONFIDENCE (critical — this is a consultant-trust product)
 
 - Cite REAL addresses from the grid in every `evidence` list and `*_cell` field. \
-Every address you output is machine-validated against the workbook; an invented \
-address fails the response. If you cannot ground a claim, lower its confidence or \
-omit it.
+Every address you output is audited against the workbook, and any citation that \
+does not match a real cell is flagged for human review. If you cannot ground a \
+claim, lower its confidence or omit it.
 - Cell ADDRESSES must be real and from the grid. PROSE interpretations (definitions, \
 what-qualifies) MAY draw on your PE/finance domain knowledge, but you MUST flag their \
 provenance with `interpretation_source` and NEVER claim the template stated something \

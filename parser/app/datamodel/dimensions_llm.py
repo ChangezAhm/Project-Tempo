@@ -3,11 +3,13 @@ derivation leaves `unknown` (basis flow-vs-point-in-time, canonical metric name,
 config-vs-data), grounded in the sheet/role/label context Layer 3 already
 extracted.
 
-One Opus call per workbook, working on the *distinct metrics* (~hundreds), not
-every fact. Output is written as `created_by='llm-enrichment'` corrections, so
-it reuses the corrections machinery: it re-applies on every derive (cached — no
-repeat LLM call), is **fill-only** (never overrides a deterministic value), and
-is overridden by user corrections. Re-running replaces the prior LLM batch.
+Works on the *distinct metrics* (~hundreds), not every fact, batched ~80 per
+call (mirroring population/mapping.py) so a big workbook can't blow past
+max_tokens and lose the whole run to a truncated reply. Output is written as
+`created_by='llm-enrichment'` corrections, so it reuses the corrections
+machinery: it re-applies on every derive (cached — no repeat LLM call), is
+**fill-only** (never overrides a deterministic value), and is overridden by
+user corrections. Re-running replaces the prior LLM batch.
 """
 
 from __future__ import annotations
@@ -19,14 +21,25 @@ from pydantic import BaseModel, ConfigDict
 
 from app import supabase_client as sb
 from app.datamodel.persist import derive_and_persist, get_data_model
+from app.datamodel.schema import Basis
 from app.llm import MODEL, get_client
 from app.population.cost import (
-    SpendGuard, default_onboarding_cap_usd, estimate_call_usd, get_guard, set_guard,
+    SpendCapExceeded, SpendGuard, default_onboarding_cap_usd, estimate_call_usd,
+    get_guard, set_guard,
 )
 from app.understanding.per_sheet import _extract_json, to_strict_schema
 
 logger = logging.getLogger(__name__)
 _LLM = "llm-enrichment"
+_BATCH = 80   # metrics per call — mirrors population/mapping.py's batch size
+
+# What the LLM may legally write into a correction patch. basis must be a real
+# Basis member ('unknown' is the no-op default, filtered separately); category
+# corrections are limited to the re-categorisations schema.py documents ('data'
+# is the default, so only config/exclude are patches) — 'sourced'/'computed' are
+# derived deterministically from formulas and never LLM-assigned.
+_VALID_BASIS = {b.value for b in Basis} - {Basis.unknown.value}
+_VALID_CATEGORY = {"config", "exclude"}
 
 
 class _M(BaseModel):
@@ -60,7 +73,9 @@ SYSTEM = (
 )
 
 
-def _call(user_text: str, max_tokens: int = 32000):
+# max_tokens is sized for one ~80-metric batch (a few KB of JSON + adaptive
+# thinking), not the whole workbook — the old 32k single-call budget is gone.
+def _call(user_text: str, max_tokens: int = 16000):
     guard = get_guard()
     if guard is not None:
         guard.check(estimate_call_usd(MODEL, len(SYSTEM) + len(user_text), max_tokens))
@@ -74,6 +89,41 @@ def _call(user_text: str, max_tokens: int = 32000):
     if msg.stop_reason == "max_tokens":
         raise RuntimeError(f"Enrichment truncated at max_tokens={max_tokens} — raise it.")
     return msg, next((b.text for b in msg.content if b.type == "text"), "")
+
+
+def _classify_batch(items: list[dict]) -> tuple[list[DimAssignment], tuple[int, int]]:
+    """One LLM call for one batch of metrics. Returns (assignments, (in_tok, out_tok))."""
+    user_text = (
+        f"Metrics to classify ({len(items)}):\n{json.dumps(items)}\n\n"
+        "## OUTPUT\nReturn ONLY a JSON object matching this schema:\n" + json.dumps(_SCHEMA)
+    )
+    msg, text = _call(user_text)
+    try:
+        parsed = DimAssignments.model_validate(json.loads(_extract_json(text)))
+    except Exception as e:  # one corrective retry
+        logger.warning("enrichment parse failed (%s); retrying", e)
+        msg, text = _call(user_text + f"\n\nThat did not parse ({e}). Return ONLY the corrected JSON.")
+        parsed = DimAssignments.model_validate(json.loads(_extract_json(text)))
+    return parsed.assignments, (msg.usage.input_tokens, msg.usage.output_tokens)
+
+
+def _validated_patch(a: DimAssignment) -> dict:
+    """LLM strings → correction patch. Values outside the legal enums are dropped
+    with a warning rather than persisted as garbage corrections."""
+    patch: dict = {}
+    if a.canonical_metric:
+        patch["canonical_metric"] = a.canonical_metric
+    if a.basis and a.basis != "unknown":       # 'unknown' = nothing to fill
+        if a.basis in _VALID_BASIS:
+            patch["basis"] = a.basis
+        else:
+            logger.warning("enrichment: dropping invalid basis %r (metric id %d)", a.basis, a.id)
+    if a.category and a.category != "data":    # 'data' is already the default
+        if a.category in _VALID_CATEGORY:
+            patch["category"] = a.category
+        else:
+            logger.warning("enrichment: dropping invalid category %r (metric id %d)", a.category, a.id)
+    return patch
 
 
 def enrich(template_id: str) -> dict:
@@ -98,30 +148,33 @@ def enrich(template_id: str) -> dict:
     items = [{"id": i, "sheet": key[0], "role": roles.get(key[0]), "label": key[1], "unit": metrics[key]["unit"]}
              for i, key in idx.items()]
 
-    user_text = (
-        f"Metrics to classify ({len(items)}):\n{json.dumps(items)}\n\n"
-        "## OUTPUT\nReturn ONLY a JSON object matching this schema:\n" + json.dumps(_SCHEMA)
-    )
-    msg, text = _call(user_text)
-    try:
-        parsed = DimAssignments.model_validate(json.loads(_extract_json(text)))
-    except Exception as e:  # one corrective retry
-        logger.warning("enrichment parse failed (%s); retrying", e)
-        msg, text = _call(user_text + f"\n\nThat did not parse ({e}). Return ONLY the corrected JSON.")
-        parsed = DimAssignments.model_validate(json.loads(_extract_json(text)))
+    # Batched calls: a failed batch (after its retry) is dropped LOUDLY — logged
+    # and counted, so the run report can say why enrichment coverage is low —
+    # instead of killing a paid run. A blown spend cap still aborts everything.
+    assignments: list[DimAssignment] = []
+    usage = {"input_tokens": 0, "output_tokens": 0}
+    failed = 0
+    for i in range(0, len(items), _BATCH):
+        chunk = items[i:i + _BATCH]
+        try:
+            got, (in_tok, out_tok) = _classify_batch(chunk)
+        except SpendCapExceeded:
+            raise
+        except Exception:  # noqa: BLE001
+            failed += 1
+            logger.exception("enrichment batch %d-%d failed after retry — %d metrics unenriched",
+                             i, i + len(chunk), len(chunk))
+            continue
+        assignments.extend(got)
+        usage["input_tokens"] += in_tok
+        usage["output_tokens"] += out_tok
 
     rows = []
-    for a in parsed.assignments:
+    for a in assignments:
         key = idx.get(a.id)
         if not key:
             continue
-        patch: dict = {}
-        if a.canonical_metric:
-            patch["canonical_metric"] = a.canonical_metric
-        if a.basis and a.basis not in ("unknown", None):
-            patch["basis"] = a.basis
-        if a.category and a.category not in ("data", None):
-            patch["category"] = a.category
+        patch = _validated_patch(a)
         if patch:
             rows.append({"target": "metric", "match": {"sheet_name": key[0], "metric_label": key[1]},
                          "patch": patch, "note": "LLM enrichment", "created_by": _LLM})
@@ -131,7 +184,8 @@ def enrich(template_id: str) -> dict:
     return {
         "metrics": len(items),
         "corrections_written": written,
-        "usage": {"input_tokens": msg.usage.input_tokens, "output_tokens": msg.usage.output_tokens},
+        "failed_batches": failed,
+        "usage": usage,
     }
 
 

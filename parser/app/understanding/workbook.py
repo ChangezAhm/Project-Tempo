@@ -23,6 +23,7 @@ from langsmith import traceable
 
 from app import supabase_client as sb
 from app.llm import MODEL, get_client
+from app.population import source_cache
 from app.population.cost import (
     SpendCapExceeded, SpendGuard, default_onboarding_cap_usd, estimate_call_usd,
     get_guard, set_guard,
@@ -31,14 +32,17 @@ from app.pipeline import _cell_rc, build_dependents_index, trace_impact
 from app.understanding.per_sheet import _extract_json, to_strict_schema, understand_sheet
 from app.understanding.prompts import SYNTHESIZE_SYSTEM, build_synth_user
 from app.understanding.run import _annotations, _hints, _workbook_ctx
-from app.understanding.schema import WorkbookUnderstanding
+from app.understanding.schema import SheetUnderstanding, WorkbookUnderstanding
 from app.understanding.sheet_image import render_sheet_tiles
 
 logger = logging.getLogger(__name__)
 
 _MAX_SHEET_ATTEMPTS = 3
+# 429s are the expected failure mode with parallel Opus+vision workers — a
+# rate-limited sheet must be retried, never dropped as a permanent failure.
 _TRANSIENT = ("connection", "peer closed", "incomplete chunked", "timeout", "timed out",
-              "overloaded", "econnreset", "reset by peer", "503", "502", "529", "remote end closed")
+              "overloaded", "econnreset", "reset by peer", "503", "502", "529", "429",
+              "rate_limit", "too many requests", "remote end closed")
 
 
 def _is_transient(e: Exception) -> bool:
@@ -48,6 +52,23 @@ def _is_transient(e: Exception) -> bool:
 
 _DUMP_NAME_RE = re.compile(r"(?i)(pbi|raw|dump|backup|_old|^old|depr)")
 _SYNTH_SCHEMA = to_strict_schema(WorkbookUnderstanding)
+
+# Per-sheet results are cached on disk BEFORE synthesis so a crash at the end
+# (synthesis + its one corrective retry both failing) doesn't discard the
+# expensive Opus+vision calls — a re-run serves them from cache for free. The
+# key includes the template version, so a re-uploaded template never reuses old
+# results. Bump this constant whenever prompts.SYSTEM or the SheetUnderstanding
+# schema changes shape — that invalidates every cached result built under them.
+_SHEET_CACHE_VERSION = 1
+
+
+def _sheet_cache_key(version_id: str, sheet_name: str) -> str:
+    # Sheet names can carry characters unsafe in a filename; the slug keeps the
+    # key readable and the name-hash suffix keeps distinct names from colliding
+    # after slugging.
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "_", sheet_name)
+    tag = source_cache.content_hash(sheet_name.encode("utf-8"))[:8]
+    return f"sheet-und-{version_id}-{slug}-{tag}-v{_SHEET_CACHE_VERSION}"
 
 
 # --- cross-sheet dependency edges (shared by route, synth-context, verify) ---
@@ -224,7 +245,11 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
     by_name = {s["name"]: s for s in snap["sheets"]}
 
     routes = route_sheets(snap)
-    deep = [r["sheet"] for r in routes if r["deep"]][:max_sheets]
+    deep_all = [r["sheet"] for r in routes if r["deep"]]
+    deep = deep_all[:max_sheets]
+    # Content sheets beyond the cap are excluded entirely — that must never
+    # happen silently, so they get a review flag (like failed_sheets) below.
+    skipped_sheets = deep_all[max_sheets:]
 
     # Download the workbook ONCE; render each routed sheet's image (sequential —
     # Aspose isn't concurrency-safe), then fan out the LLM calls.
@@ -237,11 +262,16 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
         tmp.write_bytes(data)
         for sheet_name in deep:
             sheet = by_name[sheet_name]
-            try:
-                imgs = render_sheet_tiles(tmp, sheet_name)
-            except Exception as e:  # noqa: BLE001 — image is optional; fall back to the text grid
-                logger.warning("image render failed for %s (%s) — understanding text-only", sheet_name, e)
+            if source_cache.get(_sheet_cache_key(version_id, sheet_name)) is not None:
+                # Cached result — _run serves it without an Opus call, so the
+                # render (the only other per-sheet cost) would be thrown away.
                 imgs = []
+            else:
+                try:
+                    imgs = render_sheet_tiles(tmp, sheet_name)
+                except Exception as e:  # noqa: BLE001 — image is optional; fall back to the text grid
+                    logger.warning("image render failed for %s (%s) — understanding text-only", sheet_name, e)
+                    imgs = []
             jobs.append((
                 sheet, imgs,
                 _annotations(sheet), _workbook_ctx(snap), _hints(snap, sheet_name),
@@ -250,12 +280,36 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
         tmp.unlink(missing_ok=True)
 
     def _run(job):
+        key = _sheet_cache_key(version_id, job[0]["name"])
+        cached = source_cache.get(key)
+        if cached is not None:
+            try:
+                result = {
+                    "understanding": SheetUnderstanding.model_validate(cached["understanding"]),
+                    "grounding": cached.get("grounding") or {},
+                    # Replays the tokens the cached call originally cost, so the
+                    # persisted usage still reflects what the understanding cost
+                    # to produce (no new spend happens on this path).
+                    "usage": cached["usage"],
+                }
+            except Exception as e:  # noqa: BLE001 — a corrupt entry falls through to a live call
+                logger.warning("per-sheet cache entry unusable for %s (%s) — calling live", job[0]["name"], e)
+            else:
+                logger.info("per-sheet understanding cache HIT for %s — skipping Opus call", job[0]["name"])
+                return result
         # Retry transient API/connection failures (flaky network, dropped streams,
-        # overloaded) — these are common with large image payloads and shouldn't
-        # lose a whole sheet. A genuine error fails after the retries.
+        # overloaded, rate-limited) — these are common with large image payloads
+        # and parallel workers, and shouldn't lose a whole sheet. A genuine error
+        # fails after the retries.
         for attempt in range(_MAX_SHEET_ATTEMPTS):
             try:
-                return understand_sheet(*job)
+                res = understand_sheet(*job)
+                source_cache.put(key, {
+                    "understanding": res["understanding"].model_dump(mode="json"),
+                    "grounding": res["grounding"],
+                    "usage": res["usage"],
+                })
+                return res
             except SpendCapExceeded:
                 raise  # the cap is a hard stop, never a per-sheet "failure" to retry/swallow
             except Exception as e:  # noqa: BLE001
@@ -280,6 +334,9 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
     failed_sheets = [jobs[i][0]["name"] for i, r in enumerate(results) if not r]
 
     understandings = [r["understanding"] for r in sheet_results]
+    # The grounding audit (cited addresses vs the real grid) travels with each
+    # sheet so persist can store it — it's the consultant-trust evidence trail.
+    groundings = {r["understanding"].sheet_name: r["grounding"] for r in sheet_results}
     in_tok = sum(r["usage"]["input_tokens"] for r in sheet_results)
     out_tok = sum(r["usage"]["output_tokens"] for r in sheet_results)
 
@@ -290,12 +347,20 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
             "Per-sheet understanding FAILED for these routed sheets, so they are "
             f"EXCLUDED from this analysis: {failed_sheets}. Re-run to retry."
         )
+    if skipped_sheets:
+        wb.review_flags.append(
+            f"Sheet cap reached (max_sheets={max_sheets}) — these content sheets were "
+            f"EXCLUDED from this analysis: {skipped_sheets}. Raise max_sheets and re-run "
+            "to include them."
+        )
 
     return {
         "workbook": wb,
         "sheet_understandings": understandings,
+        "sheet_groundings": groundings,
         "routes": routes,
         "deep_sheets": deep,
+        "skipped_sheets": skipped_sheets,
         "failed_sheets": failed_sheets,
         "verify": verify_summary,
         "usage": {

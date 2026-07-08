@@ -2,7 +2,8 @@
 
 Calls Opus 4.8 with the SheetUnderstanding schema enforced (structured outputs),
 adaptive thinking on, streamed (large outputs). Traced in LangSmith via the
-wrapped client + @traceable. Validates that cited cells are real.
+wrapped client + @traceable. Audits cited cells against the grid — unmatched
+citations are flagged in the grounding report for review, not rejected.
 """
 
 from __future__ import annotations

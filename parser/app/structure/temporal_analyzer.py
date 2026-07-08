@@ -20,17 +20,26 @@ _MONTHS = {
     "october": 10, "november": 11, "december": 12,
 }
 
+# A month token must be a whole word: \b stops "Summary"/"Primary" matching "mar",
+# and the explicit full-name alternation + (?![a-z]) stops "Marketing" matching
+# "mar" + [a-z]* garbage. (?!\d) after the year keeps \d{2,4} from grabbing a
+# prefix of a longer digit run, while still allowing suffixes like "FY25E".
+_MONTH_TOKEN = (
+    r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?"
+    r"|aug(?:ust)?|sep(?:tember|t)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?![a-z])"
+)
 _MONTH_YR = re.compile(
-    r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s\-_./]?(\d{2,4})",
+    r"\b" + _MONTH_TOKEN + r"[\s\-_./]?(\d{2,4})(?!\d)",
     re.IGNORECASE,
 )
 _YR_MONTH = re.compile(
-    r"(\d{4})[\s\-_./](jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*",
+    r"(?<!\d)(\d{4})[\s\-_./]" + _MONTH_TOKEN,
     re.IGNORECASE,
 )
-_QUARTER = re.compile(r"Q([1-4])[\s\-_./]?(\d{2,4})", re.IGNORECASE)
-_YR_QUARTER = re.compile(r"(\d{4})[\s\-_./]?Q([1-4])", re.IGNORECASE)
-_FY = re.compile(r"FY[\s\-_]?(\d{2,4})", re.IGNORECASE)
+_QUARTER = re.compile(r"\bQ([1-4])[\s\-_./]?(\d{2,4})(?!\d)", re.IGNORECASE)
+_YR_QUARTER = re.compile(r"(?<!\d)(\d{4})[\s\-_./]?Q([1-4])(?!\d)", re.IGNORECASE)
+# \b so "Qualify 25" / "notify 25" can't match the trailing "fy".
+_FY = re.compile(r"\bFY[\s\-_]?(\d{2,4})(?!\d)", re.IGNORECASE)
 _YTD = re.compile(r"\bYTD\b|year[\s\-]to[\s\-]date", re.IGNORECASE)
 _LTM = re.compile(r"\bLTM\b|\bTTM\b|last twelve|trailing twelve", re.IGNORECASE)
 _BUDGET = re.compile(r"\bbudget\b|\bforecast\b|\bplan\b|\btarget\b", re.IGNORECASE)
@@ -102,7 +111,19 @@ def detect_periods(
 
     periods.sort(key=lambda p: p.col)
 
-    # Fallback: no CURRENT → promote the rightmost historical (most recent).
+    # Actual→Forecast boundary: last actual before first forecast = current.
+    # Runs BEFORE the positional fallback: the author's explicit Actual/Forecast
+    # markers are a stronger signal than "rightmost historical", and running the
+    # fallback afterwards could crown a second CURRENT column.
+    if actual_cols and (forecast_cols or budget_cols):
+        last_actual = max(actual_cols)
+        first_forecast = min(forecast_cols | budget_cols)
+        if last_actual < first_forecast:
+            for p in periods:
+                if p.col == last_actual and p.status != PeriodStatus.BUDGET:
+                    p.status = PeriodStatus.CURRENT
+
+    # Fallback: still no CURRENT → promote the rightmost historical (most recent).
     has_current = any(p.status == PeriodStatus.CURRENT for p in periods)
     if not has_current and periods:
         historicals = [p for p in periods if p.status == PeriodStatus.HISTORICAL]
@@ -112,15 +133,6 @@ def detect_periods(
             non_budget = [p for p in periods if p.status != PeriodStatus.BUDGET]
             if non_budget:
                 non_budget[-1].status = PeriodStatus.CURRENT
-
-    # Actual→Forecast boundary: last actual before first forecast = current.
-    if actual_cols and (forecast_cols or budget_cols):
-        last_actual = max(actual_cols)
-        first_forecast = min(forecast_cols | budget_cols)
-        if last_actual < first_forecast:
-            for p in periods:
-                if p.col == last_actual and p.status != PeriodStatus.BUDGET:
-                    p.status = PeriodStatus.CURRENT
 
     for p in periods:
         p.sheet_name = sheet_name

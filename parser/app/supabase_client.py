@@ -132,23 +132,57 @@ def replace_sheets(version_id: str, rows: list[dict]) -> None:
 SNAPSHOT_BUCKET = "template-snapshots"
 
 
-def ensure_snapshot_bucket() -> None:
+def _ensure_bucket(name: str) -> None:
+    """Create a private bucket if it doesn't exist. Creation failure is logged
+    (not raised) — the subsequent upload surfaces the real error with context."""
     sb = get_client()
     try:
         existing = {b.name for b in sb.storage.list_buckets()}
-    except Exception:
-        existing = set()
-    if SNAPSHOT_BUCKET in existing:
+    except Exception as e:  # noqa: BLE001 — some keys can't list; upload may still work
+        logger.warning("Could not list storage buckets (%s); assuming '%s' exists", e, name)
         return
-    for opts in ({"public": False}, None):
+    if name in existing:
+        return
+    last_err: Exception | None = None
+    for opts in ({"public": False}, None):  # options kwarg varies by client version
         try:
             if opts is None:
-                sb.storage.create_bucket(SNAPSHOT_BUCKET)
+                sb.storage.create_bucket(name)
             else:
-                sb.storage.create_bucket(SNAPSHOT_BUCKET, options=opts)
+                sb.storage.create_bucket(name, options=opts)
             return
-        except Exception:
-            continue
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+    logger.warning("Could not create storage bucket '%s': %s", name, last_err)
+
+
+def _is_duplicate_error(e: Exception) -> bool:
+    """True only for 'object already exists' storage conflicts — auth, missing
+    bucket, and network errors must propagate, not trigger remove-and-retry."""
+    msg = str(e).lower()
+    status = str(getattr(e, "status", None) or getattr(e, "status_code", "") or "")
+    return "duplicate" in msg or "already exists" in msg or "409" in status or "409" in msg
+
+
+def _upload_with_replace(bucket: str, path: str, data: bytes, content_type: str) -> str:
+    """Upload with upsert; if the backend still reports a duplicate (older
+    storage servers ignore the upsert flag), remove and re-upload."""
+    store = get_client().storage.from_(bucket)
+    try:
+        store.upload(path, data, {"content-type": content_type, "upsert": "true"})
+    except Exception as e:
+        if not _is_duplicate_error(e):
+            raise
+        try:
+            store.remove([path])
+        except Exception:  # noqa: BLE001 — the retry upload surfaces the real failure
+            pass
+        store.upload(path, data, {"content-type": content_type})
+    return path
+
+
+def ensure_snapshot_bucket() -> None:
+    _ensure_bucket(SNAPSHOT_BUCKET)
 
 
 def _snapshot_path(version_id: str) -> str:
@@ -157,20 +191,9 @@ def _snapshot_path(version_id: str) -> str:
 
 def upload_snapshot(version_id: str, gz_bytes: bytes) -> str:
     ensure_snapshot_bucket()
-    sb = get_client()
-    path = _snapshot_path(version_id)
-    store = sb.storage.from_(SNAPSHOT_BUCKET)
-    opts = {"content-type": "application/gzip", "upsert": "true"}
-    try:
-        store.upload(path, gz_bytes, opts)
-    except Exception:
-        # Path exists and upsert wasn't honoured — replace it.
-        try:
-            store.remove([path])
-        except Exception:
-            pass
-        store.upload(path, gz_bytes, {"content-type": "application/gzip"})
-    return path
+    return _upload_with_replace(
+        SNAPSHOT_BUCKET, _snapshot_path(version_id), gz_bytes, "application/gzip"
+    )
 
 
 def download_snapshot(version_id: str) -> bytes:
@@ -216,40 +239,14 @@ def _sanitize(name: str) -> str:
 
 
 def ensure_snippets_bucket() -> None:
-    sb = get_client()
-    try:
-        existing = {b.name for b in sb.storage.list_buckets()}
-    except Exception:
-        existing = set()
-    if SNIPPET_BUCKET in existing:
-        return
-    for opts in ({"public": False}, None):
-        try:
-            if opts is None:
-                sb.storage.create_bucket(SNIPPET_BUCKET)
-            else:
-                sb.storage.create_bucket(SNIPPET_BUCKET, options=opts)
-            return
-        except Exception:
-            continue
+    _ensure_bucket(SNIPPET_BUCKET)
 
 
 def upload_snippet(version_id: str, sheet_name: str, png: bytes) -> str:
     """Store a sheet snippet PNG; returns its storage path (private bucket)."""
     ensure_snippets_bucket()
-    sb = get_client()
     path = f"{version_id}/{_sanitize(sheet_name)}.png"
-    store = sb.storage.from_(SNIPPET_BUCKET)
-    opts = {"content-type": "image/png", "upsert": "true"}
-    try:
-        store.upload(path, png, opts)
-    except Exception:
-        try:
-            store.remove([path])
-        except Exception:
-            pass
-        store.upload(path, png, {"content-type": "image/png"})
-    return path
+    return _upload_with_replace(SNIPPET_BUCKET, path, png, "image/png")
 
 
 def signed_snippet_url(path: str, expires_in: int = 3600) -> str | None:
@@ -283,63 +280,60 @@ def _safe_label(label: str) -> str:
 def upload_filled(target_version_id: str, source_label: str, data: bytes) -> str:
     """Store a populated workbook; returns its storage path (private bucket).
     ``source_label`` is an arbitrary source filename — slugged into a safe key."""
-    sb = get_client()
-    try:
-        existing = {b.name for b in sb.storage.list_buckets()}
-    except Exception:
-        existing = set()
-    if FILLED_BUCKET not in existing:
-        for opts in ({"public": False}, None):
-            try:
-                sb.storage.create_bucket(FILLED_BUCKET, options=opts) if opts else sb.storage.create_bucket(FILLED_BUCKET)
-                break
-            except Exception:
-                continue
+    _ensure_bucket(FILLED_BUCKET)
     path = f"{target_version_id}/{_safe_label(source_label)}.xlsx"
-    store = sb.storage.from_(FILLED_BUCKET)
-    try:
-        store.upload(path, data, {"content-type": _XLSX, "upsert": "true"})
-    except Exception:
-        try:
-            store.remove([path])
-        except Exception:
-            pass
-        store.upload(path, data, {"content-type": _XLSX})
-    return path
+    return _upload_with_replace(FILLED_BUCKET, path, data, _XLSX)
 
 
 def upload_audit(target_version_id: str, source_label: str, data: bytes) -> str:
     """Store a population run's JSON audit alongside its filled workbook; returns
     the storage path (same private bucket)."""
-    store = get_client().storage.from_(FILLED_BUCKET)
     path = f"{target_version_id}/{_safe_label(source_label)}.audit.json"
-    try:
-        store.upload(path, data, {"content-type": "application/json", "upsert": "true"})
-    except Exception:
-        try:
-            store.remove([path])
-        except Exception:
-            pass
-        store.upload(path, data, {"content-type": "application/json"})
-    return path
+    return _upload_with_replace(FILLED_BUCKET, path, data, "application/json")
 
 
 def signed_filled_url(path: str, expires_in: int = 3600) -> str | None:
     return _signed_url(FILLED_BUCKET, path, expires_in)
 
 
+def _replace_one_guarded(table: str, version_id: str, row: dict) -> None:
+    """Replace a version's single row in an understanding table. These rows are
+    expensive LLM output (Opus) and not re-derivable from local state, so
+    delete-then-insert carries a compensating guard: on insert failure, restore
+    the previous rows (best-effort) before re-raising. Cheaply re-derivable
+    tables (replace_rows/replace_sheets) deliberately don't get this."""
+    sb = get_client()
+    prior = (
+        sb.table(table).select("*").eq("template_version_id", version_id).execute().data or []
+    )
+    sb.table(table).delete().eq("template_version_id", version_id).execute()
+    try:
+        sb.table(table).insert({**row, "template_version_id": version_id}).execute()
+    except Exception:
+        if prior:
+            try:
+                sb.table(table).insert(prior).execute()
+                logger.error(
+                    "Insert into %s failed for version %s — previous row restored",
+                    table, version_id,
+                )
+            except Exception as restore_err:  # noqa: BLE001
+                logger.critical(
+                    "Insert into %s failed for version %s AND restoring the previous "
+                    "row failed (%s) — expensive understanding data lost",
+                    table, version_id, restore_err,
+                )
+        raise
+
+
 def upsert_understanding(version_id: str, row: dict) -> None:
     """One workbook-understanding row per version: replace it."""
-    sb = get_client()
-    sb.table("template_understanding").delete().eq("template_version_id", version_id).execute()
-    sb.table("template_understanding").insert({**row, "template_version_id": version_id}).execute()
+    _replace_one_guarded("template_understanding", version_id, row)
 
 
 def upsert_data_model(version_id: str, row: dict) -> None:
     """One data-model summary row per version: replace it."""
-    sb = get_client()
-    sb.table("template_data_model").delete().eq("template_version_id", version_id).execute()
-    sb.table("template_data_model").insert({**row, "template_version_id": version_id}).execute()
+    _replace_one_guarded("template_data_model", version_id, row)
 
 
 # --- Template contract + corrections (template-level, span versions) -------

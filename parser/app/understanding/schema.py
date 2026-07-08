@@ -40,8 +40,8 @@ class _Strict(BaseModel):
     # occasionally attaches a field the schema doesn't have (e.g. `evidence` on a
     # model that lacks it); forbidding extras would drop the whole sheet. The
     # prompt schema (to_strict_schema) still tells the model exactly what to emit,
-    # and the grounding report still validates cited cells — so reliability wins
-    # without losing correctness.
+    # and the grounding report still audits cited cells (unmatched citations are
+    # flagged for review) — so reliability wins without losing correctness.
     model_config = ConfigDict(extra="ignore")
 
 

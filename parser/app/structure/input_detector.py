@@ -134,10 +134,13 @@ def build_input_fields(
                 for col in input_cols
             )
 
+            # Emptiness is None/"" only — a literal 0 is an entered value, not a
+            # gap (matches the L3 rule in understanding/prompts.py: a formula
+            # returning "" or a literal 0 is NOT empty).
             needs_collection = False
             if current_period_col and current_period_col in input_cols:
                 cell = sheet_cells.get((mr.row, current_period_col))
-                if cell is None or cell.value is None or cell.value == 0 or cell.value == "":
+                if cell is None or cell.value is None or cell.value == "":
                     needs_collection = True
 
             row_dependents: list[str] = []

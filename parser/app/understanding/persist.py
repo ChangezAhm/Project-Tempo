@@ -16,15 +16,14 @@ import tempfile
 from pathlib import Path
 
 from app import supabase_client as sb
+from app.llm import MODEL_SMART
 from app.raw_extraction.column_utils import column_index, column_letter
-from app.understanding.run import _annotations  # noqa: F401 (kept for parity / future use)
 from app.understanding.sheet_image import render_sheet_png
 from app.understanding.workbook import understand_workbook
 
 logger = logging.getLogger(__name__)
 
 _A1 = re.compile(r"^([A-Z]+)(\d+)$")
-_MODEL = "claude-opus-4-8"
 
 
 def _bounding_range(addresses: list[str], *, pad_up=2, pad_down=1, pad_left=1, pad_right=1) -> str | None:
@@ -124,15 +123,21 @@ def understand_and_persist(template_id: str, *, max_sheets: int = 16) -> dict:
             "understanding": wb.model_dump(mode="json"),
             "verify": out["verify"],
             "usage": out["usage"],
-            "model": _MODEL,
+            # MODEL_SMART is what the understanding calls actually use (and is
+            # env-overridable) — a hardcoded string here could lie in stored metadata.
+            "model": MODEL_SMART,
         })
+        groundings = out.get("sheet_groundings", {})
         sb.replace_rows("template_sheet_understanding", version_id, [
             {
                 "template_version_id": version_id,
                 "sheet_name": u.sheet_name,
                 "role": u.role.value,
                 "summary": u.summary,
-                "understanding": u.model_dump(mode="json"),
+                # The grounding audit rides inside the jsonb payload — no DB
+                # migration needed, and it stays attached to the sheet it audits.
+                "understanding": {**u.model_dump(mode="json"),
+                                  "grounding": groundings.get(u.sheet_name)},
                 "snippet_path": snippet_paths.get(u.sheet_name),
             }
             for u in understandings

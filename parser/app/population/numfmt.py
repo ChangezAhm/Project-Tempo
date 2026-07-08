@@ -23,6 +23,11 @@ _CCY = [("€", "EUR"), ("£", "GBP"),
         ("eur", "EUR"), ("gbp", "GBP"), ("usd", "USD"), ("us$", "USD"),
         ("$", "USD")]
 
+# '[$SYMBOL-locale]' — the symbol before the dash is the currency. A bare locale
+# tag like '[$-409]' (empty symbol, common on date formats) is NOT currency.
+_LOCALE_TAG = re.compile(r"\[\$([^\]-]*)(?:-[^\]]*)?\]")
+_BRACKETS_OR_LITERALS = re.compile(r'\[[^\]]*\]|"[^"]*"')
+
 
 def parse_number_format(fmt: str | None) -> Unit:
     """Excel format code -> Unit (kind/currency; base=1 for money since the stored
@@ -38,13 +43,24 @@ def parse_number_format(fmt: str | None) -> Unit:
     if re.search(r'(?:"x"|\\x|(?<=0)x)\s*;?', low) or low.rstrip(';').endswith("x"):
         return Unit(None, None, "ratio")
 
+    # currency lives either in a locale tag's symbol ('[$€-407]') or in the format
+    # body outside brackets ('$#,##0', '#,##0 "USD"') — never in a bare '[$-409]'.
+    tag_symbols = [s for s in _LOCALE_TAG.findall(low) if s]
+    no_brackets = re.sub(r"\[[^\]]*\]", "", low)
     currency = None
     for tok, code in _CCY:
-        if tok in low:
+        if any(tok in s for s in tag_symbols) or tok in no_brackets:
             currency = code
             break
 
-    # a numeric format (has # or 0 placeholders) is a money/number cell holding raw
-    if currency is not None or re.search(r"[#0]", f):
+    # date/time codes (d/m/y/h outside brackets and quoted literals) → not money,
+    # even when a currency-looking token is present ('[$-409]dd/mm/yyyy').
+    body = _BRACKETS_OR_LITERALS.sub("", low)
+    if re.search(r"[dmyh]", body):
+        return Unit(None, None, "unknown")
+
+    # money needs a numeric placeholder (# or 0): a format with no digits to render
+    # isn't a number cell, whatever symbols it carries.
+    if re.search(r"[#0]", body):
         return Unit(1.0, currency, "money")
     return Unit(None, None, "unknown")

@@ -24,6 +24,20 @@ def test_parse_number_format_kind_and_currency():
     assert parse_number_format(None).kind == "unknown"
 
 
+def test_bare_locale_tag_on_date_format_is_not_money():
+    # '[$-409]' is a locale prefix (empty symbol before the dash) on a DATE
+    # format — its '$' must not read as USD money.
+    d = parse_number_format("[$-409]dd/mm/yyyy")
+    assert d.kind == "unknown" and d.currency is None
+    assert parse_number_format("mmm-yy").kind == "unknown"   # date codes → never money
+    # non-empty symbol before the dash IS currency; plain numeric/percent unchanged
+    eur = parse_number_format("[$€-407]#,##0.00")
+    assert eur.kind == "money" and eur.currency == "EUR"
+    plain = parse_number_format("#,##0.00")
+    assert plain.kind == "money" and plain.currency is None
+    assert parse_number_format("0.0%").kind == "percent"
+
+
 # --- resolve_scale: magnitude wins over labels ----------------------------
 _RAW = Unit(1.0, "EUR", "money")   # source stores raw ones
 

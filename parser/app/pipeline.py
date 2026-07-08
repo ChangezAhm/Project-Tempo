@@ -93,25 +93,25 @@ def parse_and_persist(template_id: str) -> dict:
         logger.info("Parsing %s (%d bytes) for template %s", filename, len(data), template_id)
         parsed = _parse_bytes(filename, data)
 
+        # Derive EVERYTHING in memory before touching the database: replace_
+        # sheets cascade-deletes all Layer-2 rows via FKs, so a failure after
+        # it would wipe the previous good parse. A structure-detection error
+        # fails the job (outer handler) instead of completing with empty
+        # structure tables.
         rows = [_sheet_row(version_id, s) for s in parsed.sheets]
-        sb.replace_sheets(version_id, rows)
-
+        structure = detect_structure(parsed)
         # Option B: persist the FULL extraction as a gzipped JSON snapshot.
         snapshot = workbook_to_snapshot(parsed)
         blob = gzip.compress(json.dumps(snapshot, ensure_ascii=False).encode("utf-8"))
+
+        # Persist in dependency order: sheets first (persist_structure FKs to
+        # template_sheets), snapshot before structure rows so the re-derive
+        # path (run_structure) never sees new structure over a stale snapshot.
+        sb.replace_sheets(version_id, rows)
         snapshot_path = sb.upload_snapshot(version_id, blob)
         logger.info("Stored snapshot %s (%d gzip bytes)", snapshot_path, len(blob))
-
-        # Layer 2: deterministic structure detection + persistence. Additive —
-        # never let it break the core extraction/snapshot (e.g. if the 0003
-        # tables aren't migrated yet).
-        try:
-            structure = detect_structure(parsed)
-            struct_counts = persist_structure(version_id, structure)
-            logger.info("Persisted structure: %s", struct_counts)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("Structure detection skipped: %s", e)
-            struct_counts = {"error": str(e)[:200]}
+        struct_counts = persist_structure(version_id, structure)
+        logger.info("Persisted structure: %s", struct_counts)
 
         summary = {
             "filename": filename,

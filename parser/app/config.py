@@ -57,6 +57,16 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+# Fail-open guard: with Supabase configured but no PARSER_API_KEY, every data
+# endpoint is open while this process holds the service-role key. Warn loudly
+# (once, at startup) rather than refuse to start — local dev relies on it.
+if settings.configured and not settings.parser_api_key:
+    logger.warning(
+        "PARSER_API_KEY is empty while Supabase IS configured — all data "
+        "endpoints are UNAUTHENTICATED and this service holds the service-role "
+        "key. Set PARSER_API_KEY in any non-local deployment."
+    )
+
 
 # Directories searched for an Aspose.Cells license, in priority order.
 _LICENSE_DIRS = [
@@ -67,9 +77,10 @@ _LICENSE_DIRS = [
 ]
 # Filename patterns, most specific first — Aspose ships licenses under several
 # names (Aspose.Cells.lic, Aspose.Cells.Product.Family.lic, Aspose.Total.lic…).
-# Patterns require "Cells" before the broad fallback so we never grab a
-# sibling product's license (e.g. Aspose.Slides.lic) for Cells.
-_LICENSE_GLOBS = ["Aspose.Cells.lic", "Aspose*Cells*.lic", "Aspose.Total*.lic", "*.lic"]
+# Aspose.Total covers every product, so it's valid for Cells. Every other
+# candidate must contain "Cells" — a sibling product's license (e.g.
+# Aspose.Slides.lic) fails set_license and would silently drop us to eval.
+_LICENSE_GLOBS = ["Aspose.Cells.lic", "Aspose*Cells*.lic", "Aspose.Total*.lic"]
 
 
 def _resolve_aspose_license() -> Path | None:
@@ -84,6 +95,11 @@ def _resolve_aspose_license() -> Path | None:
             matches = sorted(d.glob(pattern))
             if matches:
                 return matches[0]
+        # Broad fallback, restricted to Cells-named files (glob case rules
+        # differ per OS, so filter in Python).
+        matches = sorted(p for p in d.glob("*.lic") if "cells" in p.name.lower())
+        if matches:
+            return matches[0]
     return None
 
 

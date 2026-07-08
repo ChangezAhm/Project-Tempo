@@ -1,23 +1,13 @@
-"""Assemble inputs from the snapshot + workbook and run the per-sheet agent.
+"""Assemble per-sheet prompt context from the snapshot.
 
-Loads the stored snapshot (grid + annotations + hints) and renders the sheet
-image from the stored workbook, then calls understand_sheet. No re-parse via
-Aspose except the image render.
+Pure builders (annotations, workbook context, deterministic hints) shared by
+the workbook orchestrator. The single-sheet entry point that used to live here
+was removed: it had no callers and never armed a SpendGuard, making it the one
+uncapped Opus+vision path — workbook.understand_workbook is the only way to
+run the per-sheet agent, and it arms the guard first.
 """
 
 from __future__ import annotations
-
-import gzip
-import json
-import os
-import tempfile
-from pathlib import Path
-
-from langsmith import traceable
-
-from app import supabase_client as sb
-from app.understanding.per_sheet import understand_sheet
-from app.understanding.sheet_image import render_sheet_tiles
 
 _CAP = 40  # cap list lengths fed to the prompt
 
@@ -92,32 +82,4 @@ def _hints(snap: dict, sheet_name: str) -> str:
         f"detected regions on this sheet: {len(sheet.get('regions', []))}\n"
         f"cross-sheet — this sheet READS FROM: {top(reads_from)}\n"
         f"cross-sheet — this sheet is READ BY: {top(read_by)}"
-    )
-
-
-@traceable(name="understand_template_sheet", run_type="chain")
-def understand_template_sheet(template_id: str, sheet_name: str, *, max_tokens: int = 32000) -> dict:
-    version_id, storage_path, filename = sb.get_latest_file(template_id)
-    snap = json.loads(gzip.decompress(sb.download_snapshot(version_id)))
-    sheet = next((s for s in snap["sheets"] if s["name"] == sheet_name), None)
-    if sheet is None:
-        raise ValueError(f"Sheet '{sheet_name}' not in snapshot for template {template_id}")
-
-    data = sb.download_workbook(storage_path)
-    fd, name = tempfile.mkstemp(suffix=Path(filename).suffix or ".xlsx")
-    os.close(fd)
-    tmp = Path(name)
-    try:
-        tmp.write_bytes(data)
-        images = render_sheet_tiles(tmp, sheet_name)
-    finally:
-        tmp.unlink(missing_ok=True)
-
-    return understand_sheet(
-        sheet,
-        images,
-        annotations=_annotations(sheet),
-        workbook_ctx=_workbook_ctx(snap),
-        hints=_hints(snap, sheet_name),
-        max_tokens=max_tokens,
     )

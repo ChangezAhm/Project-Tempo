@@ -229,7 +229,7 @@ def _extract_validations(ws, sheet_name: str) -> list[DataValidationRule]:
                 allow_blank=bool(getattr(v, "ignore_blank", True)),
                 prompt_title=str(getattr(v, "input_title", "") or ""),
                 prompt_message=str(getattr(v, "input_message", "") or ""),
-                error_title=str(getattr(v, "alert_style", "") or ""),
+                error_title=str(getattr(v, "error_title", "") or ""),
                 error_message=str(getattr(v, "error_message", "") or ""),
             ))
         except Exception as e:

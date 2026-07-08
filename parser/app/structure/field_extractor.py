@@ -15,8 +15,17 @@ from app.raw_extraction.schema import CellInfo, CellType
 from app.structure.schema import MetricRow
 
 
+# Widest column the data scan will reach. 260 columns ≈ 20+ years of monthly
+# periods — comfortably past any real reporting model — while still bounding the
+# per-row scan if a stray cell sits absurdly far right.
+_MAX_DATA_COL = 260
+
+
 def extract_metric_rows(cells: list[CellInfo], sheet_name: str) -> list[MetricRow]:
     cell_map: dict[tuple[int, int], CellInfo] = {(c.row, c.col): c for c in cells}
+
+    # Scan to the sheet's used width (rightmost populated column), capped.
+    max_data_col = min(max((c.col for c in cells), default=0), _MAX_DATA_COL)
 
     # Leftmost text label in cols A/B/C per row.
     rows_with_labels: dict[int, CellInfo] = {}
@@ -36,7 +45,7 @@ def extract_metric_rows(cells: list[CellInfo], sheet_name: str) -> list[MetricRo
         number_format = None
         is_formula = False
 
-        for col_num in range(label_cell.col + 1, 101):
+        for col_num in range(label_cell.col + 1, max_data_col + 1):
             c = cell_map.get((row_num, col_num))
             if c is None:
                 continue

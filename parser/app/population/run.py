@@ -20,7 +20,7 @@ from app.population import source_cache
 from app.population.apply import apply_links
 from app.population.binding import bind
 from app.population.catalogue import build_catalogue, catalogue_from_understanding, effective_value
-from app.population.periods import parse_any_date
+from app.population.periods import parse_any_date, parse_iso_period
 from app.population.cost import SpendCapExceeded, SpendGuard, default_cap_usd, set_guard
 from app.population.mapping import estimate_mapping_usd, map_metrics
 from app.population.source_understanding import (
@@ -202,18 +202,30 @@ def _build_source_catalogue(snapshot: dict, source_periods: dict, content_hash: 
     """Catalogue the source via AI understanding (robust to PortCo layout variance),
     falling back to deterministic detection if understanding yields nothing. A spend
     cap breach is never swallowed. ``source_path`` (the uploaded workbook on disk)
-    lets understanding render sheet images for layout context."""
+    lets understanding render sheet images for layout context.
+
+    Returns (catalogue, source_kind, excluded_by_tag) — the count of source
+    columns dropped because of their budget/forecast tag, so a run with no
+    explicit as-of can tell the user what setting the date would unlock."""
     try:
         sheets = understand_source(snapshot, content_hash, source_path=source_path)
         cat = catalogue_from_understanding(snapshot, sheets, as_of=as_of)
+        excluded = 0
+        for sh in sheets:
+            for p in sh.get("periods", []):
+                if (p.get("kind") or "actual").lower() in ("", "actual"):
+                    continue
+                d = parse_iso_period(p.get("date"))
+                if as_of is None or d is None or d > as_of:
+                    excluded += 1
         if cat:
-            return cat, "ai_understanding"
+            return cat, "ai_understanding", excluded
         logger.warning("source understanding produced 0 series — falling back to deterministic detection")
     except SpendCapExceeded:
         raise
     except Exception:
         logger.exception("source understanding failed — falling back to deterministic detection")
-    return build_catalogue(snapshot, source_periods), "deterministic_fallback"
+    return build_catalogue(snapshot, source_periods), "deterministic_fallback", 0
 
 
 def _run_population(target_template_id: str, source_snapshot: dict,
@@ -231,9 +243,11 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     set_guard(SpendGuard(default_cap_usd()))
 
     demand, target_inputs = build_demand(target_template_id, as_of_date)
-    # The actuals cutoff for source columns: the user's as-of date, else today.
-    # (Data on/before this date is actuals regardless of the model's kind tag.)
-    as_of = parse_any_date(as_of_date) or date.today()
+    # EXPLICIT-ONLY date policy (user decision): a date changes behavior only
+    # when the user supplied it. No wall-clock default — with no as-of, the
+    # model's actual/budget/forecast tags stand and any excluded columns are
+    # surfaced in routing so the user can see what setting the date would add.
+    as_of = parse_any_date(as_of_date)
 
     if dry_run:
         # Cost-check BEFORE spending: source understanding (free if cached) + mapping.
@@ -256,8 +270,8 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             "run_cap_usd": default_cap_usd(),
         }
 
-    catalogue, catalogue_source = _build_source_catalogue(source_snapshot, source_periods,
-                                                          content_hash, source_path, as_of)
+    catalogue, catalogue_source, excluded_by_tag = _build_source_catalogue(
+        source_snapshot, source_periods, content_hash, source_path, as_of)
 
     # We only need the template WORKBOOK to write the filled values into — the
     # template's content is already captured in the data model (demand), so the
@@ -274,6 +288,12 @@ def _run_population(target_template_id: str, source_snapshot: dict,
 
     links = notes = None
     routing = {"series": len(catalogue), "catalogue_source": catalogue_source}
+    if excluded_by_tag:
+        routing["source_columns_excluded_by_tag"] = excluded_by_tag
+        if as_of is None:
+            routing["hint"] = (f"{excluded_by_tag} source column(s) tagged budget/forecast were "
+                               "excluded. If they are actually reported months, set the as-of "
+                               "date — columns dated on/before it are treated as actuals.")
     filled_url = audit_url = None
     cleared = 0
     try:

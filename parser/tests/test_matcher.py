@@ -296,6 +296,20 @@ def test_catalogue_from_understanding_excludes_future_budget_columns():
     assert cols == [3]   # the Jul-26 budget column is not bindable
 
 
+def test_catalogue_trusts_tags_when_no_explicit_as_of():
+    # EXPLICIT-ONLY date policy: with no user-supplied as-of there is no
+    # implicit "today" — the model's kind tags stand, even for past-dated
+    # columns. (The run surfaces what setting the date would unlock.)
+    from app.population.catalogue import catalogue_from_understanding
+    und = [{"sheet": "Cash", "periods": [
+        {"header_cell": "C3", "date": "2026-05-31", "grain": "month", "kind": "forecast"},
+        {"header_cell": "D3", "date": "2026-06-30", "grain": "month", "kind": "actual"},
+    ], "series": [{"label_cell": "A5", "label": "Cash at bank"}]}]
+    cat = catalogue_from_understanding(_ccy_snap(), und)   # no as_of
+    cols = [c for (c, _d, _g) in cat["Cash!r5"].period_cols]
+    assert cols == [4]   # the forecast-tagged column is excluded without a date
+
+
 def test_catalogue_past_columns_are_actuals_despite_model_tag():
     # The model tags future-looking YEARS 'forecast' — it once mislabeled six
     # months of real P&L actuals and they were dropped. The deterministic date

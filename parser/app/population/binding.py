@@ -152,7 +152,8 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
         sheet = f.get("sheet_name")
         tdate = dates_by_col.get((sheet, f.get("col"))) or parse_iso_period(f.get("parsed_date"))
         col = pick_column(f.get("period_index"), pc_by_sheet.get(sheet) or period_count, tdate,
-                          series.period_cols, grain, template_grain=sheet_grain.get(sheet))
+                          series.period_cols, grain, template_grain=sheet_grain.get(sheet),
+                          point_in_time=(f.get("basis") == "point_in_time"))
         if col is None:
             unmatched.append(_unmatched(f, f"no source column for period_index={f.get('period_index')} ({grain})"))
             continue

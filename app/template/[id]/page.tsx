@@ -367,6 +367,16 @@ function PopulatePanel({ templateId }: { templateId: string }) {
                   </li>
                 ))}
               </ul>
+              {result.unmapped_metrics?.length ? (
+                <p className="mt-2 text-xs text-neutral-500">
+                  <span className="font-medium text-neutral-600">
+                    This source has no data for {result.unmapped_metrics.length} template metric
+                    {result.unmapped_metrics.length === 1 ? "" : "s"}:{" "}
+                  </span>
+                  {result.unmapped_metrics.slice(0, 20).join(" · ")}
+                  {result.unmapped_metrics.length > 20 ? " …" : ""}
+                </p>
+              ) : null}
             </div>
           ) : null}
         </div>

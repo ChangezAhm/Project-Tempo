@@ -103,15 +103,28 @@ def parse_iso_period(s: str | None) -> date | None:
     return None
 
 
+def _bucket_end(d: date, grain: str) -> tuple[int, int]:
+    """(year, month) of the LAST month in the bucket ``d`` falls in."""
+    if grain == "quarter":
+        return (d.year, ((d.month - 1) // 3) * 3 + 3)
+    if grain == "year":
+        return (d.year, 12)
+    return (d.year, d.month)
+
+
 def pick_column(period_index: int | None, period_count: int, parsed_date: date | None,
                 period_cols: list[tuple[int, date | None, str]], grain: str,
-                template_grain: str | None = None) -> int | None:
+                template_grain: str | None = None, point_in_time: bool = False) -> int | None:
     """Choose the source column for one template period slot.
 
     period_cols: [(col_index, date, period_type)] for the series' sheet.
     - If the template slot has a real DATE -> match the source column in the same
       calendar bucket at the right grain (31-Jan matches 1-Jan; an FY/LTM column
       never fills a monthly slot). No match -> None (blank, never guessed).
+    - POINT-IN-TIME exception: a quarterly/annual STOCK slot (balance sheet,
+      debt, headcount) equals its period-END value, so when no same-grain source
+      column exists, the MONTH column landing on the bucket's last month
+      satisfies it. Never applied to flows — one month is not a quarter of P&L.
     - If the slot has NO date -> align by position, newest-anchored (fallback for
       templates whose columns carry no readable dates).
     """
@@ -138,6 +151,12 @@ def pick_column(period_index: int | None, period_count: int, parsed_date: date |
         for d, c in cand:
             if _bucket(d, bgrain) == tkey:
                 return c
+        if point_in_time and bgrain in ("quarter", "year"):
+            end = _bucket_end(parsed_date, bgrain)
+            months = cols_of("month")
+            for d, c in months:
+                if (d.year, d.month) == end:
+                    return c
         return None
     if period_index is None or not cand:
         return None

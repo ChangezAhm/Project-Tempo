@@ -324,6 +324,25 @@ def test_catalogue_past_columns_are_actuals_despite_model_tag():
     assert cols == [3, 4]   # both kept — they're dated in the past
 
 
+def test_point_in_time_quarter_slot_accepts_quarter_end_month():
+    # A quarterly BALANCE-SHEET slot equals its period-END value: with no
+    # quarterly source columns, the month column landing on the bucket's last
+    # month (Jun for Q2) satisfies it. Flows never get this.
+    # day-of-month is irrelevant to bucket matching — 28th exists in every month
+    monthly = [(c, date(2026, m, 28), "month")
+               for c, m in [(2, 1), (3, 2), (4, 3), (5, 4), (6, 5), (7, 6)]]
+    q2 = date(2026, 6, 30)
+    # stock -> Jun column (col 7)
+    assert pick_column(1, 8, q2, monthly, "monthly", template_grain="quarter",
+                       point_in_time=True) == 7
+    # mid-quarter month never satisfies it (Q1 end = Mar, col 4)
+    assert pick_column(0, 8, date(2026, 3, 31), monthly, "monthly",
+                       template_grain="quarter", point_in_time=True) == 4
+    # a FLOW quarterly slot stays blank — one month is not a quarter of P&L
+    assert pick_column(1, 8, q2, monthly, "monthly", template_grain="quarter",
+                       point_in_time=False) is None
+
+
 # --- mapping: batch retry + loud failure -----------------------------------
 def test_map_metrics_retries_bad_json(monkeypatch):
     from app.population import mapping

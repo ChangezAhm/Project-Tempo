@@ -209,6 +209,7 @@ export type PopulateResult = {
   unmatched: { reason: string; template_sheet?: string; template_cell?: string; metric?: string }[];
   unmatched_count: number;
   unmatched_reasons?: { reason: string; count: number }[];
+  unmapped_metrics?: string[];
   skipped: { template_sheet: string; template_cell: string; reason: string }[];
   skipped_count: number;
   cleared_count: number;

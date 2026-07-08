@@ -418,6 +418,13 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         # response, not buried in a 1,000-row audit list.
         unmatched_reasons = [{"reason": r, "count": n}
                              for r, n in Counter(u.get("reason") for u in result.unmatched).most_common(10)]
+        # '298x no source series mapped' reads as failure when most of it is the
+        # source honestly not containing those metrics — NAME them so the user
+        # can see at a glance what this source doesn't cover.
+        label_by_key = {m["metric"]: (m.get("label") or m["metric"]) for m in demand["metrics"]}
+        unmapped_metrics = sorted({label_by_key.get(u.get("metric"), str(u.get("metric")))
+                                   for u in result.unmatched
+                                   if str(u.get("reason", "")).startswith("no source series")})
 
         # Add-line proposals: source series that mapped to NO template metric are
         # candidates for NEW lines in the template's extensible regions. Report-only
@@ -490,6 +497,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         "unmatched": result.unmatched[:200],
         "unmatched_count": len(result.unmatched),
         "unmatched_reasons": unmatched_reasons,
+        "unmapped_metrics": unmapped_metrics[:60],
         "skipped": result.skipped[:200],
         "skipped_count": len(result.skipped),
         "review": review[:200],

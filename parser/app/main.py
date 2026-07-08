@@ -217,12 +217,15 @@ def impact_route(template_id: str, cell: str, depth: int = 3, max_total: int = 5
 # input-area snippets, and persist it. Long-running (~minutes, multiple Opus
 # calls); the request blocks until done. Re-running replaces the prior result.
 @app.post("/understand/{template_id}", dependencies=[Depends(require_api_key)])
-def understand_route(template_id: str, max_sheets: int = 16) -> dict:
+def understand_route(template_id: str, max_sheets: int = 16, force_deep: str | None = None) -> dict:
     if not settings.configured:
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    # force_deep: comma-separated sheet names the user demands a full pass for —
+    # the veto path for a triage decision they disagree with.
+    forced = {s.strip() for s in force_deep.split(",") if s.strip()} if force_deep else None
     try:
         with _single_run("understand", template_id):
-            return understand_and_persist(template_id, max_sheets=max_sheets)
+            return understand_and_persist(template_id, max_sheets=max_sheets, force_deep=forced)
     except SpendCapExceeded as e:
         raise HTTPException(402, str(e))
     except TemplateNotFound as e:
@@ -392,6 +395,90 @@ def get_regions_route(template_id: str) -> dict:
     except Exception as e:  # noqa: BLE001
         logger.exception("Regions read failed")
         raise HTTPException(500, f"Read failed: {e}")
+
+
+# --- Review items: the questions the system asks, made answerable -----------
+
+# List the template's review items (open first). The inbox for everything the
+# system is unsure about: understanding flags, unverified impact chains,
+# triage decisions.
+@app.get("/review/{template_id}", dependencies=[Depends(require_api_key)])
+def review_list_route(template_id: str) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    try:
+        version_id, _, _ = sb.get_latest_file(template_id)
+        items = sb.list_review_items(version_id)
+        return {"template_version_id": version_id, "count": len(items),
+                "open_count": sum(1 for i in items if i.get("status") == "open"),
+                "items": items}
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Review list failed")
+        raise HTTPException(500, f"Read failed: {e}")
+
+
+# Backfill items from the ALREADY-STORED understanding (templates understood
+# before this feature existed) — no LLM, no re-understand.
+@app.post("/review/{template_id}/build", dependencies=[Depends(require_api_key)])
+def review_build_route(template_id: str) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    from app.review.items import build_and_persist
+    try:
+        return build_and_persist(template_id)
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Review build failed")
+        raise HTTPException(500, f"Build failed: {e}")
+
+
+# "Verify for me": run the deterministic dependency-graph check behind a
+# machine-checkable question and store the verdict + evidence. No LLM.
+@app.post("/review/{template_id}/items/{item_id}/verify", dependencies=[Depends(require_api_key)])
+def review_verify_route(template_id: str, item_id: str) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    from app.review.verify import verify_item
+    try:
+        return verify_item(template_id, item_id)
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Review verify failed")
+        raise HTTPException(500, f"Verify failed: {e}")
+
+
+# Answer / dismiss / reopen an item. An answer is durable knowledge: it stays
+# on the item and (optionally, via the corrections endpoints) becomes a
+# data-model correction.
+@app.patch("/review/{template_id}/items/{item_id}", dependencies=[Depends(require_api_key)])
+def review_answer_route(template_id: str, item_id: str, body: dict = Body(default={})) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    status = body.get("status")
+    if status not in ("answered", "dismissed", "open"):
+        raise HTTPException(422, "status must be 'answered', 'dismissed' or 'open'")
+    try:
+        item = sb.get_review_item(item_id)
+        if item is None:
+            raise HTTPException(404, "No such review item")
+        from datetime import datetime, timezone
+        resolution = None
+        if status == "answered":
+            resolution = {"answer": body.get("answer") or "", "resolved_by": "user",
+                          "resolved_at": datetime.now(timezone.utc).isoformat()}
+        elif status == "dismissed":
+            resolution = {"reason": body.get("reason") or "", "resolved_by": "user",
+                          "resolved_at": datetime.now(timezone.utc).isoformat()}
+        return sb.update_review_item(item_id, {"status": status, "resolution": resolution})
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Review update failed")
+        raise HTTPException(500, f"Update failed: {e}")
 
 
 # Read the contract: status, the template-level corrections, and the model

@@ -86,11 +86,12 @@ def _critical_inputs(understandings, input_surface: set[str], snippet_paths: dic
     return rows
 
 
-def understand_and_persist(template_id: str, *, max_sheets: int = 16) -> dict:
+def understand_and_persist(template_id: str, *, max_sheets: int = 16,
+                           force_deep: set[str] | None = None) -> dict:
     version_id, storage_path, filename = sb.get_latest_file(template_id)
     job_id = sb.create_job(version_id, job_type="understand")
     try:
-        out = understand_workbook(template_id, max_sheets=max_sheets)
+        out = understand_workbook(template_id, max_sheets=max_sheets, force_deep=force_deep)
         wb = out["workbook"]
         understandings = out["sheet_understandings"]
         input_surface = set(wb.input_surface_sheets or [])
@@ -154,6 +155,31 @@ def understand_and_persist(template_id: str, *, max_sheets: int = 16) -> dict:
         sb.replace_extensible_regions(
             version_id, [{**r, "template_version_id": version_id} for r in regions])
 
+        # Turn this run's doubts into ANSWERABLE review items: understanding
+        # flags + graph-unconfirmed chains/flows (machine-checkable), plus every
+        # triage downgrade (visible + vetoable — the user re-runs with
+        # force_deep to overrule one). insert is add-only by item_key, so
+        # answers given on a previous run survive a re-understand.
+        review_added = 0
+        try:
+            from app.review.items import build_items_from_understanding, make_item
+            items = build_items_from_understanding(wb.model_dump(mode="json"))
+            for r in out.get("routes", []):
+                p = r.get("pass") or ("deep" if r.get("deep") else "skip")
+                if p == "deep" or r.get("reason") in ("hidden", "empty"):
+                    continue   # deep needs no confirmation; hidden/empty are unambiguous
+                items.append(make_item(
+                    source="triage", kind="triage_decision",
+                    question=(f"Sheet '{r['sheet']}' got a {p.upper()} pass ({r.get('reason')}). "
+                              "Confirm, or re-run Understanding with this sheet forced deep."),
+                    why="A wrongly downgraded sheet would be missing from the contract.",
+                    affected={"sheets": [r["sheet"]]},
+                    suggested_answer="confirm",
+                ))
+            review_added = sb.insert_review_items(version_id, items)
+        except Exception as e:  # noqa: BLE001 — review items must never fail the run
+            logger.warning("review-item build skipped: %s", e)
+
         summary = {
             "template_version_id": version_id,
             "deep_sheets": out["deep_sheets"],
@@ -161,6 +187,7 @@ def understand_and_persist(template_id: str, *, max_sheets: int = 16) -> dict:
             "failed_sheets": out.get("failed_sheets", []),
             "critical_input_count": len(crit),
             "extensible_region_count": len(regions),
+            "review_items_added": review_added,
             "verify": out["verify"],
             "usage": out["usage"],
         }

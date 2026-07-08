@@ -417,3 +417,63 @@ def list_extensible_regions(version_id: str) -> list[dict]:
         .execute()
     )
     return res.data or []
+
+
+# --- Review items (0009) -----------------------------------------------------
+# Add-only by design: rows carry human answers (and verifier verdicts) that
+# must survive re-runs of the understanding, so unlike replace_rows there is
+# NO delete here — new questions are inserted, existing ones (matched by
+# item_key) are left untouched.
+
+def insert_review_items(version_id: str, rows: list[dict], chunk: int = 200) -> int:
+    """Insert only rows whose item_key doesn't already exist for this version.
+    Never deletes or overwrites. Returns how many rows were inserted."""
+    if not rows:
+        return 0
+    sb = get_client()
+    existing = (
+        sb.table("template_review_items")
+        .select("item_key")
+        .eq("template_version_id", version_id)
+        .execute()
+        .data
+        or []
+    )
+    seen = {r["item_key"] for r in existing}
+    fresh: list[dict] = []
+    for r in rows:
+        key = r.get("item_key")
+        if not key or key in seen:
+            continue
+        seen.add(key)  # also dedupes repeats within this batch
+        fresh.append({**r, "template_version_id": version_id})
+    for i in range(0, len(fresh), chunk):
+        sb.table("template_review_items").insert(fresh[i:i + chunk]).execute()
+    return len(fresh)
+
+
+def list_review_items(version_id: str) -> list[dict]:
+    """All review items for a version — open ones first, then by created_at."""
+    sb = get_client()
+    res = (
+        sb.table("template_review_items")
+        .select("*")
+        .eq("template_version_id", version_id)
+        .order("created_at")
+        .execute()
+    )
+    items = res.data or []
+    items.sort(key=lambda r: (0 if r.get("status") == "open" else 1, r.get("created_at") or ""))
+    return items
+
+
+def get_review_item(item_id: str) -> dict | None:
+    sb = get_client()
+    r = sb.table("template_review_items").select("*").eq("id", item_id).limit(1).execute().data
+    return r[0] if r else None
+
+
+def update_review_item(item_id: str, fields: dict) -> dict:
+    sb = get_client()
+    sb.table("template_review_items").update(fields).eq("id", item_id).execute()
+    return get_review_item(item_id)

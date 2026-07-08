@@ -22,13 +22,14 @@ from pathlib import Path
 from langsmith import traceable
 
 from app import supabase_client as sb
-from app.llm import MODEL, get_client
+from app.llm import MODEL, MODEL_MAP, get_client, guarded_stream
 from app.population import source_cache
 from app.population.cost import (
     SpendCapExceeded, SpendGuard, default_onboarding_cap_usd, estimate_call_usd,
     get_guard, set_guard,
 )
 from app.pipeline import _cell_rc, build_dependents_index, trace_impact
+from app.raw_extraction.cell_analyzer import is_input_fill
 from app.understanding.per_sheet import _extract_json, to_strict_schema, understand_sheet
 from app.understanding.prompts import SYNTHESIZE_SYSTEM, build_synth_user
 from app.understanding.run import _annotations, _hints, _workbook_ctx
@@ -59,16 +60,22 @@ _SYNTH_SCHEMA = to_strict_schema(WorkbookUnderstanding)
 # key includes the template version, so a re-uploaded template never reuses old
 # results. Bump this constant whenever prompts.SYSTEM or the SheetUnderstanding
 # schema changes shape — that invalidates every cached result built under them.
-_SHEET_CACHE_VERSION = 2   # v2: extensible_regions added to schema + prompt
+_SHEET_CACHE_VERSION = 3   # v3: three-way routing — a cached entry now means "under THIS pass"
+
+# Light sheets are cheap (Sonnet, text-only, no tiles) and don't consume the
+# deep max_sheets cap — but bound them anyway so a pathological workbook can't
+# fan out unbounded cheap calls either.
+_MAX_LIGHT_SHEETS = 8
 
 
-def _sheet_cache_key(version_id: str, sheet_name: str) -> str:
+def _sheet_cache_key(version_id: str, sheet_name: str, pass_kind: str) -> str:
     # Sheet names can carry characters unsafe in a filename; the slug keeps the
     # key readable and the name-hash suffix keeps distinct names from colliding
-    # after slugging.
+    # after slugging. The pass kind is part of the key so a light-cached sheet
+    # re-runs (deep) when the user forces it deep — never served the cheap result.
     slug = re.sub(r"[^A-Za-z0-9._-]+", "_", sheet_name)
     tag = source_cache.content_hash(sheet_name.encode("utf-8"))[:8]
-    return f"sheet-und-{version_id}-{slug}-{tag}-v{_SHEET_CACHE_VERSION}"
+    return f"sheet-und-{version_id}-{slug}-{tag}-v{_SHEET_CACHE_VERSION}-{pass_kind}"
 
 
 # --- cross-sheet dependency edges (shared by route, synth-context, verify) ---
@@ -93,10 +100,37 @@ def _cross_sheet_edges(snap: dict) -> tuple[set[tuple[str, str]], dict[str, int]
 
 # --- 1. Route -------------------------------------------------------------
 
-def route_sheets(snap: dict) -> list[dict]:
-    """Deterministically decide which sheets get the (expensive) per-sheet pass.
-    Skips hidden, empty, and large formula-less data dumps. Orders by importance."""
+def _sheet_of_ref(ref: str) -> str | None:
+    """"'My Sheet'!A1" / "Sheet!B2:B9" → sheet name; None for a sheet-less ref."""
+    i = ref.rfind("!")
+    return ref[:i].strip("'") if i != -1 else None
+
+
+def route_sheets(snap: dict, force_deep: set[str] | None = None) -> list[dict]:
+    """Deterministically assign each sheet a pass:
+      deep  — Opus + vision. The default; ANY input evidence keeps a sheet here.
+      light — Sonnet, text-only. ONLY on multi-signal agreement of inertness.
+      skip  — hidden / empty / data dump (unchanged behaviour + reasons).
+    Size alone NEVER downgrades — a tiny sheet can hold the most critical inputs
+    (the latest budget). Conflicting signals mark triage=True and default deep;
+    only _triage_ambiguous may then flip them to light. Every decision carries a
+    reason so it's visible and reversible (force_deep re-routes by name)."""
+    force_deep = force_deep or set()
     _, read_by = _cross_sheet_edges(snap)
+
+    # Formula-graph inputs and named-range destinations, tallied per sheet.
+    graph_inputs: dict[str, int] = {}
+    for ref in snap.get("formula_graph", {}).get("input_cells", []):
+        sh = _sheet_of_ref(ref)
+        if sh:
+            graph_inputs[sh] = graph_inputs.get(sh, 0) + 1
+    named_dests: dict[str, int] = {}
+    for nr in snap.get("named_ranges", []):
+        for dest in nr.get("destinations", []):
+            sh = _sheet_of_ref(dest)
+            if sh:
+                named_dests[sh] = named_dests.get(sh, 0) + 1
+
     routes: list[dict] = []
     for s in snap.get("sheets", []):
         name = s["name"]
@@ -105,22 +139,123 @@ def route_sheets(snap: dict) -> list[dict]:
         formula_count = sum(1 for c in cells if c.get("formula"))
         rb = read_by.get(name, 0)
 
-        if s.get("is_hidden"):
-            deep, reason = False, "hidden"
+        # Author-styled input cells: input role/fill always counts; per-cell
+        # is_locked is meaningful only on protected sheets (Excel's default is
+        # locked=True everywhere, so unprotected sheets would all read as input).
+        protected = bool(s.get("is_protected"))
+        style_inputs = text_count = numeric_count = 0
+        for c in cells:
+            st = c.get("style") or {}
+            if (c.get("role") == "input" or is_input_fill(st.get("fill_color"))
+                    or (protected and st.get("is_locked") is False)):
+                style_inputs += 1
+            ct = c.get("cell_type")
+            if ct == "string":
+                text_count += 1
+            elif ct == "number":
+                numeric_count += 1
+        input_cells = graph_inputs.get(name, 0) + style_inputs
+        validations = len(s.get("data_validations", []))
+        dests = named_dests.get(name, 0)
+        text_ratio = (text_count / cell_count) if cell_count else 0.0
+
+        triage = False
+        if name in force_deep:
+            pass_, reason = "deep", "forced by user"
+        elif s.get("is_hidden"):
+            pass_, reason = "skip", "hidden"
         elif cell_count == 0:
-            deep, reason = False, "empty"
+            pass_, reason = "skip", "empty"
         elif formula_count == 0 and cell_count > 800 and (rb > 0 or _DUMP_NAME_RE.search(name)):
-            deep, reason = False, "data dump"
+            pass_, reason = "skip", "data dump"
+        elif (input_cells == 0 and validations == 0 and dests == 0 and rb == 0
+              and formula_count < 5
+              # The small-sheet branch still demands mostly-text content: a tiny
+              # sheet of bare numbers can be a hand-keyed input block (latest
+              # budget), so it stays deep even with no other signal.
+              and (text_ratio > 0.7 or (cell_count < 40 and text_ratio > 0.5))):
+            pass_, reason = "light", "inert: no inputs/validations/refs, prose-heavy"
         else:
-            deep, reason = True, "content sheet"
+            pass_, reason = "deep", "content sheet"
+            # Conflicting signals: deep by default (escalate on doubt), flagged
+            # for the one cheap triage call — the only path that may downgrade.
+            if rb > 0 and formula_count == 0 and input_cells == 0 and validations == 0:
+                triage, reason = True, "ambiguous: referenced but computes nothing, no inputs"
+            elif (text_ratio > 0.7 and formula_count < 5 and input_cells == 0
+                  and (validations > 0 or dests > 0)):
+                triage, reason = True, "ambiguous: prose-heavy but has validations/named refs"
 
         score = rb + formula_count // 50 + (1 if formula_count == 0 and rb else 0)
         routes.append({
-            "sheet": name, "deep": deep, "reason": reason, "score": score,
+            "sheet": name, "pass": pass_, "deep": pass_ == "deep",  # deep kept for back-compat
+            "reason": reason, "triage": triage, "score": score,
             "cells": cell_count, "formulas": formula_count, "read_by": rb,
+            "input_cells": input_cells, "validations": validations, "named_dests": dests,
+            "text_ratio": round(text_ratio, 3), "numeric_count": numeric_count,
         })
     routes.sort(key=lambda r: (r["deep"], r["score"]), reverse=True)
     return routes
+
+
+# --- 1b. Triage the conflicted routes (ONE cheap text call) ----------------
+
+_TRIAGE_SYSTEM = (
+    "You triage spreadsheet sheets for a template-understanding pipeline. For each sheet "
+    "you get routing stats and its first rows. Decide per sheet whether full vision "
+    'understanding is warranted ("deep") or a text-only light pass suffices ("light").\n'
+    '"light" is ONLY for clearly inert sheets: prose covers, instructions, glossaries, '
+    "static lookup text. Anything that could hold inputs, assumptions, budgets, or values "
+    'other sheets depend on is "deep". When unsure, say "deep".\n'
+    'Return ONLY a JSON object: {"sheets": {"<sheet name>": "deep"|"light", ...}}'
+)
+
+
+def _sample_rows(sheet: dict, max_rows: int = 12) -> str:
+    """First ~12 non-empty rows as 'addr=value' lines — enough content for the
+    triage model to recognise a glossary/cover without shipping the whole grid."""
+    rows: dict[int, list[str]] = {}
+    for c in sheet.get("cells", []):
+        v = c.get("value")
+        if v is None or v == "":
+            continue
+        rows.setdefault(c.get("row", 0), []).append(f"{c.get('address')}={v}")
+    return "\n".join("  " + " | ".join(rows[r][:8]) for r in sorted(rows)[:max_rows])
+
+
+def _triage_ambiguous(snap: dict, routes: list[dict]) -> None:
+    """Resolve the triage-flagged routes with ONE guarded MODEL_MAP call; mutates
+    routes in place. Escalation-safe: ANY failure — the call itself or parsing —
+    leaves every ambiguous sheet deep. Triage can only save cost, never lose a
+    sheet, and a "light" verdict is recorded in the route reason (reversible via
+    force_deep)."""
+    ambiguous = [r for r in routes if r.get("triage")]
+    if not ambiguous:
+        return
+    by_name = {s["name"]: s for s in snap.get("sheets", [])}
+    blocks = [
+        f"### {r['sheet']}\n"
+        f"stats: cells={r['cells']} formulas={r['formulas']} read_by={r['read_by']} "
+        f"input_cells={r['input_cells']} validations={r['validations']} "
+        f"named_dests={r['named_dests']} text_ratio={r['text_ratio']}\n"
+        f"first rows:\n{_sample_rows(by_name.get(r['sheet'], {}))}"
+        for r in ambiguous
+    ]
+    try:
+        _, text = guarded_stream(model=MODEL_MAP, system=_TRIAGE_SYSTEM,
+                                 content="\n\n".join(blocks), max_tokens=2000)
+        verdicts = json.loads(_extract_json(text)).get("sheets", {})
+        if not isinstance(verdicts, dict):
+            raise ValueError(f"unexpected triage payload: {type(verdicts).__name__}")
+    except Exception as e:  # noqa: BLE001 — escalate on doubt: everything stays deep
+        logger.warning("triage call failed (%s) — keeping %d ambiguous sheet(s) deep",
+                       e, len(ambiguous))
+        return
+    for r in ambiguous:
+        if verdicts.get(r["sheet"]) == "light":
+            r["pass"], r["deep"] = "light", False
+            r["reason"] = f"triage: {r['reason']} — light"
+        else:  # "deep", missing, or garbage all mean deep
+            r["reason"] = f"triage: {r['reason']} — deep"
 
 
 # --- 2. Synthesize --------------------------------------------------------
@@ -234,7 +369,8 @@ def verify(wb: WorkbookUnderstanding, snap: dict) -> dict:
 # --- Orchestrator ---------------------------------------------------------
 
 @traceable(name="understand_workbook", run_type="chain")
-def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_workers: int = 4) -> dict:
+def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_workers: int = 4,
+                        force_deep: set[str] | None = None) -> dict:
     # Arm the spend firewall for onboarding (Opus + per-sheet vision — legitimately
     # costs more than a populate, so it has its own higher ceiling). Every LLM call
     # below — per-sheet (in worker threads) and synthesis — checks against it.
@@ -253,15 +389,19 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
         snap = json.loads(gzip.decompress(sb.download_snapshot(version_id)))
     by_name = {s["name"]: s for s in snap["sheets"]}
 
-    routes = route_sheets(snap)
-    deep_all = [r["sheet"] for r in routes if r["deep"]]
+    routes = route_sheets(snap, force_deep=force_deep)
+    _triage_ambiguous(snap, routes)
+    deep_all = [r["sheet"] for r in routes if r["pass"] == "deep"]
     deep = deep_all[:max_sheets]
-    # Content sheets beyond the cap are excluded entirely — that must never
-    # happen silently, so they get a review flag (like failed_sheets) below.
-    skipped_sheets = deep_all[max_sheets:]
+    light_all = [r["sheet"] for r in routes if r["pass"] == "light"]
+    light = light_all[:_MAX_LIGHT_SHEETS]
+    # Sheets beyond either cap are excluded entirely — that must never happen
+    # silently, so they get a review flag (like failed_sheets) below.
+    skipped_sheets = deep_all[max_sheets:] + light_all[_MAX_LIGHT_SHEETS:]
 
-    # Download the workbook ONCE; render each routed sheet's image (sequential —
-    # Aspose isn't concurrency-safe), then fan out the LLM calls.
+    # Download the workbook ONCE; render each DEEP sheet's image (sequential —
+    # Aspose isn't concurrency-safe), then fan out the LLM calls. Light sheets
+    # get no tiles at all — the render is a per-sheet cost the light pass skips.
     data = sb.download_workbook(storage_path)
     fd, name = tempfile.mkstemp(suffix=Path(filename).suffix or ".xlsx")
     os.close(fd)
@@ -271,7 +411,7 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
         tmp.write_bytes(data)
         for sheet_name in deep:
             sheet = by_name[sheet_name]
-            if source_cache.get(_sheet_cache_key(version_id, sheet_name)) is not None:
+            if source_cache.get(_sheet_cache_key(version_id, sheet_name, "deep")) is not None:
                 # Cached result — _run serves it without an Opus call, so the
                 # render (the only other per-sheet cost) would be thrown away.
                 imgs = []
@@ -284,12 +424,20 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
             jobs.append((
                 sheet, imgs,
                 _annotations(sheet), _workbook_ctx(snap), _hints(snap, sheet_name),
+                "deep",
             ))
     finally:
         tmp.unlink(missing_ok=True)
+    for sheet_name in light:
+        jobs.append((
+            by_name[sheet_name], [],
+            _annotations(by_name[sheet_name]), _workbook_ctx(snap), _hints(snap, sheet_name),
+            "light",
+        ))
 
     def _run(job):
-        key = _sheet_cache_key(version_id, job[0]["name"])
+        sheet_name, pass_kind = job[0]["name"], job[5]
+        key = _sheet_cache_key(version_id, sheet_name, pass_kind)
         cached = source_cache.get(key)
         if cached is not None:
             try:
@@ -302,9 +450,10 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
                     "usage": cached["usage"],
                 }
             except Exception as e:  # noqa: BLE001 — a corrupt entry falls through to a live call
-                logger.warning("per-sheet cache entry unusable for %s (%s) — calling live", job[0]["name"], e)
+                logger.warning("per-sheet cache entry unusable for %s (%s) — calling live", sheet_name, e)
             else:
-                logger.info("per-sheet understanding cache HIT for %s — skipping Opus call", job[0]["name"])
+                logger.info("per-sheet understanding cache HIT for %s (%s) — skipping LLM call",
+                            sheet_name, pass_kind)
                 return result
         # Retry transient API/connection failures (flaky network, dropped streams,
         # overloaded, rate-limited) — these are common with large image payloads
@@ -312,7 +461,10 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
         # fails after the retries.
         for attempt in range(_MAX_SHEET_ATTEMPTS):
             try:
-                res = understand_sheet(*job)
+                if pass_kind == "light":
+                    res = understand_sheet(*job[:5], model=MODEL_MAP, max_tokens=16000)
+                else:
+                    res = understand_sheet(*job[:5])
                 source_cache.put(key, {
                     "understanding": res["understanding"].model_dump(mode="json"),
                     "grounding": res["grounding"],
@@ -327,7 +479,7 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
                     time.sleep(2 * (attempt + 1))
                     continue
                 logger.warning("per-sheet understanding failed for %s (%stransient): %s",
-                               job[0]["name"], "" if transient else "non-", e)
+                               sheet_name, "" if transient else "non-", e)
                 return None
 
     # initializer propagates the spend guard into each worker — a contextvar set in
@@ -381,9 +533,9 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
         )
     if skipped_sheets:
         wb.review_flags.append(
-            f"Sheet cap reached (max_sheets={max_sheets}) — these content sheets were "
-            f"EXCLUDED from this analysis: {skipped_sheets}. Raise max_sheets and re-run "
-            "to include them."
+            f"Sheet cap reached (max_sheets={max_sheets}, light cap {_MAX_LIGHT_SHEETS}) — "
+            f"these content sheets were EXCLUDED from this analysis: {skipped_sheets}. "
+            "Raise max_sheets and re-run to include them."
         )
 
     return {
@@ -393,6 +545,7 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
         "extensible_regions": region_rows,
         "routes": routes,
         "deep_sheets": deep,
+        "light_sheets": light,
         "skipped_sheets": skipped_sheets,
         "failed_sheets": failed_sheets,
         "verify": verify_summary,

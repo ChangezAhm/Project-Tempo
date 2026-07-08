@@ -1,9 +1,11 @@
 """Per-sheet understanding agent: image + grid → grounded structured output.
 
-Calls Opus 4.8 with the SheetUnderstanding schema enforced (structured outputs),
-adaptive thinking on, streamed (large outputs). Traced in LangSmith via the
-wrapped client + @traceable. Audits cited cells against the grid — unmatched
-citations are flagged in the grounding report for review, not rejected.
+Deep pass: Opus + tiles; light pass: Sonnet, text-only (routing decides — the
+caller threads the model in). Same SheetUnderstanding schema either way,
+streamed (large outputs). Adaptive thinking only on the smart tier, mirroring
+llm.guarded_stream's gating. Traced in LangSmith via the wrapped client +
+@traceable. Audits cited cells against the grid — unmatched citations are
+flagged in the grounding report for review, not rejected.
 """
 
 from __future__ import annotations
@@ -160,26 +162,25 @@ def _est(messages, max_tokens: int) -> tuple[int, int]:
     return chars, n_images
 
 
-def _call(client, messages, max_tokens: int, sheet_name: str):
+def _call(client, messages, max_tokens: int, sheet_name: str, model: str = MODEL):
     # Schema enforced by prompt + Pydantic validation (not output_config) — the
-    # strict-grammar compiler rejects schemas this large. Adaptive thinking stays
-    # on (a forced tool_choice would disable it).
+    # strict-grammar compiler rejects schemas this large. Adaptive thinking only
+    # on the smart tier (mirrors llm.guarded_stream's gating); a forced
+    # tool_choice would disable it anyway.
     from app.population.cost import estimate_call_usd, get_guard
 
     guard = get_guard()
     if guard is not None:
         chars, n_images = _est(messages, max_tokens)
-        guard.check(estimate_call_usd(MODEL, chars, max_tokens, n_images))
-    with client.messages.stream(
-        model=MODEL,
-        max_tokens=max_tokens,
-        thinking={"type": "adaptive"},   # effort defaults to high on Opus 4.8
-        system=SYSTEM,
-        messages=messages,
-    ) as stream:
+        guard.check(estimate_call_usd(model, chars, max_tokens, n_images))
+    kwargs: dict = {"model": model, "max_tokens": max_tokens, "system": SYSTEM,
+                    "messages": messages}
+    if model == MODEL:
+        kwargs["thinking"] = {"type": "adaptive"}   # effort defaults to high on Opus 4.8
+    with client.messages.stream(**kwargs) as stream:
         msg = stream.get_final_message()
     if guard is not None and getattr(msg, "usage", None) is not None:
-        guard.record_actual(MODEL, msg.usage.input_tokens, msg.usage.output_tokens)
+        guard.record_actual(model, msg.usage.input_tokens, msg.usage.output_tokens)
     if msg.stop_reason == "max_tokens":
         raise RuntimeError(
             f"Understanding truncated at max_tokens={max_tokens} for '{sheet_name}' — raise max_tokens."
@@ -197,13 +198,15 @@ def understand_sheet(
     hints: str,
     *,
     max_tokens: int = 32000,
+    model: str = MODEL,
 ) -> dict:
     """Run the per-sheet agent. Returns {understanding, grounding, usage}.
 
     ``images`` is a list of (caption, png) tiles — one for a normal sheet, a few
     column-band slices for a wide one, or empty when the sheet couldn't be
     rendered legibly. With no images the agent works from the text grid alone,
-    which still carries the exact cell addresses.
+    which still carries the exact cell addresses. ``model`` selects the tier:
+    the routing light pass sends images=[] + MODEL_MAP; deep stays on MODEL.
     """
     from app.understanding.sheet_view import build_text_grid
 
@@ -243,7 +246,7 @@ def understand_sheet(
     client = get_client()
     messages = [{"role": "user", "content": content}]
 
-    msg, text = _call(client, messages, max_tokens, sheet["name"])
+    msg, text = _call(client, messages, max_tokens, sheet["name"], model)
     try:
         result = SheetUnderstanding.model_validate(json.loads(_extract_json(text)))
     except Exception as e:  # one corrective retry
@@ -255,7 +258,7 @@ def understand_sheet(
                 "Return ONLY the corrected JSON object — no prose, no code fences."
             )},
         ]
-        msg, text = _call(client, messages, max_tokens, sheet["name"])
+        msg, text = _call(client, messages, max_tokens, sheet["name"], model)
         result = SheetUnderstanding.model_validate(json.loads(_extract_json(text)))
 
     populated = {c["address"] for c in sheet.get("cells", [])}

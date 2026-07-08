@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   detectRegions,
   getRegions,
+  getReviewItems,
   getUnderstanding,
   populateTemplate,
   understandTemplate,
@@ -358,6 +359,34 @@ function PopulatePanel({ templateId }: { templateId: string }) {
   );
 }
 
+// Small header chip linking to the contract page's Questions inbox. Hidden
+// silently when the count can't load — no error noise on the main page.
+function OpenQuestionsChip({ templateId }: { templateId: string }) {
+  const [openCount, setOpenCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getReviewItems(templateId)
+      .then((r) => {
+        if (!cancelled) setOpenCount(r.open_count);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [templateId]);
+
+  if (!openCount) return null;
+  return (
+    <Link
+      href={`/template/${templateId}/contract`}
+      className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 transition hover:bg-amber-100"
+    >
+      {openCount} open question{openCount === 1 ? "" : "s"}
+    </Link>
+  );
+}
+
 function formatRules(rules: unknown): string | null {
   if (rules == null) return null;
   if (typeof rules === "string") return rules;
@@ -579,6 +608,7 @@ export default function TemplatePage() {
                 {wb?.archetype ?? "Template understanding"}
               </h1>
               <div className="ml-auto flex items-center gap-2">
+                <OpenQuestionsChip templateId={id} />
                 <Link
                   href={`/template/${id}/contract`}
                   className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50"

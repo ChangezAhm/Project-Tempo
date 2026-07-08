@@ -241,7 +241,16 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
     set_guard(SpendGuard(default_onboarding_cap_usd()))
 
     version_id, storage_path, filename = sb.get_latest_file(template_id)
-    snap = json.loads(gzip.decompress(sb.download_snapshot(version_id)))
+    try:
+        snap = json.loads(gzip.decompress(sb.download_snapshot(version_id)))
+    except Exception:  # noqa: BLE001 — storage 'not found' arrives as a generic error
+        # A fresh upload that was never parsed (or a deleted snapshot). Running
+        # 'Understand' implies parse-if-needed — self-heal instead of a raw
+        # storage 404, the same way populate auto-derives a missing data model.
+        logger.info("no snapshot for version %s — running parse first", version_id)
+        from app.pipeline import parse_and_persist  # local: avoid an import cycle
+        parse_and_persist(template_id)
+        snap = json.loads(gzip.decompress(sb.download_snapshot(version_id)))
     by_name = {s["name"]: s for s in snap["sheets"]}
 
     routes = route_sheets(snap)

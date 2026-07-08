@@ -222,11 +222,19 @@ def _unit_from_llm(unit_str, currency, number_format, sheet_ccy, samples=None) -
     return Unit(base=1.0, currency=ccy, kind="money")
 
 
-def catalogue_from_understanding(snapshot: dict, sheets: list[dict]) -> dict[str, "Series"]:
+def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
+                                 as_of: date | None = None) -> dict[str, "Series"]:
     """Build the catalogue from AI source-understanding instead of deterministic
-    detection. `sheets` is a list of {sheet, periods:[{header_cell,date,grain}],
+    detection. `sheets` is a list of {sheet, periods:[{header_cell,date,grain,kind}],
     series:[{label_cell,label,canonical_metric,unit,currency,sign_flip}]}. The AI
-    located the structure; we read the real values (cached results) deterministically."""
+    located the structure; we read the real values (cached results) deterministically.
+
+    ``as_of`` overrides the AI's actual/budget/forecast tag for PAST columns:
+    management accounts report the past, so a column dated on/before as_of IS
+    actuals no matter what the model called it (it tags future-looking years
+    'forecast' — that once dropped six months of real P&L actuals). Only
+    genuinely future non-actual columns are excluded, so a budget block can't
+    fill actual slots."""
     val_by_rc: dict[tuple[str, int, int], object] = {}
     fmt_by_rc: dict[tuple[str, int, int], str | None] = {}
     cells_by_sheet: dict[str, list[dict]] = defaultdict(list)
@@ -245,17 +253,19 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict]) -> dict[str
         sheet_ccy = _detect_sheet_currency(cells_by_sheet.get(name, []))
         period_cols: list[tuple[int, date | None, str]] = []
         for p in sh.get("periods", []):
-            # v1 fills ACTUALS only. A source's budget/forecast block carries real
-            # month dates, so if these columns stayed in the catalogue they would
-            # date-match the template's empty future slots and budget numbers
-            # would silently fill actual cells. Excluded at the catalogue, so
-            # they can never bind.
-            if (p.get("kind") or "actual").lower() not in ("", "actual"):
-                continue
             rc = a1_to_rowcol(p.get("header_cell", ""))
             if not rc:
                 continue
-            period_cols.append((rc[1], parse_iso_period(p.get("date")), p.get("grain") or "month"))
+            d = parse_iso_period(p.get("date"))
+            # v1 fills ACTUALS only. A budget/forecast block carries real month
+            # dates and would date-match the template's empty future slots — but
+            # the tag is the MODEL's judgment and it mislabels past months, so
+            # the deterministic date beats it: on/before as_of => actuals.
+            kind = (p.get("kind") or "actual").lower()
+            is_past = d is not None and as_of is not None and d <= as_of
+            if not is_past and kind not in ("", "actual"):
+                continue
+            period_cols.append((rc[1], d, p.get("grain") or "month"))
         if not period_cols:
             continue
         for ser in sh.get("series", []):

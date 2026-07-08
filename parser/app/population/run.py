@@ -10,6 +10,7 @@ import logging
 import os
 import tempfile
 from collections import Counter, defaultdict
+from datetime import date
 from pathlib import Path
 
 from app import supabase_client as sb
@@ -196,14 +197,14 @@ def _template_context(version_id: str) -> tuple[dict, dict, dict]:
 
 
 def _build_source_catalogue(snapshot: dict, source_periods: dict, content_hash: str | None,
-                            source_path: Path | None = None):
+                            source_path: Path | None = None, as_of: date | None = None):
     """Catalogue the source via AI understanding (robust to PortCo layout variance),
     falling back to deterministic detection if understanding yields nothing. A spend
     cap breach is never swallowed. ``source_path`` (the uploaded workbook on disk)
     lets understanding render sheet images for layout context."""
     try:
         sheets = understand_source(snapshot, content_hash, source_path=source_path)
-        cat = catalogue_from_understanding(snapshot, sheets)
+        cat = catalogue_from_understanding(snapshot, sheets, as_of=as_of)
         if cat:
             return cat, "ai_understanding"
         logger.warning("source understanding produced 0 series — falling back to deterministic detection")
@@ -229,12 +230,15 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     set_guard(SpendGuard(default_cap_usd()))
 
     demand, target_inputs = build_demand(target_template_id, as_of_date)
+    # The actuals cutoff for source columns: the user's as-of date, else today.
+    # (Data on/before this date is actuals regardless of the model's kind tag.)
+    as_of = parse_any_date(as_of_date) or date.today()
 
     if dry_run:
         # Cost-check BEFORE spending: source understanding (free if cached) + mapping.
         cached = cached_sheets(content_hash)
         if cached is not None:
-            catalogue = catalogue_from_understanding(source_snapshot, cached)
+            catalogue = catalogue_from_understanding(source_snapshot, cached, as_of=as_of)
             src_est, src_state = 0.0, "cached"
         else:
             catalogue = {}
@@ -252,7 +256,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         }
 
     catalogue, catalogue_source = _build_source_catalogue(source_snapshot, source_periods,
-                                                          content_hash, source_path)
+                                                          content_hash, source_path, as_of)
 
     # We only need the template WORKBOOK to write the filled values into — the
     # template's content is already captured in the data model (demand), so the

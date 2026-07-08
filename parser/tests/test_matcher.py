@@ -225,22 +225,39 @@ def test_is_count_like_words():
     assert not is_count_like("Net Revenue")
 
 
-def test_catalogue_from_understanding_excludes_budget_columns():
-    # A source's budget block carries REAL month dates; if catalogued it would
-    # date-match the template's empty future slots (actuals) — must be excluded.
-    from app.population.catalogue import catalogue_from_understanding
-    snap = {"sheets": [{"name": "Cash", "cells": [
+def _ccy_snap():
+    return {"sheets": [{"name": "Cash", "cells": [
         {"row": 5, "col": 1, "value": "Cash at bank", "address": "A5"},
         {"row": 5, "col": 3, "value": 6_420_000, "address": "C5"},
         {"row": 5, "col": 4, "value": 6_900_000, "address": "D5"},
     ]}]}
+
+
+def test_catalogue_from_understanding_excludes_future_budget_columns():
+    # A source's budget block carries REAL month dates; if catalogued it would
+    # date-match the template's empty future slots (actuals) — must be excluded.
+    from app.population.catalogue import catalogue_from_understanding
     und = [{"sheet": "Cash", "periods": [
         {"header_cell": "C3", "date": "2026-06-30", "grain": "month", "kind": "actual"},
         {"header_cell": "D3", "date": "2026-07-31", "grain": "month", "kind": "budget"},
     ], "series": [{"label_cell": "A5", "label": "Cash at bank"}]}]
-    cat = catalogue_from_understanding(snap, und)
+    cat = catalogue_from_understanding(_ccy_snap(), und, as_of=date(2026, 7, 8))
     cols = [c for (c, _d, _g) in cat["Cash!r5"].period_cols]
     assert cols == [3]   # the Jul-26 budget column is not bindable
+
+
+def test_catalogue_past_columns_are_actuals_despite_model_tag():
+    # The model tags future-looking YEARS 'forecast' — it once mislabeled six
+    # months of real P&L actuals and they were dropped. The deterministic date
+    # beats the tag: on/before the as-of date == actuals.
+    from app.population.catalogue import catalogue_from_understanding
+    und = [{"sheet": "Cash", "periods": [
+        {"header_cell": "C3", "date": "2026-05-31", "grain": "month", "kind": "forecast"},
+        {"header_cell": "D3", "date": "2026-06-30", "grain": "month", "kind": "forecast"},
+    ], "series": [{"label_cell": "A5", "label": "Cash at bank"}]}]
+    cat = catalogue_from_understanding(_ccy_snap(), und, as_of=date(2026, 7, 8))
+    cols = [c for (c, _d, _g) in cat["Cash!r5"].period_cols]
+    assert cols == [3, 4]   # both kept — they're dated in the past
 
 
 # --- mapping: batch retry + loud failure -----------------------------------

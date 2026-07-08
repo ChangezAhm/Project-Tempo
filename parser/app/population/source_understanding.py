@@ -256,7 +256,7 @@ def understand_source(snapshot: dict, content_hash: str | None = None, *,
         logger.info("source understanding: cache hit (%s sheets)", len(cached))
         return cached
 
-    sheets = []
+    sheets, failed = [], []
     for s in select_sheets(snapshot, max_sheets=max_sheets):
         tiles = _render_tiles(source_path, s.get("name"))
         try:
@@ -264,8 +264,15 @@ def understand_source(snapshot: dict, content_hash: str | None = None, *,
         except SpendCapExceeded:
             raise
         except Exception:
+            failed.append(s.get("name"))
             logger.exception("source understanding failed for sheet %s — skipping", s.get("name"))
 
-    if content_hash and sheets:
+    # Cache only COMPLETE results. Caching a partial one would make every future
+    # populate of this file cache-hit and never retry the failed sheet —
+    # permanent silent degradation.
+    if content_hash and sheets and not failed:
         source_cache.put(content_hash, {"version": _CACHE_VERSION, "sheets": sheets})
+    elif failed:
+        logger.warning("source understanding incomplete (failed: %s) — result NOT cached "
+                       "so the next run retries", failed)
     return sheets

@@ -100,6 +100,23 @@ def fail_job(job_id: str, error: str) -> None:
     ).eq("id", job_id).execute()
 
 
+def fail_stale_jobs(max_age_minutes: int = 180) -> int:
+    """Close orphaned 'running' jobs. Jobs execute inside a synchronous HTTP
+    request, so a server restart mid-run leaves the row at status='running'
+    forever; this reconciles them at startup. Returns how many were closed."""
+    from datetime import timedelta
+    sb = get_client()
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)).isoformat()
+    res = (
+        sb.table("analysis_jobs")
+        .update({"status": "failed", "completed_at": _now(),
+                 "error": "orphaned: server restarted while the job was running"})
+        .eq("status", "running").lt("started_at", cutoff)
+        .execute()
+    )
+    return len(res.data or [])
+
+
 def replace_sheets(version_id: str, rows: list[dict]) -> None:
     """Idempotent: clear any prior sheets for this version, then insert."""
     sb = get_client()

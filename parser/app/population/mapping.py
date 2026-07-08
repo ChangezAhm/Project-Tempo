@@ -14,11 +14,14 @@ dry-run estimate available before a single token is sent.
 from __future__ import annotations
 
 import json
+import logging
 
 from app.llm import MODEL_MAP, guarded_stream
 from app.population.catalogue import Series
 from app.population.cost import estimate_call_usd
 from app.population.schema import MappingOut, MetricMap
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM = (
     "You map a consulting TEMPLATE's metrics to a SOURCE workbook's data series by "
@@ -101,18 +104,59 @@ def _parse(text: str) -> list[MetricMap]:
     return MappingOut(**json.loads(text[start:end + 1])).mappings
 
 
+def _map_chunk(chunk: list[dict], series_block: str, max_tokens: int) -> list[MetricMap]:
+    """One mapping batch, with ONE corrective retry when the reply doesn't parse
+    (or parses to nothing for a non-empty chunk). Raises after the retry fails —
+    the caller decides whether that kills the run."""
+    user = _user_text(chunk, series_block)
+    _, text = guarded_stream(model=MODEL_MAP, system=_SYSTEM, content=user,
+                             max_tokens=max_tokens, est_input_chars=len(_SYSTEM) + len(user))
+    try:
+        maps = _parse(text)
+        if maps:
+            return maps
+        err = "reply contained no mappings"
+    except Exception as e:  # noqa: BLE001 — malformed JSON from the model
+        err = str(e)
+    logger.warning("mapping batch didn't parse (%s) — one corrective retry", err)
+    messages = [
+        {"role": "user", "content": user},
+        {"role": "assistant", "content": text[:4000]},
+        {"role": "user", "content": (
+            f"That reply was not usable ({err}). Return ONLY the JSON object "
+            '{"mappings":[...]} for the TEMPLATE METRICS above — no prose, no fences.'
+        )},
+    ]
+    _, text = guarded_stream(model=MODEL_MAP, system=_SYSTEM, messages=messages,
+                             max_tokens=max_tokens)
+    maps = _parse(text)
+    if not maps:
+        raise RuntimeError("mapping batch unusable after corrective retry")
+    return maps
+
+
 def map_metrics(metrics: list[dict], catalogue: dict[str, Series],
-                max_tokens: int = 8000) -> list[MetricMap]:
-    """Run the mapping (chunked). Returns a flat list of MetricMap. Guarded by the
-    run's spend cap inside guarded_stream — a SpendCapExceeded will abort the run."""
+                max_tokens: int = 8000) -> tuple[list[MetricMap], int]:
+    """Run the mapping (chunked). Returns (mappings, failed_batches). A batch whose
+    retry also fails is dropped LOUDLY — logged and counted, so the run report can
+    say why coverage is low — instead of either silently vanishing or killing a
+    paid run. Guarded by the run's spend cap inside guarded_stream; a
+    SpendCapExceeded still aborts everything."""
+    from app.population.cost import SpendCapExceeded
+
     if not metrics or not catalogue:
-        return []
+        return [], 0
     series_block = _series_lines(catalogue)
     out: list[MetricMap] = []
+    failed = 0
     for i in range(0, len(metrics), _BATCH):
         chunk = metrics[i:i + _BATCH]
-        user = _user_text(chunk, series_block)
-        _, text = guarded_stream(model=MODEL_MAP, system=_SYSTEM, content=user,
-                                 max_tokens=max_tokens, est_input_chars=len(_SYSTEM) + len(user))
-        out.extend(_parse(text))
-    return out
+        try:
+            out.extend(_map_chunk(chunk, series_block, max_tokens))
+        except SpendCapExceeded:
+            raise
+        except Exception:  # noqa: BLE001
+            failed += 1
+            logger.exception("mapping batch %d-%d failed after retry — %d metrics unmapped",
+                             i, i + len(chunk), len(chunk))
+    return out, failed

@@ -53,10 +53,23 @@ def test_pick_column_positional_newest_anchored():
 # --- fx multiplier --------------------------------------------------------
 def test_fx_multiplier():
     assert fx.multiplier("EUR", "EUR") == (1.0, None)
-    assert fx.multiplier(None, "EUR") == (1.0, None)
+    assert fx.multiplier(None, None) == (1.0, None)          # no currency anywhere
     assert fx.multiplier("USD", "EUR", rate=0.9) == (0.9, None)
     val, flag = fx.multiplier("USD", "EUR")
     assert val is None and flag == "currency_mismatch:USD->EUR"
+
+
+def test_fx_one_sided_unknown_fills_but_flags():
+    # can't prove a mismatch -> write at 1.0 but carry a review flag
+    assert fx.multiplier(None, "EUR") == (1.0, "fx_unverified:?->EUR")
+    assert fx.multiplier("USD", None) == (1.0, "fx_unverified:USD->?")
+
+
+def test_fx_rejects_invalid_rate():
+    val, flag = fx.multiplier("USD", "EUR", rate=0)
+    assert val is None and flag.startswith("fx_rate_invalid")
+    val, flag = fx.multiplier("USD", "EUR", rate=-1.1)
+    assert val is None and flag.startswith("fx_rate_invalid")
 
 
 def test_col_letters():
@@ -177,6 +190,52 @@ def test_bind_blocks_non_actual_scenario():
     maps = [MetricMap(metric="revenue", series_id="P&L!r5", confidence=0.9)]
     links, unmatched = bind([_fact("revenue", "B10", scenario="budget")], cat, maps, _demand())
     assert not links and "budget" in unmatched[0]["reason"]
+
+
+def test_bind_flags_one_sided_unknown_currency():
+    cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
+    maps = [MetricMap(metric="revenue", series_id="P&L!r5", confidence=0.9)]
+    # template currency undetected, source declares EUR -> filled but review-flagged
+    links, unmatched = bind([_fact("revenue", "B10", currency=None)], cat, maps, _demand())
+    assert links and "fx_unverified" in links[0].note
+
+
+def test_bind_uses_per_sheet_period_count():
+    # workbook-global count (5, from a longer sheet) would positionally misalign
+    # this 3-period sheet; the per-sheet count keeps newest-slot -> newest-col.
+    cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
+    maps = [MetricMap(metric="revenue", series_id="P&L!r5", confidence=0.9)]
+    d = _demand()
+    d["period_count"] = 5
+    d["period_count_by_sheet"] = {"Template": 3}
+    links, _ = bind([_fact("revenue", "B10")], cat, maps, d)
+    assert links and links[0].source_cell == "E5"   # Dec, not Oct
+
+
+# --- mapping: batch retry + loud failure -----------------------------------
+def test_map_metrics_retries_bad_json(monkeypatch):
+    from app.population import mapping
+    calls = {"n": 0}
+
+    def fake_stream(**kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None, "sorry, here you go:"   # unusable first reply
+        return None, '{"mappings":[{"metric":"revenue","series_id":"P&L!r5","confidence":0.9}]}'
+
+    monkeypatch.setattr(mapping, "guarded_stream", fake_stream)
+    cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
+    maps, failed = mapping.map_metrics([{"metric": "revenue", "label": "Revenue"}], cat)
+    assert failed == 0 and len(maps) == 1 and calls["n"] == 2
+
+
+def test_map_metrics_counts_dead_batches(monkeypatch):
+    from app.population import mapping
+
+    monkeypatch.setattr(mapping, "guarded_stream", lambda **kw: (None, "still garbage"))
+    cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
+    maps, failed = mapping.map_metrics([{"metric": "revenue", "label": "Revenue"}], cat)
+    assert maps == [] and failed == 1   # dropped loudly, run continues
 
 
 # --- mapping response parsing --------------------------------------------

@@ -4,8 +4,9 @@ The point: a populate (or any LLM run) can NEVER silently rack up cost again.
 Before each model call we estimate its worst-case price and check it against a
 hard per-run ceiling; if the call would breach the cap we abort *before* sending
 it. After each call we add the real usage to the running total. The cap is read
-from env ``TEMPO_MAX_RUN_USD`` (default $1.50) so it can be tuned per environment
-without code changes.
+from env ``TEMPO_MAX_RUN_USD`` (default $3.00) so it can be tuned per environment
+without code changes. Caps are PER PHASE: a populate run and each onboarding step
+(understand, enrich) arm their own guard.
 
 Pure/standalone (stdlib only) so it can be unit-tested with no API and reused by
 every LLM call site (matching today, the rest as they're migrated)."""

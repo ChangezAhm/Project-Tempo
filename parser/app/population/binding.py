@@ -62,11 +62,10 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
     template snapshot: lets scale be decided by MAGNITUDE reconciliation (robust) and
     periods by ACTUAL DATE (template column date ↔ source column date). A link whose
     scale couldn't be magnitude-verified keeps a 'scale_unverified' tag in its note."""
-    tc = template_context or ({}, {}, {}, set())
+    tc = template_context or ({}, {}, {})
     numfmt_by_cell = tc[0] if len(tc) > 0 else {}
     mags_by_row = tc[1] if len(tc) > 1 else {}
     dates_by_col = tc[2] if len(tc) > 2 else {}
-    formula_cells = tc[3] if len(tc) > 3 else set()
     # template timeline grain per sheet, inferred from the spacing of its column dates
     _sheet_dates: dict[str, list] = {}
     for (sh, _col), d in dates_by_col.items():
@@ -81,6 +80,7 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
                 by_metric[m.metric] = m
 
     period_count = int(demand.get("period_count") or 0)
+    pc_by_sheet: dict = demand.get("period_count_by_sheet") or {}
     grain = demand.get("period_grain") or "month"
 
     # Default scale for rows that have NO template anchor: the ×10^(3n) that the
@@ -125,7 +125,7 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
         # column's REAL date (read from its timeline) when we have it, else positional.
         sheet = f.get("sheet_name")
         tdate = dates_by_col.get((sheet, f.get("col"))) or parse_iso_period(f.get("parsed_date"))
-        col = pick_column(f.get("period_index"), period_count, tdate,
+        col = pick_column(f.get("period_index"), pc_by_sheet.get(sheet) or period_count, tdate,
                           series.period_cols, grain, template_grain=sheet_grain.get(sheet))
         if col is None:
             unmatched.append(_unmatched(f, f"no source column for period_index={f.get('period_index')} ({grain})"))
@@ -160,6 +160,8 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
         note = f"{series.label} @ {series.sheet}"
         if sflag:
             note += f" [{sflag}]"
+        if fxflag:   # filled, but one side's currency was undetectable — review it
+            note += f" [{fxflag}]"
         links.append(CellLink(
             template_sheet=f.get("sheet_name"),
             template_cell=f.get("cell"),

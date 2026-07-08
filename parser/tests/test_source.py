@@ -132,6 +132,28 @@ def test_cached_sheets_versioning(tmp_path, monkeypatch):
     assert cached_sheets("k") == [{"sheet": "PL"}]
 
 
+def test_understand_source_never_caches_partial_results(tmp_path, monkeypatch):
+    from app.population import source_understanding as su
+    monkeypatch.setattr(source_cache, "_DIR", tmp_path)
+
+    def _sheet(name, n):
+        return {"name": name,
+                "cells": [{"address": f"C{i}", "row": i, "col": 3, "value": float(i)}
+                          for i in range(1, n)]}
+
+    snap = {"sheets": [_sheet("A", 20), _sheet("B", 25)]}
+
+    def fake_understand(sheet, model, tiles=()):
+        if sheet["name"] == "A":
+            raise ValueError("boom")
+        return {"sheet": sheet["name"], "periods": [], "series": []}
+
+    monkeypatch.setattr(su, "_understand_sheet", fake_understand)
+    out = su.understand_source(snap, "hash123")
+    assert [s["sheet"] for s in out] == ["B"]        # the good sheet still returns
+    assert cached_sheets("hash123") is None           # but the partial is NOT cached
+
+
 def test_estimate_prices_images_when_vision_on(monkeypatch):
     snap = {"sheets": [{"name": "PL", "cells": [
         {"address": f"C{i}", "row": i, "col": 3, "value": float(i)} for i in range(1, 20)

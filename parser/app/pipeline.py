@@ -32,6 +32,19 @@ class SheetNotFound(Exception):
     """Requested sheet name doesn't exist in the workbook."""
 
 
+class SnapshotUnavailable(Exception):
+    """No stored snapshot for this version (run /parse first). Distinct from
+    unexpected failures (corrupt blob, auth) so the API can 404 only when a
+    re-parse is genuinely the fix, instead of masking 500-class errors."""
+
+
+def _download_snapshot(version_id: str) -> bytes:
+    try:
+        return sb.download_snapshot(version_id)
+    except Exception as e:  # noqa: BLE001 — storage 'not found' arrives as a generic error
+        raise SnapshotUnavailable(f"No snapshot stored for version {version_id}: {e}") from e
+
+
 def _parse_bytes(filename: str, data: bytes):
     """Write workbook bytes to a short-lived temp file and parse it."""
     suffix = Path(filename).suffix or ".xlsx"
@@ -239,7 +252,7 @@ def load_snapshot(
     with ``sheet`` → that sheet's stored cells (capped at ``limit``).
     """
     version_id, _, _ = sb.get_latest_file(template_id)
-    blob = sb.download_snapshot(version_id)  # raises if no snapshot yet
+    blob = _download_snapshot(version_id)
     snap = json.loads(gzip.decompress(blob))
 
     if sheet is None:
@@ -414,7 +427,7 @@ def persist_structure(version_id: str, result: StructureResult) -> dict:
 def run_structure(template_id: str) -> dict:
     """Re-derive structure from the stored snapshot — no Aspose re-parse."""
     version_id, _, _ = sb.get_latest_file(template_id)
-    blob = sb.download_snapshot(version_id)
+    blob = _download_snapshot(version_id)
     snap = json.loads(gzip.decompress(blob))
     parsed = reconstruct_workbook_from_snapshot(snap)
     counts = persist_structure(version_id, detect_structure(parsed))

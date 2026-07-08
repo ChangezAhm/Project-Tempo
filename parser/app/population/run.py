@@ -60,10 +60,19 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
         key = f.get("canonical_metric") or f.get("metric_label")
         if key and key not in metrics:
             metrics[key] = {"metric": key, "label": f.get("metric_label"), "unit": f.get("unit")}
-    period_count = max((f["period_index"] for f in inputs if f.get("period_index") is not None), default=-1) + 1
+    # period_index is a PER-SHEET ordinal, so the count used for positional
+    # alignment must be per-sheet too — a global max would misalign sheets whose
+    # timelines are shorter than the longest one in the workbook.
+    period_count_by_sheet: dict[str, int] = {}
+    for f in inputs:
+        if f.get("period_index") is not None:
+            s = f["sheet_name"]
+            period_count_by_sheet[s] = max(period_count_by_sheet.get(s, 0), f["period_index"] + 1)
+    period_count = max(period_count_by_sheet.values(), default=0)
     scenarios = sorted({f["scenario"] for f in inputs if f.get("scenario") and f["scenario"] != "unknown"})
     grains = (dm["model"] or {}).get("period_grains") or ["monthly"]
     demand = {"as_of_date": as_of_date, "period_count": period_count,
+              "period_count_by_sheet": period_count_by_sheet,
               "period_grain": grains[0] if grains else "monthly",
               "scenarios": scenarios, "metrics": list(metrics.values())}
     return demand, inputs
@@ -129,26 +138,38 @@ def _bytes_to_temp(filename: str, data: bytes) -> Path:
     return p
 
 
-def _template_context(version_id: str) -> tuple[dict, dict, dict, set]:
+def _pick_timeline(row_dates: dict[int, dict[int, object]]) -> dict[int, object]:
+    """The row that is the sheet's period header: prefer rows whose dates increase
+    left→right (a real timeline). A DATA row whose values happen to fall in the
+    Excel date-serial range (29k–60k, e.g. thousands-scale amounts) parses as
+    'dates' too, but financial series aren't monotonic by column — this stops such
+    a row from hijacking the timeline and garbling date alignment."""
+    def monotonic(d: dict[int, object]) -> bool:
+        vals = [d[c] for c in sorted(d)]
+        return all(a <= b for a, b in zip(vals, vals[1:]))
+
+    mono = [d for d in row_dates.values() if len(d) >= 3 and monotonic(d)]
+    pool = mono or list(row_dates.values())
+    return max(pool, key=len)
+
+
+def _template_context(version_id: str) -> tuple[dict, dict, dict]:
     """From the template snapshot, the maps binding needs:
       - numfmt[(sheet, A1)]      -> number format (kind/currency for scale)
       - mags[(sheet, row)]       -> numeric magnitudes already in the row (scale by
                                     what the cell holds, not by its unit label)
       - dates_by_col[(sheet,col)]-> the column's real period date, read from the
-                                    sheet's timeline header row (the row carrying the
-                                    most dates), so periods align by actual date.
-      - formula_cells{(sheet,A1)}-> cells that are formulas (computed subtotals/totals);
-                                    we never write into these — they recompute themselves.
+                                    sheet's timeline header row, so periods align
+                                    by actual date.
     Best-effort — empty on any failure (binding then uses label scale + positional)."""
     numfmt: dict[tuple[str, str], str] = {}
     mags: dict[tuple[str, int], list[float]] = defaultdict(list)
     dates_by_col: dict[tuple[str, int], object] = {}
-    formula_cells: set[tuple[str, str]] = set()
     try:
         snap = json.loads(gzip.decompress(sb.download_snapshot(version_id)))
     except Exception as e:  # noqa: BLE001
         logger.info("template snapshot unavailable for scale/date context (%s)", e)
-        return {}, {}, {}, set()
+        return {}, {}, {}
     for s in snap.get("sheets", []):
         name = s.get("name")
         row_dates: dict[int, dict[int, object]] = defaultdict(dict)   # row -> {col: date}
@@ -157,22 +178,16 @@ def _template_context(version_id: str) -> tuple[dict, dict, dict, set]:
             nf = (c.get("style") or {}).get("number_format")
             if addr and nf:
                 numfmt[(name, addr)] = nf
-            v = c.get("value")
-            if addr and (c.get("cell_type") == "formula" or c.get("formula")
-                         or (isinstance(v, str) and v.startswith("="))):
-                formula_cells.add((name, addr))
             ev = effective_value(c)
             if isinstance(ev, (int, float)) and not isinstance(ev, bool) and ev:
                 mags[(name, c.get("row"))].append(float(ev))
             d = parse_any_date(ev)
             if d is not None:
                 row_dates[c["row"]][c["col"]] = d
-        # the timeline = the row with the most dates; map its columns to dates
         if row_dates:
-            timeline = max(row_dates.values(), key=len)
-            for col, d in timeline.items():
+            for col, d in _pick_timeline(row_dates).items():
                 dates_by_col[(name, col)] = d
-    return numfmt, dict(mags), dates_by_col, formula_cells
+    return numfmt, dict(mags), dates_by_col
 
 
 def _build_source_catalogue(snapshot: dict, source_periods: dict, content_hash: str | None,
@@ -253,7 +268,9 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     filled_url = audit_url = None
     cleared = 0
     try:
-        metric_maps = map_metrics(demand["metrics"], catalogue)
+        metric_maps, mapping_failed = map_metrics(demand["metrics"], catalogue)
+        if mapping_failed:
+            routing["mapping_failed_batches"] = mapping_failed
         links, bind_unmatched = bind(
             target_inputs, catalogue, metric_maps, demand,
             target_currency=target_currency, fx_rate=fx_rate, display_unit=display_unit,

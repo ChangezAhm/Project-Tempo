@@ -1,6 +1,24 @@
+from datetime import date
+
 from app.population.apply import apply_links
-from app.population.run import _is_clearable_value
+from app.population.run import _is_clearable_value, _pick_timeline
 from app.population.schema import CellLink
+
+
+def test_pick_timeline_prefers_monotonic_header_over_serial_data_row():
+    # Row 8 is the real period header (Jan..Apr). Row 30 is a DATA row whose
+    # values (in the 29k-60k range) parse as date serials AND it has more of
+    # them — but they aren't monotonic by column, so it must not win.
+    header = {3: date(2024, 1, 31), 4: date(2024, 2, 29), 5: date(2024, 3, 31)}
+    data_row = {3: date(2010, 5, 1), 4: date(2031, 2, 3), 5: date(2001, 9, 9),
+                6: date(2019, 1, 1), 7: date(2007, 6, 6)}
+    assert _pick_timeline({8: header, 30: data_row}) == header
+
+
+def test_pick_timeline_falls_back_to_densest_when_nothing_monotonic():
+    a = {3: date(2024, 3, 1), 4: date(2024, 1, 1)}
+    b = {3: date(2030, 1, 1), 4: date(2001, 1, 1), 5: date(2020, 1, 1)}
+    assert _pick_timeline({1: a, 2: b}) == b
 
 
 def _source():

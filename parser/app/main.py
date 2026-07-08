@@ -9,6 +9,8 @@ Run:  uvicorn app.main:app --reload --port 8000   (from parser/)
 from __future__ import annotations
 
 import logging
+import threading
+from contextlib import contextmanager
 from functools import partial
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request
@@ -19,6 +21,7 @@ from app import supabase_client as sb
 from app.config import apply_aspose_license, settings
 from app.pipeline import (
     SheetNotFound,
+    SnapshotUnavailable,
     get_structure,
     impact,
     inspect,
@@ -37,10 +40,47 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+logger = logging.getLogger(__name__)
 
 _aspose_licensed = apply_aspose_license()
 
 app = FastAPI(title="Project Tempo — Parser Service")
+
+
+@app.on_event("startup")
+def _reconcile_stale_jobs() -> None:
+    """Jobs run inside the request; a restart mid-run orphans their rows at
+    status='running'. Close them so the job table reflects reality."""
+    if not settings.configured:
+        return
+    try:
+        n = sb.fail_stale_jobs()
+        if n:
+            logger.warning("Closed %d orphaned analysis_jobs from a previous process", n)
+    except Exception as e:  # noqa: BLE001 — reconciliation must never block startup
+        logger.warning("Stale-job reconciliation skipped: %s", e)
+
+
+# One expensive run (understand / populate) per template at a time. Two tabs or a
+# double-click otherwise run concurrently over non-transactional delete-then-insert
+# persistence and interleave rows. In-process only — matches the single-process
+# uvicorn deployment.
+_inflight: set[tuple[str, str]] = set()
+_inflight_lock = threading.Lock()
+
+
+@contextmanager
+def _single_run(kind: str, template_id: str):
+    key = (kind, template_id)
+    with _inflight_lock:
+        if key in _inflight:
+            raise HTTPException(409, f"A {kind} run is already in progress for this template.")
+        _inflight.add(key)
+    try:
+        yield
+    finally:
+        with _inflight_lock:
+            _inflight.discard(key)
 
 app.add_middleware(
     CORSMiddleware,
@@ -119,12 +159,11 @@ def snapshot_route(
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
     try:
         return load_snapshot(template_id, sheet=sheet, limit=limit, formulas_only=formulas_only)
-    except TemplateNotFound as e:
+    except (TemplateNotFound, SheetNotFound, SnapshotUnavailable) as e:
         raise HTTPException(404, str(e))
-    except SheetNotFound as e:
-        raise HTTPException(404, str(e))
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(404, f"No snapshot available (run /parse first): {e}")
+    except Exception as e:  # noqa: BLE001 — corrupt blob / auth failure is NOT a 404
+        logger.exception("Snapshot read failed")
+        raise HTTPException(500, f"Snapshot read failed: {e}")
 
 
 # --- Layer 2: structure + impact -------------------------------------------
@@ -137,10 +176,11 @@ def analyze_structure_route(template_id: str) -> dict:
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
     try:
         return run_structure(template_id)
-    except TemplateNotFound as e:
+    except (TemplateNotFound, SnapshotUnavailable) as e:
         raise HTTPException(404, str(e))
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(404, f"No snapshot available (run /parse first): {e}")
+    except Exception as e:  # noqa: BLE001 — a detector bug is NOT a 404
+        logger.exception("Structure analysis failed")
+        raise HTTPException(500, f"Structure analysis failed: {e}")
 
 
 # Read the persisted structure (optionally one sheet).
@@ -181,10 +221,16 @@ def understand_route(template_id: str, max_sheets: int = 16) -> dict:
     if not settings.configured:
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
     try:
-        return understand_and_persist(template_id, max_sheets=max_sheets)
+        with _single_run("understand", template_id):
+            return understand_and_persist(template_id, max_sheets=max_sheets)
+    except SpendCapExceeded as e:
+        raise HTTPException(402, str(e))
     except TemplateNotFound as e:
         raise HTTPException(404, str(e))
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
+        logger.exception("Understanding failed")
         raise HTTPException(500, f"Understanding failed: {e}")
 
 
@@ -228,9 +274,12 @@ def enrich_route(template_id: str) -> dict:
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
     try:
         return enrich_and_persist(template_id)
+    except SpendCapExceeded as e:
+        raise HTTPException(402, str(e))
     except TemplateNotFound as e:
         raise HTTPException(404, str(e))
     except Exception as e:  # noqa: BLE001
+        logger.exception("Enrichment failed")
         raise HTTPException(500, f"Enrichment failed: {e}")
 
 
@@ -258,16 +307,19 @@ async def populate_route(
     if not data:
         raise HTTPException(400, "No source file in request body")
     try:
-        return await run_in_threadpool(
-            partial(populate_from_bytes, target_template_id, filename, data, as_of_date,
-                    display_unit=display_unit, target_currency=target_currency,
-                    fx_rate=fx_rate, dry_run=dry_run)
-        )
+        with _single_run("populate", target_template_id):
+            return await run_in_threadpool(
+                partial(populate_from_bytes, target_template_id, filename, data, as_of_date,
+                        display_unit=display_unit, target_currency=target_currency,
+                        fx_rate=fx_rate, dry_run=dry_run)
+            )
     except SpendCapExceeded as e:
         # 402: the run hit its spend cap and was aborted before overspending.
         raise HTTPException(402, str(e))
     except TemplateNotFound as e:
         raise HTTPException(404, str(e))
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
         logger.exception("Population failed")
         raise HTTPException(500, f"Population failed: {e}")

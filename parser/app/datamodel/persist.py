@@ -9,6 +9,7 @@ dimensions and the contract/correction merge come next.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 
 from app import supabase_client as sb
 from app.datamodel.derive import DERIVATION_VERSION, derive_data_model
@@ -83,6 +84,70 @@ def get_contract(template_id: str) -> dict:
         "contract": contract,
         "corrections": corrections,
         "model": model[0] if model else None,
+    }
+
+
+# Categories population actually writes into (see derive._emit's category rules).
+_FILLABLE = ("data", "sourced")
+
+
+def _modal(values: list) -> object | None:
+    """Most common non-empty value; ties broken by first occurrence (dicts keep
+    insertion order and max() returns the first winner)."""
+    counts: dict = {}
+    for v in values:
+        if v in (None, ""):
+            continue
+        counts[v] = counts.get(v, 0) + 1
+    return max(counts, key=counts.get) if counts else None
+
+
+def _aggregate_fields(facts: list[dict]) -> list[dict]:
+    """Fold per-cell facts into per-(sheet, metric) contract fields — the surface
+    a reviewer confirms, one row per line item instead of one per cell."""
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for f in facts:
+        # Unlabelled rows still need a reviewable group; don't silently drop them.
+        label = f.get("metric_label") or "(unlabelled)"
+        groups.setdefault((f.get("sheet_name") or "", label), []).append(f)
+
+    keyed: list[tuple[tuple, dict]] = []
+    for (sheet, label), grp in groups.items():
+        ordered = sorted(grp, key=lambda f: (f.get("row") or 0, f.get("col") or 0))
+        cats = Counter(f.get("category") or "data" for f in grp)
+        first = ordered[0]
+        field = {
+            "sheet_name": sheet,
+            "metric_label": label,
+            "canonical_metric": _modal([f.get("canonical_metric") for f in grp]),
+            "unit": _modal([f.get("unit") for f in grp]),
+            "sign_convention": _modal([f.get("sign_convention") for f in grp]),
+            "scenarios": sorted({s for f in grp if (s := f.get("scenario"))}),
+            "category_counts": {k: n for k, n in cats.items() if n},
+            "fillable_count": sum(n for k, n in cats.items() if k in _FILLABLE),
+            "fact_count": len(grp),
+            "cells": [f.get("cell") for f in ordered[:3]],
+            "corrected": any(f.get("applied_correction_ids") for f in grp),
+        }
+        keyed.append(((sheet, first.get("row") or 0, first.get("col") or 0), field))
+    keyed.sort(key=lambda kf: kf[0])
+    return [f for _, f in keyed]
+
+
+def get_contract_fields(template_id: str) -> dict:
+    """The reviewable Template Contract surface: the data model grouped into
+    per-(sheet, metric) fields. Pure aggregation over the stored facts — no LLM,
+    no writes."""
+    dm = get_data_model(template_id, limit=30000)
+    if not dm.get("available"):
+        return {"template_version_id": dm.get("template_version_id"),
+                "available": False, "count": 0, "fields": []}
+    fields = _aggregate_fields(dm.get("facts") or [])
+    return {
+        "template_version_id": dm["template_version_id"],
+        "available": True,
+        "count": len(fields),
+        "fields": fields,
     }
 
 

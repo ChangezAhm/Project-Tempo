@@ -391,3 +391,29 @@ def supersede_corrections_by(template_id: str, created_by: str) -> None:
 def supersede_correction(correction_id: str) -> None:
     sb = get_client()
     sb.table("template_corrections").update({"superseded": True}).eq("id", correction_id).execute()
+
+
+# --- Authoring: extensible regions (0008) -----------------------------------
+
+def replace_extensible_regions(version_id: str, rows: list[dict]) -> None:
+    """Idempotent: clear this version's extensible regions, then insert — same
+    delete-then-insert pattern as replace_rows (cheaply re-derivable, so no
+    compensating restore)."""
+    sb = get_client()
+    sb.table("template_extensible_regions").delete().eq(
+        "template_version_id", version_id).execute()
+    if rows:
+        sb.table("template_extensible_regions").insert(rows).execute()
+
+
+def list_extensible_regions(version_id: str) -> list[dict]:
+    sb = get_client()
+    res = (
+        sb.table("template_extensible_regions")
+        .select("*")
+        .eq("template_version_id", version_id)
+        .order("sheet_name")
+        .order("row_start")
+        .execute()
+    )
+    return res.data or []

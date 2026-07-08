@@ -1,8 +1,54 @@
 from datetime import date
 
 from app.population.apply import apply_links
-from app.population.run import _is_clearable_value, _pick_timeline
+from app.population.run import _is_clearable_value, _pick_timeline, render_filled
 from app.population.schema import CellLink
+
+
+def _tiny_template(tmp_path):
+    """A template copy with one stale LITERAL (B2), one connector-style FORMULA
+    with a cached value (B3), and one label (A2) — the reset surface."""
+    from aspose.cells import Workbook
+    wb = Workbook()
+    ws = wb.worksheets[0]
+    ws.name = "S"
+    ws.cells.get("A2").put_value("Revenue")
+    ws.cells.get("B2").put_value(8.2)            # stale literal from a prior fill
+    ws.cells.get("B3").formula = "=1000*2"       # connector-style formula cell
+    wb.calculate_formula()
+    p = tmp_path / "t.xlsx"
+    wb.save(str(p))
+    return p
+
+
+def _clear_facts():
+    return [{"sheet_name": "S", "cell": "B2"}, {"sheet_name": "S", "cell": "B3"}]
+
+
+def _open(data: bytes, tmp_path):
+    from aspose.cells import Workbook
+    p = tmp_path / "out.xlsx"
+    p.write_bytes(data)
+    return Workbook(str(p)).worksheets[0]
+
+
+def test_reset_values_clears_literals_only(tmp_path):
+    data, stats, applied, skipped = render_filled(_tiny_template(tmp_path), [], _clear_facts())
+    assert stats == {"cleared_values": 1, "cleared_formulas": 0}
+    ws = _open(data, tmp_path)
+    assert ws.cells.get("B2").value is None          # stale literal wiped
+    assert ws.cells.get("B3").is_formula             # formula (cached stale) survives
+    assert ws.cells.get("A2").value == "Revenue"     # labels never touched
+
+
+def test_reset_full_clears_connector_formulas_too(tmp_path):
+    data, stats, applied, skipped = render_filled(
+        _tiny_template(tmp_path), [], _clear_facts(), reset="full")
+    assert stats == {"cleared_values": 1, "cleared_formulas": 1}
+    ws = _open(data, tmp_path)
+    assert ws.cells.get("B2").value is None
+    assert ws.cells.get("B3").value in (None, "")    # one file, one company
+    assert ws.cells.get("A2").value == "Revenue"
 
 
 def test_pick_timeline_prefers_monotonic_header_over_serial_data_row():

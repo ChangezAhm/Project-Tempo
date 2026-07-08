@@ -86,24 +86,36 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
 
 
 def _is_clearable_value(value, is_formula: bool) -> bool:
-    """Stale data to wipe on refresh = a plain NUMBER sitting in an input cell.
-    Never clear a formula (computed/connector cell) or text (a label/header) — only
-    numeric literals, so structure and computed cells are untouched."""
+    """Stale data to wipe on a standard refresh = a plain NUMBER sitting in an
+    input cell. Never clear a formula (computed/connector cell) or text (a
+    label/header) — only numeric literals, so structure stays untouched."""
     if is_formula:
         return False
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def render_filled(template_workbook_path, filled, clear_facts=()) -> tuple[bytes, int]:
-    """Refresh-then-fill: first wipe stale numeric values in the in-scope input
-    cells (``clear_facts`` = the template's data/sourced facts) so a previously
-    populated template doesn't leak another company's numbers, then write the
-    matched values. Formulas and text are never cleared. Returns (bytes, cleared)."""
+def render_filled(template_workbook_path, filled, clear_facts=(), *, reset: str = "values",
+                  additions=None, sval=None) -> tuple[bytes, dict, list, list]:
+    """Refresh-then-fill on a COPY of the template (the stored master is never
+    touched). ``clear_facts`` = the in-scope input facts (data/sourced only —
+    computed formulas are never in scope).
+
+    reset="values": wipe stale numeric LITERALS only (formulas keep their cached
+      values — on connector templates that leaves the previous company's numbers
+      visible in unfilled cells).
+    reset="full": ONE FILE, ONE COMPANY — clear the contents of EVERY in-scope
+      input cell, including connector formulas (the dropped file substitutes for
+      the connector in this copy), so an unfilled cell is visibly empty, never
+      another company's number.
+
+    ``additions``: approved add-line proposals, written via authoring.apply_additions
+    (needs ``sval``, the source value map). Returns (bytes, clear_stats,
+    additions_applied, additions_skipped)."""
     from aspose.cells import Workbook
     wb = Workbook(str(template_workbook_path))
     ws_by_name = {w.name: w for w in wb.worksheets}
 
-    cleared = 0
+    cleared_values = cleared_formulas = 0
     for f in clear_facts:
         ws = ws_by_name.get(f.get("sheet_name"))
         if ws is None or not f.get("cell"):
@@ -111,19 +123,28 @@ def render_filled(template_workbook_path, filled, clear_facts=()) -> tuple[bytes
         cell = ws.cells.get(f["cell"])
         if _is_clearable_value(cell.value, cell.is_formula):
             ws.cells.clear_contents(cell.row, cell.column, cell.row, cell.column)
-            cleared += 1
+            cleared_values += 1
+        elif reset == "full" and cell.is_formula:
+            ws.cells.clear_contents(cell.row, cell.column, cell.row, cell.column)
+            cleared_formulas += 1
 
     for fc in filled:
         ws = ws_by_name.get(fc.template_sheet)
         if ws is not None:
             ws.cells.get(fc.template_cell).put_value(fc.value)
 
+    applied, skipped = [], []
+    if additions:
+        from app.population.authoring import apply_additions
+        applied, skipped = apply_additions(ws_by_name, additions, sval or {})
+
     fd, name = tempfile.mkstemp(suffix=".xlsx")
     os.close(fd)
     out = Path(name)
     try:
         wb.save(str(out))
-        return out.read_bytes(), cleared
+        stats = {"cleared_values": cleared_values, "cleared_formulas": cleared_formulas}
+        return out.read_bytes(), stats, applied, skipped
     finally:
         out.unlink(missing_ok=True)
 
@@ -228,11 +249,44 @@ def _build_source_catalogue(snapshot: dict, source_periods: dict, content_hash: 
     return build_catalogue(snapshot, source_periods), "deterministic_fallback", 0
 
 
+def _reset_preview(version_id: str, facts: list[dict]) -> dict:
+    """What a reset would touch, BEFORE any spend: in-scope input cells split by
+    what they hold (stale numeric literal vs connector/formula with a cached
+    value). Best-effort — empty on any failure."""
+    try:
+        snap = json.loads(gzip.decompress(sb.download_snapshot(version_id)))
+    except Exception:  # noqa: BLE001
+        return {}
+    cell_info: dict[tuple[str, str], tuple[bool, object]] = {}
+    for s in snap.get("sheets", []):
+        for c in s.get("cells", []):
+            addr = (c.get("address") or "").upper()
+            if addr:
+                v = c.get("value")
+                is_formula = bool(c.get("formula")) or (isinstance(v, str) and v.startswith("="))
+                cell_info[(s["name"], addr)] = (is_formula, effective_value(c))
+    stale_values = formula_cells = 0
+    for f in facts:
+        info = cell_info.get((f.get("sheet_name"), (f.get("cell") or "").upper()))
+        if info is None:
+            continue
+        is_formula, ev = info
+        if is_formula:
+            if ev not in (None, ""):
+                formula_cells += 1
+        elif isinstance(ev, (int, float)) and not isinstance(ev, bool):
+            stale_values += 1
+    return {"cells_in_scope": len(facts),
+            "stale_values_cleared_by_standard_reset": stale_values,
+            "stale_connector_cells_cleared_only_by_full_reset": formula_cells}
+
+
 def _run_population(target_template_id: str, source_snapshot: dict,
                     source_periods: dict[str, list[dict]], source_label: str,
                     as_of_date: str | None, *, content_hash: str | None = None,
                     source_path: Path | None = None,
-                    display_unit: str | None = None, dry_run: bool = False) -> dict:
+                    display_unit: str | None = None, reset: str = "values",
+                    add_lines: str = "propose", dry_run: bool = False) -> dict:
     """Core: understand the SOURCE with AI (period columns + data series + units,
     cached by file), build the catalogue from that, ask the LLM to map template
     metrics → source series, then bind periods/scale(by magnitude)/sign and read
@@ -258,6 +312,11 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         else:
             catalogue = {}
             src_est, src_state = estimate_source_understanding_usd(source_snapshot), "would_run"
+        try:
+            preview_vid, _, _ = sb.get_latest_file(target_template_id)
+            reset_preview = _reset_preview(preview_vid, target_inputs)
+        except Exception:  # noqa: BLE001 — preview is best-effort
+            reset_preview = {}
         return {
             "dry_run": True, "target_template_id": target_template_id,
             "source_filename": source_label,
@@ -268,6 +327,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             "estimated_source_understanding_usd": src_est,
             "estimated_mapping_usd": estimate_mapping_usd(demand["metrics"], catalogue) if catalogue else None,
             "run_cap_usd": default_cap_usd(),
+            "reset_preview": reset_preview,
         }
 
     catalogue, catalogue_source, excluded_by_tag = _build_source_catalogue(
@@ -295,7 +355,11 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                                "excluded. If they are actually reported months, set the as-of "
                                "date — columns dated on/before it are treated as actuals.")
     filled_url = audit_url = None
-    cleared = 0
+    clear_stats: dict = {}
+    proposals: list = []
+    add_notes: list[str] = []
+    additions_applied: list = []
+    additions_skipped: list = []
     try:
         metric_maps, mapping_failed = map_metrics(demand["metrics"], catalogue)
         if mapping_failed:
@@ -325,10 +389,36 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         unmatched_reasons = [{"reason": r, "count": n}
                              for r, n in Counter(u.get("reason") for u in result.unmatched).most_common(10)]
 
+        # Add-line proposals: source series that mapped to NO template metric are
+        # candidates for NEW lines in the template's extensible regions. Report-only
+        # by default; written only on an explicit add_lines="apply".
+        if add_lines in ("propose", "apply"):
+            try:
+                from app.population.authoring import propose_additions
+                regions = sb.list_extensible_regions(t_vid)
+                if regions:
+                    used = {m.series_id for m in metric_maps if m.series_id}
+                    proposals, add_notes = propose_additions(catalogue, used, regions)
+                else:
+                    add_notes = ["no extensible regions stored — run region detection on this template first"]
+            except Exception as e:  # noqa: BLE001 — additions must never sink the fill
+                logger.exception("add-line proposal failed")
+                add_notes = [f"add-line proposals unavailable: {e}"]
+
         try:
-            # refresh-then-fill: wipe stale numeric values across ALL in-scope inputs,
-            # then write the matches — so uncovered inputs end up empty, not stale.
-            filled_bytes, cleared = render_filled(tgt_tmp, result.filled, target_inputs)
+            # refresh-then-fill on the copy: wipe stale data across ALL in-scope
+            # inputs (per the reset mode), write the matches, then any APPROVED
+            # additions — so uncovered inputs end up empty, not stale.
+            sval: dict = {}
+            if proposals and add_lines == "apply":
+                for s in source_snapshot.get("sheets", []):
+                    for c in s.get("cells", []):
+                        a = (c.get("address") or "").upper()
+                        if a:
+                            sval[(s["name"], a)] = effective_value(c)
+            filled_bytes, clear_stats, additions_applied, additions_skipped = render_filled(
+                tgt_tmp, result.filled, target_inputs, reset=reset,
+                additions=(proposals if add_lines == "apply" else None), sval=sval)
             filled_path = sb.upload_filled(t_vid, source_label, filled_bytes)
             filled_url = sb.signed_filled_url(filled_path)
         except Exception as e:  # noqa: BLE001 — render failure shouldn't lose the mapping/report
@@ -344,7 +434,9 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 "unmatched": result.unmatched, "unmatched_reasons": unmatched_reasons,
                 "skipped": result.skipped,
                 "review": review, "notes": notes, "summary": result.summary,
-                "cleared_count": cleared,
+                "reset": reset, **clear_stats,
+                "proposed_additions": proposals, "addition_notes": add_notes,
+                "additions_applied": additions_applied, "additions_skipped": additions_skipped,
             }
             audit_path = sb.upload_audit(t_vid, source_label, json.dumps(audit, default=str).encode())
             audit_url = sb.signed_filled_url(audit_path)
@@ -371,7 +463,14 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         "skipped_count": len(result.skipped),
         "review": review[:200],
         "review_count": len(review),
-        "cleared_count": cleared,
+        "reset": reset,
+        "cleared_count": clear_stats.get("cleared_values", 0) + clear_stats.get("cleared_formulas", 0),
+        "cleared_values": clear_stats.get("cleared_values", 0),
+        "cleared_formulas": clear_stats.get("cleared_formulas", 0),
+        "proposed_additions": proposals[:100],
+        "addition_notes": add_notes[:20],
+        "additions_applied": additions_applied[:100],
+        "additions_skipped": additions_skipped[:50],
         "notes": notes,
         "filled_url": filled_url,
         "audit_url": audit_url,
@@ -390,6 +489,7 @@ def _detect_source_periods(parsed) -> dict[str, list[dict]]:
 
 def populate_from_bytes(target_template_id: str, source_filename: str, source_bytes: bytes,
                         as_of_date: str | None = None, *, display_unit: str | None = None,
+                        reset: str = "values", add_lines: str = "propose",
                         dry_run: bool = False) -> dict:
     """Populate a template directly from an uploaded data file's bytes. Parses
     the source in-memory (Aspose → snapshot) — it is never stored as a template.
@@ -407,6 +507,7 @@ def populate_from_bytes(target_template_id: str, source_filename: str, source_by
                                source_filename or "source.xlsx", as_of_date,
                                content_hash=source_cache.content_hash(source_bytes),
                                source_path=src_tmp,   # alive until the run returns → images
-                               display_unit=display_unit, dry_run=dry_run)
+                               display_unit=display_unit, reset=reset,
+                               add_lines=add_lines, dry_run=dry_run)
     finally:
         src_tmp.unlink(missing_ok=True)

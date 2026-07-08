@@ -30,7 +30,7 @@ from app.pipeline import (
     run_structure,
 )
 from app.datamodel.dimensions_llm import enrich_and_persist
-from app.datamodel.persist import derive_and_persist, get_contract, get_data_model
+from app.datamodel.persist import derive_and_persist, get_contract, get_contract_fields, get_data_model
 from app.population.cost import SpendCapExceeded
 from app.population.run import populate_from_bytes
 from app.supabase_client import TemplateNotFound
@@ -298,9 +298,15 @@ async def populate_route(
     as_of_date: str | None = None,
     dry_run: bool = False,
     display_unit: str | None = None,
+    reset: str = "values",
+    add_lines: str = "propose",
 ) -> dict:
     if not settings.configured:
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    if reset not in ("values", "full"):
+        raise HTTPException(422, "reset must be 'values' or 'full'")
+    if add_lines not in ("off", "propose", "apply"):
+        raise HTTPException(422, "add_lines must be 'off', 'propose' or 'apply'")
     data = await request.body()
     if not data:
         raise HTTPException(400, "No source file in request body")
@@ -308,7 +314,8 @@ async def populate_route(
         with _single_run("populate", target_template_id):
             return await run_in_threadpool(
                 partial(populate_from_bytes, target_template_id, filename, data, as_of_date,
-                        display_unit=display_unit, dry_run=dry_run)
+                        display_unit=display_unit, reset=reset, add_lines=add_lines,
+                        dry_run=dry_run)
             )
     except SpendCapExceeded as e:
         # 402: the run hit its spend cap and was aborted before overspending.
@@ -336,6 +343,56 @@ def get_datamodel_route(template_id: str, sheet: str | None = None, limit: int =
 
 
 # --- Layer 4b: Template Contract + corrections -----------------------------
+
+# The reviewable Contract grid: the data model grouped into field rows
+# (sheet × label) so a human can approve/correct/exclude at metric level.
+@app.get("/contract/{template_id}/fields", dependencies=[Depends(require_api_key)])
+def contract_fields_route(template_id: str) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    try:
+        return get_contract_fields(template_id)
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Contract fields read failed")
+        raise HTTPException(500, f"Read failed: {e}")
+
+
+# --- Authoring: extensible regions ------------------------------------------
+
+# Detect the areas a template INVITES additions (blank KPI rows, 'Other…'
+# blocks) and persist them. Cheap (Sonnet, text-only), guarded by the populate
+# spend cap. Prerequisite for add-line-item population and the full reset.
+@app.post("/authoring/regions/{template_id}", dependencies=[Depends(require_api_key)])
+def detect_regions_route(template_id: str) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    from app.authoring.regions import detect_and_persist
+    try:
+        return detect_and_persist(template_id)
+    except SpendCapExceeded as e:
+        raise HTTPException(402, str(e))
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Region detection failed")
+        raise HTTPException(500, f"Region detection failed: {e}")
+
+
+@app.get("/authoring/regions/{template_id}", dependencies=[Depends(require_api_key)])
+def get_regions_route(template_id: str) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    from app.authoring.regions import get_regions
+    try:
+        return get_regions(template_id)
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Regions read failed")
+        raise HTTPException(500, f"Read failed: {e}")
+
 
 # Read the contract: status, the template-level corrections, and the model
 # summary (the reviewable surface).

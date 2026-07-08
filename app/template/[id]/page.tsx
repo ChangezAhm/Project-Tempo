@@ -258,6 +258,22 @@ function PopulatePanel({ templateId }: { templateId: string }) {
                 .join("; ")}
             </p>
           ) : null}
+          {result.rule_violations?.length ? (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p className="font-medium">
+                {result.rule_violations.length} fill{result.rule_violations.length === 1 ? "" : "s"} contradict the
+                template&apos;s sign conventions (written, flagged for review — also filed as questions):
+              </p>
+              <ul className="mt-1 space-y-0.5 text-xs">
+                {result.rule_violations.slice(0, 8).map((v, i) => (
+                  <li key={i}>
+                    <span className="font-mono">{v.template_sheet}!{v.template_cell}</span> {v.metric} ={" "}
+                    {String(v.value)} but the template expects {v.expected}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">{result.summary.filled} filled</span>
             <span className="rounded bg-amber-50 px-2 py-1 text-amber-700">{result.cleared_count} cleared</span>

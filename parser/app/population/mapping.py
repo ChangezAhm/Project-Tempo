@@ -31,6 +31,12 @@ _SYSTEM = (
     "RULES:\n"
     "- Match meaning, not wording: 'Total revenue' == 'Net sales'; 'COGS' == 'Cost of "
     "sales'. Do NOT match a subtotal to a line item or vice versa.\n"
+    "- A metric may carry `def:` (what the line MEANS) and `qualifies:` (what belongs "
+    "in it and what does NOT) — read from the template itself. These OVERRIDE "
+    "label-based intuition: if a source series fails the qualification criteria, do "
+    "not map it, whatever the label says.\n"
+    "- A TEMPLATE CONTEXT block, when present, carries sponsor-confirmed rules and "
+    "answered review questions. It is authoritative over your own judgment.\n"
     "- set sign_flip=true only when conventions differ (e.g. source shows costs as "
     "positive but the template expects them negative).\n"
     "- confidence in [0,1]: be honest; <0.6 will be dropped rather than risk a wrong number.\n"
@@ -69,28 +75,37 @@ def _metric_lines(metrics: list[dict]) -> str:
         sign = m.get("sign_convention")
         if sign:   # the template's own convention — informs the sign_flip guess
             meta += f" | sign: {str(sign)[:60]}"
+        # The L3 business logic — what the line MEANS and what QUALIFIES to be in
+        # it — is exactly what separates 'Adjusted' from 'Reported' EBITDA. The
+        # mapper was deciding on labels alone while this sat unused in the model.
+        if m.get("definition"):
+            meta += f" | def: {str(m['definition'])[:90]}"
+        if m.get("qualification_criteria"):
+            meta += f" | qualifies: {str(m['qualification_criteria'])[:110]}"
         out.append(f"{m.get('metric')} | {label}{meta}")
     return "\n".join(out)
 
 
-def _user_text(metrics: list[dict], series_block: str) -> str:
+def _user_text(metrics: list[dict], series_block: str, context: str = "") -> str:
+    ctx = f"TEMPLATE CONTEXT (authoritative — sponsor-confirmed):\n{context}\n\n" if context else ""
     return (
+        f"{ctx}"
         "SOURCE SERIES (id | sheet | label [unit] | samples):\n"
         f"{series_block}\n\n"
-        "TEMPLATE METRICS to map (key | label | unit):\n"
+        "TEMPLATE METRICS to map (key | label | unit | def | qualifies):\n"
         f"{_metric_lines(metrics)}\n\n"
         "Return the JSON now."
     )
 
 
 def estimate_mapping_usd(metrics: list[dict], catalogue: dict[str, Series],
-                         max_tokens: int = 8000) -> float:
+                         max_tokens: int = 8000, context: str = "") -> float:
     """Dry-run cost: what the whole mapping step would cost before sending anything."""
     series_block = _series_lines(catalogue)
     total = 0.0
     for i in range(0, len(metrics), _BATCH):
         chunk = metrics[i:i + _BATCH]
-        chars = len(_SYSTEM) + len(_user_text(chunk, series_block))
+        chars = len(_SYSTEM) + len(_user_text(chunk, series_block, context))
         total += estimate_call_usd(MODEL_MAP, chars, max_tokens)
     return round(total, 4)
 
@@ -107,11 +122,12 @@ def _parse(text: str) -> list[MetricMap]:
     return MappingOut(**json.loads(text[start:end + 1])).mappings
 
 
-def _map_chunk(chunk: list[dict], series_block: str, max_tokens: int) -> list[MetricMap]:
+def _map_chunk(chunk: list[dict], series_block: str, max_tokens: int,
+               context: str = "") -> list[MetricMap]:
     """One mapping batch, with ONE corrective retry when the reply doesn't parse
     (or parses to nothing for a non-empty chunk). Raises after the retry fails —
     the caller decides whether that kills the run."""
-    user = _user_text(chunk, series_block)
+    user = _user_text(chunk, series_block, context)
     _, text = guarded_stream(model=MODEL_MAP, system=_SYSTEM, content=user,
                              max_tokens=max_tokens, est_input_chars=len(_SYSTEM) + len(user))
     try:
@@ -139,11 +155,13 @@ def _map_chunk(chunk: list[dict], series_block: str, max_tokens: int) -> list[Me
 
 
 def map_metrics(metrics: list[dict], catalogue: dict[str, Series],
-                max_tokens: int = 8000) -> tuple[list[MetricMap], int]:
-    """Run the mapping (chunked). Returns (mappings, failed_batches). A batch whose
-    retry also fails is dropped LOUDLY — logged and counted, so the run report can
-    say why coverage is low — instead of either silently vanishing or killing a
-    paid run. Guarded by the run's spend cap inside guarded_stream; a
+                max_tokens: int = 8000, context: str = "") -> tuple[list[MetricMap], int]:
+    """Run the mapping (chunked). ``context`` is the template's business-context
+    block (sponsor notes, answered review questions, strict rules) — authoritative
+    knowledge the mapper must honor. Returns (mappings, failed_batches). A batch
+    whose retry also fails is dropped LOUDLY — logged and counted, so the run
+    report can say why coverage is low — instead of either silently vanishing or
+    killing a paid run. Guarded by the run's spend cap inside guarded_stream; a
     SpendCapExceeded still aborts everything."""
     from app.population.cost import SpendCapExceeded
 
@@ -155,7 +173,7 @@ def map_metrics(metrics: list[dict], catalogue: dict[str, Series],
     for i in range(0, len(metrics), _BATCH):
         chunk = metrics[i:i + _BATCH]
         try:
-            out.extend(_map_chunk(chunk, series_block, max_tokens))
+            out.extend(_map_chunk(chunk, series_block, max_tokens, context))
         except SpendCapExceeded:
             raise
         except Exception:  # noqa: BLE001

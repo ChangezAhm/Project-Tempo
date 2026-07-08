@@ -22,6 +22,7 @@ from app.population.binding import bind
 from app.population.catalogue import build_catalogue, catalogue_from_understanding, effective_value
 from app.population.periods import parse_any_date, parse_iso_period
 from app.population.cost import SpendCapExceeded, SpendGuard, default_cap_usd, set_guard
+from app.population.context import load_context
 from app.population.mapping import estimate_mapping_usd, map_metrics
 from app.population.source_understanding import (
     cached_sheets, estimate_source_understanding_usd, understand_source,
@@ -60,8 +61,13 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
     for f in inputs:
         key = f.get("canonical_metric") or f.get("metric_label")
         if key and key not in metrics:
+            # definition/qualification_criteria are the L3 business logic — the
+            # mapper needs them to tell 'Adjusted' from 'Reported', and to refuse
+            # a source series that fails the template's own qualification rules.
             metrics[key] = {"metric": key, "label": f.get("metric_label"), "unit": f.get("unit"),
-                            "sign_convention": f.get("sign_convention")}
+                            "sign_convention": f.get("sign_convention"),
+                            "definition": f.get("definition"),
+                            "qualification_criteria": f.get("qualification_criteria")}
     # period_index is a PER-SHEET ordinal, so the count used for positional
     # alignment must be per-sheet too — a global max would misalign sheets whose
     # timelines are shorter than the longest one in the workbook.
@@ -312,9 +318,11 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         else:
             catalogue = {}
             src_est, src_state = estimate_source_understanding_usd(source_snapshot), "would_run"
+        ctx = ""
         try:
             preview_vid, _, _ = sb.get_latest_file(target_template_id)
             reset_preview = _reset_preview(preview_vid, target_inputs)
+            ctx = load_context(target_template_id, preview_vid)
         except Exception:  # noqa: BLE001 — preview is best-effort
             reset_preview = {}
         return {
@@ -325,9 +333,10 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             "source_understanding": src_state,
             "source_series": len(catalogue),
             "estimated_source_understanding_usd": src_est,
-            "estimated_mapping_usd": estimate_mapping_usd(demand["metrics"], catalogue) if catalogue else None,
+            "estimated_mapping_usd": estimate_mapping_usd(demand["metrics"], catalogue, context=ctx) if catalogue else None,
             "run_cap_usd": default_cap_usd(),
             "reset_preview": reset_preview,
+            "context_chars": len(ctx),
         }
 
     catalogue, catalogue_source, excluded_by_tag = _build_source_catalogue(
@@ -346,8 +355,15 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     # template cell actually holds (robust) instead of by unit labels (a mess).
     template_context = _template_context(t_vid)
 
+    # The business-context channel: sponsor notes + answered review questions +
+    # strict author rules ride into every mapping batch. Best-effort — an empty
+    # context degrades to label/definition matching, never blocks the run.
+    biz_context = load_context(target_template_id, t_vid)
+
     links = notes = None
     routing = {"series": len(catalogue), "catalogue_source": catalogue_source}
+    if biz_context:
+        routing["context_chars"] = len(biz_context)
     if excluded_by_tag:
         routing["source_columns_excluded_by_tag"] = excluded_by_tag
         if as_of is None:
@@ -361,7 +377,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     additions_applied: list = []
     additions_skipped: list = []
     try:
-        metric_maps, mapping_failed = map_metrics(demand["metrics"], catalogue)
+        metric_maps, mapping_failed = map_metrics(demand["metrics"], catalogue, context=biz_context)
         if mapping_failed:
             routing["mapping_failed_batches"] = mapping_failed
         links, bind_unmatched = bind(
@@ -374,6 +390,20 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                   for lk in links if lk.note and "unverified" in lk.note]
         notes = [m.note for m in metric_maps if m.series_id and m.note][:200]
         result = apply_links(target_inputs, source_snapshot, links, skipped=[])
+
+        # Rule enforcement: check every written value against the template's own
+        # declared sign convention. Violations stay written (the reviewer decides)
+        # but are flagged here AND filed as durable review items in the inbox.
+        from app.population.checks import sign_violations, violations_to_review_items
+        violations = sign_violations(result.filled, target_inputs)
+        for v in violations:
+            review.append({"template_sheet": v["template_sheet"], "template_cell": v["template_cell"],
+                           "note": f"sign violation: expected {v['expected']} ({v['rule'][:60]})"})
+        if violations:
+            try:
+                sb.insert_review_items(t_vid, violations_to_review_items(violations, source_label))
+            except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
+                logger.warning("could not file sign-violation review items: %s", e)
 
         # Upgrade apply_links' generic "no source match" to binding's precise reason
         # (low confidence / no source period / unit unresolved / currency mismatch).
@@ -434,6 +464,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 "unmatched": result.unmatched, "unmatched_reasons": unmatched_reasons,
                 "skipped": result.skipped,
                 "review": review, "notes": notes, "summary": result.summary,
+                "rule_violations": violations, "context_chars": len(biz_context),
                 "reset": reset, **clear_stats,
                 "proposed_additions": proposals, "addition_notes": add_notes,
                 "additions_applied": additions_applied, "additions_skipped": additions_skipped,
@@ -463,6 +494,8 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         "skipped_count": len(result.skipped),
         "review": review[:200],
         "review_count": len(review),
+        "rule_violations": violations[:100],
+        "rule_violation_count": len(violations),
         "reset": reset,
         "cleared_count": clear_stats.get("cleared_values", 0) + clear_stats.get("cleared_formulas", 0),
         "cleared_values": clear_stats.get("cleared_values", 0),

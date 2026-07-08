@@ -215,6 +215,15 @@ export type PopulateResult = {
   reset?: string;
   cleared_values?: number;
   cleared_formulas?: number;
+  rule_violations?: {
+    template_sheet: string;
+    template_cell: string;
+    metric: string;
+    value: number;
+    expected: string;
+    rule: string;
+  }[];
+  rule_violation_count?: number;
   proposed_additions?: ProposedAddition[];
   additions_applied?: AppliedAddition[];
   notes: string[];

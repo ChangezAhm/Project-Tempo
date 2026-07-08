@@ -25,6 +25,16 @@ def test_parse_iso_period():
     assert parse_iso_period("garbage") is None
 
 
+def test_parse_quarter_first_labels():
+    # 'Q1-26' style headers on quarterly dashboards — unparsed they left slots
+    # dateless and positional matching pulled a single MONTH into a quarter.
+    assert parse_iso_period("Q1-26") == date(2026, 1, 1)
+    assert parse_iso_period("Q2 2026") == date(2026, 4, 1)
+    assert parse_iso_period("Q3'25") == date(2025, 7, 1)
+    assert parse_iso_period("2026 Q4") == date(2026, 10, 1)
+    assert parse_iso_period("Q5-26") is None
+
+
 def _pcols():
     # cols 3,4,5 monthly Oct/Nov/Dec 2023; col 6 is FY2023 (must never fill a month)
     return [
@@ -210,6 +220,50 @@ def test_bind_uses_per_sheet_period_count():
     d["period_count_by_sheet"] = {"Template": 3}
     links, _ = bind([_fact("revenue", "B10")], cat, maps, d)
     assert links and links[0].source_cell == "E5"   # Dec, not Oct
+
+
+def test_bind_headcount_is_never_scaled_or_fxed():
+    # A count series on a 'USD' sheet gets classified money; with no template
+    # magnitude anchor the money fallback once wrote 512 FTEs as 0.000512.
+    snap = {"sheets": [{"name": "SaaS", "cells": [
+        {"row": 7, "col": 1, "value": "Total employees (FTE)", "address": "A7"},
+        {"row": 7, "col": 3, "value": 512, "address": "C7"},
+    ]}]}
+    periods = {"SaaS": [{"col": 3, "parsed_date": "2023-12", "period_type": "month"}]}
+    cat = build_catalogue(snap, periods)
+    maps = [MetricMap(metric="headcount", series_id="SaaS!r7", confidence=0.95)]
+    fact = _fact("headcount", "D6", unit=None, currency=None)
+    fact["metric_label"] = "Headcount (FTE)"
+    links, unmatched = bind([fact], cat, maps, _demand(), target_currency="EUR", fx_rate=0.92)
+    assert not unmatched and links[0].unit_scale == 1.0
+    assert not links[0].note or "unverified" not in links[0].note   # no scale/fx review noise
+
+
+def test_is_count_like_words():
+    from app.population.units import is_count_like
+    assert is_count_like("Headcount (FTE)")
+    assert is_count_like("Total employees (FTE)")
+    assert not is_count_like("Employee costs")          # money, not a count
+    assert not is_count_like("Revenue per FTE (€k)")    # ratio of money to count
+    assert not is_count_like("Net Revenue")
+
+
+def test_catalogue_from_understanding_excludes_budget_columns():
+    # A source's budget block carries REAL month dates; if catalogued it would
+    # date-match the template's empty future slots (actuals) — must be excluded.
+    from app.population.catalogue import catalogue_from_understanding
+    snap = {"sheets": [{"name": "Cash", "cells": [
+        {"row": 5, "col": 1, "value": "Cash at bank", "address": "A5"},
+        {"row": 5, "col": 3, "value": 6_420_000, "address": "C5"},
+        {"row": 5, "col": 4, "value": 6_900_000, "address": "D5"},
+    ]}]}
+    und = [{"sheet": "Cash", "periods": [
+        {"header_cell": "C3", "date": "2026-06-30", "grain": "month", "kind": "actual"},
+        {"header_cell": "D3", "date": "2026-07-31", "grain": "month", "kind": "budget"},
+    ], "series": [{"label_cell": "A5", "label": "Cash at bank"}]}]
+    cat = catalogue_from_understanding(snap, und)
+    cols = [c for (c, _d, _g) in cat["Cash!r5"].period_cols]
+    assert cols == [3]   # the Jul-26 budget column is not bindable
 
 
 # --- mapping: batch retry + loud failure -----------------------------------

@@ -21,7 +21,7 @@ from app.population.catalogue import Series
 from app.population.numfmt import parse_number_format
 from app.population.periods import infer_grain, parse_iso_period, pick_column
 from app.population.schema import CellLink, MetricMap
-from app.population.units import reconcile_scale, resolve_scale, resolve_unit
+from app.population.units import is_count_like, reconcile_scale, resolve_scale, resolve_unit
 
 
 def _col_letters(col: int) -> str:
@@ -142,19 +142,30 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             tpl_unit = resolve_unit(display_unit)
         tpl_mags = mags_by_row.get((sheet, f.get("row")), [])
 
-        # SCALE by magnitude reconciliation (labels are unreliable); flag if unverified.
-        scale, sflag = resolve_scale(series.sample, tpl_mags, series.unit, tpl_unit,
-                                     fallback_scale=fallback_scale)
-        if scale is None:
-            unmatched.append(_unmatched(f, f"unit/scale unresolved ({sflag}); supply display_unit or check formats"))
-            continue
+        # COUNTS (headcount/FTEs) are dimensionless: never magnitude-rescaled and
+        # never FX-converted — the money-scale fallback once turned 512 FTEs into
+        # 0.000512. Detected from either side's label (the source sheet's currency
+        # banner routinely mislabels count rows as money).
+        if is_count_like(f.get("metric_label")) or is_count_like(series.label):
+            scale, sflag, fx_mult, fxflag = 1.0, None, 1.0, None
+        else:
+            # SCALE by magnitude reconciliation (labels are unreliable); flag if unverified.
+            scale, sflag = resolve_scale(series.sample, tpl_mags, series.unit, tpl_unit,
+                                         fallback_scale=fallback_scale)
+            if scale is None:
+                unmatched.append(_unmatched(f, f"unit/scale unresolved ({sflag}); supply display_unit or check formats"))
+                continue
 
-        # currency, folded into the scale
-        tgt_ccy = f.get("currency") or target_currency
-        fx_mult, fxflag = fx.multiplier(series.unit.currency, tgt_ccy, fx_rate)
-        if fx_mult is None:
-            unmatched.append(_unmatched(f, fxflag))
-            continue
+            # currency, folded into the scale — money only. Percent/ratio rows
+            # would otherwise collect fx flags whenever a target currency is set.
+            if series.unit.kind in ("percent", "ratio") or tpl_unit.kind in ("percent", "ratio"):
+                fx_mult, fxflag = 1.0, None
+            else:
+                tgt_ccy = f.get("currency") or target_currency
+                fx_mult, fxflag = fx.multiplier(series.unit.currency, tgt_ccy, fx_rate)
+                if fx_mult is None:
+                    unmatched.append(_unmatched(f, fxflag))
+                    continue
 
         source_cell = f"{_col_letters(col)}{series.row}"
         note = f"{series.label} @ {series.sheet}"

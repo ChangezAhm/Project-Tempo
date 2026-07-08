@@ -249,6 +249,18 @@ function PopulatePanel({ templateId }: { templateId: string }) {
 
       {result ? (
         <div className="mt-4 space-y-3">
+          {/* If currency mismatches dominate the blanks, say so up front — a
+              mostly-blank workbook without this reads as "it didn't work". */}
+          {result.unmatched_reasons?.some((r) => r.reason.startsWith("currency_mismatch")) ? (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {result.unmatched_reasons
+                .filter((r) => r.reason.startsWith("currency_mismatch"))
+                .reduce((n, r) => n + r.count, 0)}{" "}
+              cells were left blank because the source currency differs from the template&apos;s
+              (never converted with a guessed rate). Set <b>Output currency</b> + <b>FX rate</b> above
+              and drop the file again.
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">{result.summary.filled} filled</span>
             <span className="rounded bg-amber-50 px-2 py-1 text-amber-700">{result.cleared_count} cleared</span>
@@ -294,6 +306,18 @@ function PopulatePanel({ templateId }: { templateId: string }) {
           ) : (
             <p className="text-sm text-neutral-500">Nothing matched — check the source has the metrics this template needs.</p>
           )}
+          {result.unmatched_reasons && result.unmatched_reasons.length > 0 ? (
+            <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2">
+              <p className="mb-1 text-xs font-medium text-neutral-600">Why cells were left blank</p>
+              <ul className="space-y-0.5 text-xs text-neutral-600">
+                {result.unmatched_reasons.map((r, i) => (
+                  <li key={i}>
+                    <span className="font-mono text-neutral-400">{r.count}×</span> {r.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>

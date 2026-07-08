@@ -9,7 +9,7 @@ import json
 import logging
 import os
 import tempfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from app import supabase_client as sb
@@ -70,10 +70,15 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
             period_count_by_sheet[s] = max(period_count_by_sheet.get(s, 0), f["period_index"] + 1)
     period_count = max(period_count_by_sheet.values(), default=0)
     scenarios = sorted({f["scenario"] for f in inputs if f.get("scenario") and f["scenario"] != "unknown"})
-    grains = (dm["model"] or {}).get("period_grains") or ["monthly"]
+    # DOMINANT grain, not alphabetical: a single YTD/annual column used to make
+    # sorted()[0] say 'annual' for a monthly template, sending the dateless
+    # binding fallback hunting for year columns.
+    grain_votes = Counter(f.get("period_type") for f in inputs if f.get("period_type"))
+    stored = (dm["model"] or {}).get("period_grains") or ["monthly"]
+    period_grain = grain_votes.most_common(1)[0][0] if grain_votes else stored[0]
     demand = {"as_of_date": as_of_date, "period_count": period_count,
               "period_count_by_sheet": period_count_by_sheet,
-              "period_grain": grains[0] if grains else "monthly",
+              "period_grain": period_grain,
               "scenarios": scenarios, "metrics": list(metrics.values())}
     return demand, inputs
 
@@ -292,6 +297,12 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             if u.get("reason") == "no source match" and k in reasons:
                 u["reason"] = reasons[k]
 
+        # Reason histogram: the headline of WHY cells are blank ("80× currency
+        # mismatch — supply an FX rate") belongs in the response, not buried in
+        # a 1,000-row audit list.
+        unmatched_reasons = [{"reason": r, "count": n}
+                             for r, n in Counter(u.get("reason") for u in result.unmatched).most_common(10)]
+
         try:
             # refresh-then-fill: wipe stale numeric values across ALL in-scope inputs,
             # then write the matches — so uncovered inputs end up empty, not stale.
@@ -308,7 +319,8 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 "as_of_date": as_of_date, "demand": demand, "routing": routing,
                 "links": [lk.model_dump(mode="json") for lk in links],
                 "filled": [fc.model_dump(mode="json") for fc in result.filled],
-                "unmatched": result.unmatched, "skipped": result.skipped,
+                "unmatched": result.unmatched, "unmatched_reasons": unmatched_reasons,
+                "skipped": result.skipped,
                 "review": review, "notes": notes, "summary": result.summary,
                 "cleared_count": cleared,
             }
@@ -332,6 +344,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         "filled_truncated": len(filled) > 500,
         "unmatched": result.unmatched[:200],
         "unmatched_count": len(result.unmatched),
+        "unmatched_reasons": unmatched_reasons,
         "skipped": result.skipped[:200],
         "skipped_count": len(result.skipped),
         "review": review[:200],

@@ -43,6 +43,18 @@ class Unit:
     kind: str               # money | percent | ratio | unknown
 
 
+# Count-type series (headcount, FTEs): dimensionless — never magnitude-rescaled,
+# never FX-converted. The money words ('Employee costs', 'Revenue per FTE')
+# must NOT match: a count word next to cost/expense/per means money.
+_COUNT = re.compile(r"(?i)\b(headcount|head\s*count|fte|ftes|employees|staff)\b")
+_NOT_COUNT = re.compile(r"(?i)cost|expense|salar|compensation|\bper\b")
+
+
+def is_count_like(text: str | None) -> bool:
+    """True when a label names a people/unit COUNT (not a money amount)."""
+    return bool(text) and bool(_COUNT.search(text)) and not _NOT_COUNT.search(text)
+
+
 def resolve_unit(text: str | None) -> Unit:
     """Parse a unit label ('$m', "EUR'000", 'EUR millions', '%', 'x', None) into a
     Unit. Money with no explicit scale word is treated as plain ones (base=1),

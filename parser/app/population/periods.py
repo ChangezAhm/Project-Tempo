@@ -79,9 +79,17 @@ def parse_iso_period(s: str | None) -> date | None:
     if not s:
         return None
     s = str(s).strip()
-    m = re.fullmatch(r"(\d{4})-Q([1-4])", s, re.I)
+    m = re.fullmatch(r"(\d{4})[\s\-/]?Q([1-4])", s, re.I)
     if m:
         y, q = int(m.group(1)), int(m.group(2))
+        return date(y, (q - 1) * 3 + 1, 1)
+    # 'Q1-26' / 'Q1 2026' / "Q3'25" — quarter-first labels (a template's
+    # quarterly dashboard writes them this way; unparsed they'd leave the slot
+    # dateless and let positional matching pull a single MONTH into a quarter).
+    m = re.fullmatch(r"Q([1-4])[\s\-/'’]*(\d{2}|\d{4})", s, re.I)
+    if m:
+        q, y = int(m.group(1)), int(m.group(2))
+        y += 2000 if y < 100 else 0
         return date(y, (q - 1) * 3 + 1, 1)
     m = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", s)
     if m:

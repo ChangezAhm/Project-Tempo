@@ -245,6 +245,13 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict]) -> dict[str
         sheet_ccy = _detect_sheet_currency(cells_by_sheet.get(name, []))
         period_cols: list[tuple[int, date | None, str]] = []
         for p in sh.get("periods", []):
+            # v1 fills ACTUALS only. A source's budget/forecast block carries real
+            # month dates, so if these columns stayed in the catalogue they would
+            # date-match the template's empty future slots and budget numbers
+            # would silently fill actual cells. Excluded at the catalogue, so
+            # they can never bind.
+            if (p.get("kind") or "actual").lower() not in ("", "actual"):
+                continue
             rc = a1_to_rowcol(p.get("header_cell", ""))
             if not rc:
                 continue

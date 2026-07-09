@@ -322,6 +322,31 @@ def _ccy_snap():
     ]}]}
 
 
+def test_catalogue_recovers_undated_source_period_from_cached_header():
+    # The AI often returns date=null for a formula/complex source header. The date is
+    # recovered from the header cell's COMPUTED (cached) value so the source aligns.
+    from app.population.catalogue import catalogue_from_understanding
+    snap = {"sheets": [{"name": "P&L", "cells": [
+        {"row": 3, "col": 3, "value": "=EOMONTH(AsOf,-1)", "cached_value": "2025-12-31T00:00:00", "address": "C3"},
+        {"row": 5, "col": 1, "value": "Revenue", "address": "A5"},
+        {"row": 5, "col": 3, "value": 1000, "address": "C5"},
+    ]}]}
+    und = [{"sheet": "P&L", "periods": [{"header_cell": "C3", "date": None, "grain": "month", "kind": "actual"}],
+            "series": [{"label_cell": "A5", "label": "Revenue"}]}]
+    cat = catalogue_from_understanding(snap, und)
+    assert cat["P&L!r5"].period_cols[0][1] == date(2025, 12, 31)   # recovered, not None
+
+
+def test_pick_column_positional_when_source_has_no_dates():
+    # Source columns all undated (understanding couldn't date them) -> align by
+    # position, newest-anchored, even though the template slot HAS a date.
+    undated = [(3, None, "month"), (4, None, "month"), (5, None, "month")]
+    assert pick_column(2, 3, date(2026, 5, 1), undated, "monthly") == 5   # newest slot -> newest col
+    assert pick_column(1, 3, date(2026, 4, 1), undated, "monthly") == 4
+    assert pick_column(0, 3, date(2026, 3, 1), undated, "monthly") == 3
+    assert pick_column(0, 5, None, undated, "monthly") is None            # out of range
+
+
 def test_catalogue_keeps_all_columns_and_tags_scenario():
     # Every source column is KEPT; each carries its own scenario tag. A budget
     # column is not dropped — binding decides whether it may fill a given slot.

@@ -283,6 +283,8 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             note = f"{series.label} @ {series.sheet}"
         if reconciled:
             note += f" [reconciled: {(mm.assumption or 'source granularity differs')[:140]}]"
+        if not any(d is not None for (_c, d, _pt) in series.period_cols):
+            note += " [period:positional — source has no dates, verify alignment]"
         if sflag:
             note += f" [{sflag}]"
         if ccy_flag:   # written as-is despite differing declared currencies — review it

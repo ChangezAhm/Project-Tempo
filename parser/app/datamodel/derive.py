@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 2
+DERIVATION_VERSION = 3
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -88,6 +88,53 @@ def _currency(*texts: str | None) -> str | None:
             if sym in t or sym in t.upper():
                 return code
     return None
+
+
+def _parse_header_date(val) -> str | None:
+    """'YYYY-MM' from a period header's COMPUTED value — a date/datetime, an ISO
+    string ('2025-01-31T00:00:00', what a formula date header caches), or an Excel
+    serial. This is how a relative-timeline month header (a formula) yields a real
+    date. None if it isn't a date."""
+    if val is None or isinstance(val, bool):
+        return None
+    if hasattr(val, "year") and hasattr(val, "month"):     # date / datetime
+        return f"{val.year:04d}-{val.month:02d}"
+    if isinstance(val, str):
+        m = re.match(r"\s*(\d{4})-(\d{1,2})", val)
+        return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}" if m else None
+    if isinstance(val, (int, float)) and 29000 <= val <= 60000:
+        from datetime import datetime, timedelta
+        d = datetime(1899, 12, 30) + timedelta(days=int(val))
+        return f"{d.year:04d}-{d.month:02d}"
+    return None
+
+
+def _iso_label(iso: str | None) -> str | None:
+    """A clean 'Jan-25' display label from a 'YYYY-MM' key."""
+    if not iso:
+        return None
+    from datetime import datetime
+    try:
+        return datetime.strptime(iso[:7], "%Y-%m").strftime("%b-%y")
+    except ValueError:
+        return iso
+
+
+def _grain_from_dates(isos) -> str | None:
+    """Grain inferred from the SPACING of real period dates — deterministic and
+    reliable, so it overrides the LLM's granularity guess (which called the P&L's
+    monthly columns 'annual')."""
+    ds = sorted({i[:7] for i in isos if i})
+    if len(ds) < 2:
+        return None
+    def ym(s: str) -> int:
+        y, m = s.split("-")[:2]
+        return int(y) * 12 + int(m)
+    gaps = [b - a for a, b in ((ym(x), ym(y)) for x, y in zip(ds, ds[1:])) if b - a > 0]
+    if not gaps:
+        return None
+    g = Counter(gaps).most_common(1)[0][0]
+    return "monthly" if g <= 1 else "quarterly" if g <= 3 else "annual"
 
 
 def _scenario_from_status(period: dict | None) -> Scenario | None:
@@ -218,6 +265,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
     # Snapshot cell values — to read the real period-header label for every column.
     snap = _load_snapshot(version_id, template_id)
     cell_val: dict[tuple[str, int, int], object] = {}
+    cell_cached: dict[tuple[str, int, int], object] = {}
     cell_formula: dict[tuple[str, int, int], str] = {}
     for s in snap.get("sheets", []):
         nm = s["name"]
@@ -225,6 +273,9 @@ def derive_data_model(template_id: str) -> DataModelResult:
             rc = _rc(c.get("address", ""))
             if rc:
                 cell_val[(nm, rc[1], rc[0])] = c.get("value")
+                cv = c.get("cached_value")
+                if cv is not None:
+                    cell_cached[(nm, rc[1], rc[0])] = cv
                 if c.get("formula"):
                     cell_formula[(nm, rc[1], rc[0])] = c["formula"]
 
@@ -272,6 +323,18 @@ def derive_data_model(template_id: str) -> DataModelResult:
         default_ptype = grains.most_common(1)[0][0] if grains else None
         sorted_headers = sorted(header_rows)
 
+        # Real period DATES read from the header cells' COMPUTED values (a relative
+        # timeline's month headers are formulas; their date is in cached_value, not the
+        # formula text). This gives parsed_date + a grain inferred from the spacing that
+        # OVERRIDES the LLM's granularity guess (which mislabelled monthly P&L 'annual').
+        col_date: dict[int, str] = {}
+        for (_nm, _r, _c), _cv in cell_cached.items():
+            if _nm == sheet and _r in header_rows:
+                iso = _parse_header_date(_cv)
+                if iso:
+                    col_date[_c] = iso
+        sheet_date_grain = _grain_from_dates(col_date.values())
+
         # Sections: the LLM's blocks — used for category + statement-type basis;
         # smallest (most specific) wins on overlap.
         secs = []
@@ -313,20 +376,26 @@ def derive_data_model(template_id: str) -> DataModelResult:
             return None if (not s or s.startswith("=")) else s
 
         def period_for(col: int, row: int) -> dict | None:
-            parsed = pidx.get(col, {}).get("parsed_date")
             cp = col_period.get(col)
+            iso = col_date.get(col)
+            parsed = iso or pidx.get(col, {}).get("parsed_date")
+            # deterministic date-spacing grain wins over the LLM's guess.
+            grain = sheet_date_grain or (cp.get("period_type") if cp else None) or default_ptype
             if cp:
-                lbl = _label(cp["label"]) or _label(cell_val.get((sheet, cp["header_row"], col)))
-                return {"label": lbl, "period_type": cp["period_type"], "status": cp["status"], "parsed_date": parsed}
+                # a real date makes the cleanest label; fall back to the LLM's/header text.
+                lbl = (_iso_label(iso) or _label(cp["label"])
+                       or _label(cell_val.get((sheet, cp["header_row"], col))))
+                return {"label": lbl, "period_type": grain, "status": cp["status"], "parsed_date": parsed}
             # infer: a cell exists under the nearest detected header row above → it's
             # a period column even if the header is a dynamic (formula) date.
             above = [h for h in sorted_headers if h < row]
             if not above:
                 return None
-            if cell_val.get((sheet, max(above), col)) in (None, ""):
+            hr = max(above)
+            if cell_val.get((sheet, hr, col)) in (None, "") and iso is None:
                 return None
-            return {"label": _label(cell_val.get((sheet, max(above), col))),
-                    "period_type": default_ptype, "status": None, "parsed_date": parsed}
+            lbl = _iso_label(iso) or _label(cell_val.get((sheet, hr, col)))
+            return {"label": lbl, "period_type": grain, "status": None, "parsed_date": parsed}
 
         def _emit(col: int, row: int, llm_field: dict | None) -> None:
             """Create one DataPoint for an input cell. ``llm_field`` carries the

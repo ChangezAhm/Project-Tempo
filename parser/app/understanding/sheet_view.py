@@ -41,16 +41,42 @@ def _range_bounds(ref: str) -> tuple[int, int, int, int] | None:
     return (min(r1, r2), min(c1, c2), max(r1, r2), max(c1, c2))
 
 
+def _fmt(v) -> str:
+    """Render a cell value for the grid: an ISO datetime ('2025-01-31T00:00:00' —
+    what a formula date header caches) shows as its date; everything else is
+    stringified and trimmed."""
+    if hasattr(v, "year") and hasattr(v, "month") and hasattr(v, "day"):
+        return f"{v.year:04d}-{v.month:02d}-{v.day:02d}"
+    s = str(v).strip().replace("\n", " ")
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})T[\d:.]+$", s)
+    if m:
+        s = m.group(1)
+    return s if len(s) <= _MAX_BODY else s[:_MAX_BODY] + "…"
+
+
 def _body(c: dict) -> str:
     formula = c.get("formula")
     if formula:
-        s = str(formula)
-        return s if len(s) <= _MAX_BODY else s[:_MAX_BODY] + "…"
+        # A computed cell shows BOTH: its RESULT first (the model needs real values —
+        # a formula date header caches its date), then the formula in braces (the
+        # model needs the LOGIC — sign conventions, cross-sheet flows, dependencies
+        # are all read from formula text). Value first so truncation only ever eats
+        # the formula tail, never the result.
+        f = str(formula)
+        cv = c.get("cached_value")
+        if cv in (None, ""):
+            return f if len(f) <= _MAX_BODY else f[:_MAX_BODY] + "…"
+        v = _fmt(cv)
+        room = _MAX_BODY - len(v) - 4          # overhead: '=', space, braces
+        if room < 8:                            # value ate the budget — keep it, drop the formula
+            return f"={v}"
+        if len(f) > room:
+            f = f[:room] + "…"
+        return f"={v} {{{f}}}"
     val = c.get("value")
     if val is None:
         return ""
-    s = str(val).strip().replace("\n", " ")
-    return s if len(s) <= _MAX_BODY else s[:_MAX_BODY] + "…"
+    return _fmt(val)
 
 
 def _cell_token(c: dict, anchor: dict) -> str:

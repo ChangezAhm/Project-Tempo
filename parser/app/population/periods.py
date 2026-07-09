@@ -132,6 +132,17 @@ def pick_column(period_index: int | None, period_count: int, parsed_date: date |
         return sorted(((d, c) for (c, d, pt) in period_cols if d is not None and _grain(pt) == gr),
                       key=lambda x: x[0])
 
+    # SOURCE fully undated: the understanding couldn't date ANY column (e.g. formula/
+    # complex headers it couldn't read). There's nothing to match on, so align
+    # POSITIONALLY by column order, newest-anchored — the only sane option, and the
+    # caller flags such fills so a human verifies the alignment.
+    if period_cols and not any(d is not None for (_c, d, _pt) in period_cols):
+        if period_index is None:
+            return None
+        cols = sorted(c for (c, _d, _pt) in period_cols)
+        pos = len(cols) - (period_count - period_index)
+        return cols[pos] if 0 <= pos < len(cols) else None
+
     tgr = _grain(template_grain) if template_grain else None
     if tgr in ("month", "quarter", "year"):
         cand_grain, cand = tgr, cols_of(tgr)

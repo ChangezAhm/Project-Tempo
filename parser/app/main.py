@@ -346,6 +346,22 @@ def get_datamodel_route(template_id: str, sheet: str | None = None, limit: int =
         raise HTTPException(500, f"Read failed: {e}")
 
 
+# The data model as a TIME SERIES: per tab, metrics × periods, with an
+# actual/budget/forecast scenario dimension the UI can toggle.
+@app.get("/datamodel/{template_id}/timeseries", dependencies=[Depends(require_api_key)])
+def datamodel_timeseries_route(template_id: str) -> dict:
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    from app.datamodel.persist import timeseries_view
+    try:
+        return timeseries_view(template_id)
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Timeseries view failed")
+        raise HTTPException(500, f"Read failed: {e}")
+
+
 # --- Layer 4b: Template Contract + corrections -----------------------------
 
 # The reviewable Contract grid: the data model grouped into field rows

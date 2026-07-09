@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from app.population.numfmt import parse_number_format
-from app.population.periods import parse_iso_period
+from app.population.periods import parse_any_date, parse_iso_period
 from app.population.units import Unit, resolve_unit
 
 _A1 = re.compile(r"^([A-Za-z]{1,3})(\d+)$")
@@ -281,6 +281,12 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
             if not rc:
                 continue
             d = parse_iso_period(p.get("date"))
+            if d is None:
+                # The AI often can't date a formula/complex period header (it returns
+                # date=null). Recover it from the header cell's COMPUTED value — a
+                # formula date header caches its real date — so a source whose month
+                # columns are formula-driven still aligns by date instead of blanking.
+                d = parse_any_date(val_by_rc.get((name, rc[0], rc[1])))
             col = rc[1]
             # Keep the column whatever its scenario; record the scenario so binding
             # can honour an explicit budget/forecast demand and keep budget out of

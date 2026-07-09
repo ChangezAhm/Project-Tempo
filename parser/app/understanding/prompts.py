@@ -28,7 +28,7 @@ deal-team analyst does — by sight — and produce a precise, structured map of
 section blocks, input boxes, and headers physically sit, and which columns hold labels.
 2. A TEXT GRID of the same sheet — the SOLE source of truth for cell addresses, \
 values, and formulas. Format:
-   - Each line is one row with content: `r{row}: A=value | C=*label | D==FORMULA`
+   - Each line is one row with content: `r{row}: A=value | C=*label | D==result {=FORMULA}`
    - GAPS in row numbers are blank rows. Authors use blank rows as section \
 separators — treat a gap of 2+ rows as a likely section boundary.
    - Markers: `*` bold · `›N` indent depth N · `[in]` input cell (input-style fill, \
@@ -41,9 +41,14 @@ author-encoded hierarchy; when present, trust it over indentation
    - A token with no value (e.g. `E=[in]` or `E=[unlocked]`) is an EMPTY cell the \
 author flagged as an input — input-style fill, unlocked, or in a data-validation \
 range — a prime input-field candidate
-   - Leading `=` is a formula. `'Sheet'!A1` inside a formula references another \
-sheet. A trailing `…` means the formula was truncated — its full reference list is \
-unknown, so lower confidence on claims that depend on it.
+   - Leading `=` marks a COMPUTED (formula) cell, shown as `=result {=FORMULA}`: the \
+computed RESULT first (e.g. a date header `D==2025-01-31 {=EOMONTH(AsOfDate,-17)}`), \
+then the formula that produced it in braces. Use the RESULT for values (dates, \
+numbers, labels) and the FORMULA for logic (sign conventions, what feeds what, \
+cross-sheet references like `'Sheet'!A1`). A trailing `…` inside the braces means \
+the formula was truncated — its full reference list is unknown, so lower confidence \
+on claims that depend on it. An `=`-token with NO braces is a formula whose result \
+was unavailable (only the formula is known).
 3. AUTHOR ANNOTATIONS — text boxes, data-validation input prompts, and cell \
 comments, verbatim.
 4. WORKBOOK CONTEXT — other sheet names, named ranges, and the reporting/as-of \

@@ -151,6 +151,120 @@ def get_contract_fields(template_id: str) -> dict:
     }
 
 
+# Reportable statement lines for the time-series view (config/instruction cells excluded).
+_TS_INCLUDE = ("data", "sourced", "computed")
+
+
+def _display_scenario(scenario: str | None) -> str:
+    """The scenario a slot shows under in the Actual/Budget toggle. Unlabelled slots
+    (derive defaults them to 'unknown') are the implicit REPORTED figures -> actual."""
+    s = (scenario or "").strip().lower()
+    if s == "budget":
+        return "budget"
+    if s in ("forecast", "plan", "outlook"):
+        return "forecast"
+    return "actual"
+
+
+def _period_of(f: dict) -> tuple[str, dict] | None:
+    """A fact's period as (stable_key, descriptor). None if it carries no period at
+    all (a non-time-series cell, e.g. a single config input)."""
+    date = f.get("parsed_date")
+    label = f.get("period_label")
+    idx = f.get("period_index")
+    key = date or label or (f"#{idx}" if idx is not None else None)
+    if key is None:
+        return None
+    return key, {"key": key, "date": date, "index": idx,
+                 "label": label or date or (f"P{idx + 1}" if idx is not None else key)}
+
+
+def _period_sort_key(p: dict):
+    # chronological when dates exist; else by the timeline ordinal; undated last.
+    if p.get("date"):
+        return (0, str(p["date"]), 0)
+    if p.get("index") is not None:
+        return (1, "", p["index"])
+    return (2, str(p.get("label") or ""), 0)
+
+
+def timeseries_view(template_id: str) -> dict:
+    """Project the data model into a TIME SERIES: per tab (only tabs that carry
+    metrics), metrics as rows and periods as columns, with a scenario dimension
+    (actual/budget/forecast) the caller can toggle. Pure reshape over the stored
+    facts — the dimensions (period, scenario, sheet) already live on each fact; this
+    lays them out in their natural financial-model shape. No values (the model holds
+    the template's STRUCTURE); each slot is the template cell that period/scenario maps to."""
+    dm = get_data_model(template_id, limit=30000)
+    if not dm.get("available"):
+        # The data model is built on derive (normally the first populate); a template
+        # that's only been UNDERSTOOD has none yet. Derive it on demand — deterministic,
+        # no LLM — so the time series works straight after analysis instead of erroring.
+        try:
+            derive_and_persist(template_id)
+            dm = get_data_model(template_id, limit=30000)
+        except Exception as e:  # noqa: BLE001 — e.g. no understanding to derive from yet
+            logger.info("timeseries: data model unavailable and could not derive (%s)", e)
+    if not dm.get("available"):
+        return {"template_version_id": dm.get("template_version_id"),
+                "available": False, "scenarios": [], "sheets": []}
+
+    by_sheet: dict[str, list[dict]] = {}
+    for f in dm.get("facts") or []:
+        if (f.get("category") or "data") in _TS_INCLUDE:
+            by_sheet.setdefault(f.get("sheet_name") or "", []).append(f)
+
+    all_scen: set[str] = set()
+    sheets_out: list[dict] = []
+    for sheet, grp in by_sheet.items():
+        periods: dict[str, dict] = {}
+        metrics: dict[str, dict] = {}
+        for f in grp:
+            label = f.get("metric_label") or "(unlabelled)"
+            m = metrics.get(label)
+            if m is None:
+                m = metrics[label] = {
+                    "metric": f.get("canonical_metric") or label, "label": label,
+                    "unit": f.get("unit"), "basis": f.get("basis"),
+                    "category": f.get("category") or "data",
+                    "definition": f.get("definition"),
+                    "_row": f.get("row") or 0, "_col": f.get("col") or 0, "cells": {},
+                }
+            m["unit"] = m["unit"] or f.get("unit")
+            r = f.get("row") or 0
+            if r and (not m["_row"] or r < m["_row"]):
+                m["_row"] = r
+            per = _period_of(f)
+            if per is None:
+                continue
+            key, desc = per
+            periods.setdefault(key, desc)
+            scen = _display_scenario(f.get("scenario"))
+            all_scen.add(scen)
+            m["cells"].setdefault(scen, {})[key] = f.get("cell")
+
+        period_list = sorted(periods.values(), key=_period_sort_key)
+        metric_list = sorted(metrics.values(), key=lambda x: (x["_row"], x["_col"]))
+        sheet_scen = sorted({s for m in metric_list for s in m["cells"]})
+        sheets_out.append({
+            "sheet": sheet,
+            "grain": _modal([f.get("period_type") for f in grp]) or "period",
+            "is_timeseries": len(period_list) > 1,
+            "periods": period_list,
+            "scenarios": sheet_scen,
+            "metrics": [{k: v for k, v in m.items() if not k.startswith("_")} for m in metric_list],
+        })
+
+    # tabs that actually carry a timeline first (the relevant ones), then the rest.
+    sheets_out.sort(key=lambda s: (not s["is_timeseries"], s["sheet"]))
+    return {
+        "template_version_id": dm["template_version_id"],
+        "available": True,
+        "scenarios": sorted(all_scen),
+        "sheets": sheets_out,
+    }
+
+
 def get_data_model(template_id: str, *, sheet: str | None = None, limit: int = 2000) -> dict:
     version_id, _, _ = sb.get_latest_file(template_id)
     client = sb.get_client()

@@ -7,7 +7,7 @@ Ported from template-compiler-prototype/src/parsing/temporal_analyzer.py
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from app.raw_extraction.schema import CellInfo, CellType
 from app.structure.schema import DetectedPeriod, PeriodStatus
@@ -48,6 +48,33 @@ _ACTUAL = re.compile(r"\bactual\b", re.IGNORECASE)
 _HEADER_SCAN_ROWS = 12
 
 
+def _effective_value(c: CellInfo):
+    """The cell's COMPUTED value. A formula's ``value`` is its TEXT ('=EOMONTH(...)')
+    and the computed result lives in ``cached_value`` — so a relative timeline whose
+    month headers are formulas (computed from an as-of date) is invisible if you read
+    ``value``. Prefer the cached result for formula cells; that's the whole reason the
+    P&L (Monthly) headers were read as 'annual' with no dates."""
+    is_formula = (c.cell_type == CellType.FORMULA or bool(c.formula)
+                  or (isinstance(c.value, str) and c.value.startswith("=")))
+    if is_formula and c.cached_value is not None:
+        return c.cached_value
+    return c.value if c.value is not None else c.cached_value
+
+
+def _as_month_date(val) -> datetime | None:
+    """A date/datetime, or an Excel date serial, as a datetime. Small integers are
+    counts/indices, not dates, so the serial is bounded to a realistic range
+    (~1990..2050), matching periods.parse_any_date."""
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, date):
+        return datetime(val.year, val.month, val.day)
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        if 29000 <= val <= 60000:
+            return datetime(1899, 12, 30) + timedelta(days=int(val))
+    return None
+
+
 def detect_periods(
     cells: list[CellInfo],
     sheet_name: str,
@@ -59,31 +86,30 @@ def detect_periods(
     periods: list[DetectedPeriod] = []
     seen_cols: set[int] = set()
 
-    # Pass 1: textual labels in header rows
+    # Pass 1: dated / labelled header rows. Read the COMPUTED value (cached_value for
+    # formula cells) so formula-driven month headers — a relative timeline computed
+    # from an as-of date — are detected as real dates, not skipped.
     for c in cells:
         if c.row > _HEADER_SCAN_ROWS or c.col <= 2:
             continue
         if c.col in seen_cols:
             continue
-        if isinstance(c.value, str) and c.value.strip():
-            period = _parse_period_label(c.value.strip(), c.col, today)
+        val = _effective_value(c)
+        dt = _as_month_date(val)
+        if dt is not None:
+            periods.append(DetectedPeriod(
+                col=c.col,
+                label=dt.strftime("%b-%y"),
+                parsed_date=dt.strftime("%Y-%m"),
+                period_type="month",
+                status=_classify_month(dt.year, dt.month, today),
+            ))
+            seen_cols.add(c.col)
+        elif isinstance(val, str) and val.strip():
+            period = _parse_period_label(val.strip(), c.col, today)
             if period:
                 periods.append(period)
                 seen_cols.add(c.col)
-        elif c.cell_type == CellType.DATE and c.value:
-            try:
-                dt = _parse_date_value(c.value)
-                if dt:
-                    periods.append(DetectedPeriod(
-                        col=c.col,
-                        label=str(c.value),
-                        parsed_date=dt.strftime("%Y-%m"),
-                        period_type="month",
-                        status=_classify_month(dt.year, dt.month, today),
-                    ))
-                    seen_cols.add(c.col)
-            except Exception:
-                pass
 
     # Pass 2: column-type markers (Actual / Forecast / Budget / Plan)
     actual_cols: set[int] = set()

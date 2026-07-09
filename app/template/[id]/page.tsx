@@ -636,6 +636,12 @@ export default function TemplatePage() {
               <div className="ml-auto flex items-center gap-2">
                 <OpenQuestionsChip templateId={id} />
                 <Link
+                  href={`/template/${id}/timeseries`}
+                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50"
+                >
+                  Time series →
+                </Link>
+                <Link
                   href={`/template/${id}/contract`}
                   className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50"
                 >

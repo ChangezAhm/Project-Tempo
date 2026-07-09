@@ -1,4 +1,41 @@
-from app.understanding.sheet_view import build_text_grid
+from datetime import datetime
+
+from app.understanding.sheet_view import _body, _fmt, build_text_grid
+
+
+def test_body_shows_result_and_formula():
+    # formula date header -> BOTH its computed date (first) and the formula (braces):
+    # the model needs values for dates/numbers AND formula text for logic
+    # (sign conventions, cross-sheet flows).
+    c = {"row": 4, "col": 3, "value": "=EOMONTH(AsOf,-1)",
+         "formula": "=EOMONTH(AsOf,-1)", "cached_value": "2025-01-31T00:00:00"}
+    assert _body(c) == "=2025-01-31 {=EOMONTH(AsOf,-1)}"
+    assert _body({"formula": "=SUM(A1:A3)", "cached_value": 1234}) == "=1234 {=SUM(A1:A3)}"
+    # no cached result -> the formula text alone (old behaviour preserved)
+    assert _body({"value": "=X", "formula": "=X"}) == "=X"
+    # a plain (non-formula) cell is unchanged
+    assert _body({"value": "Revenue"}) == "Revenue"
+
+
+def test_body_truncation_eats_formula_never_value():
+    long_f = "=" + "+".join(f"A{i}" for i in range(1, 40))
+    out = _body({"formula": long_f, "cached_value": 999})
+    assert out.startswith("=999 {=A1+")      # value intact
+    assert out.endswith("…}")                 # formula tail truncated inside braces
+
+
+def test_fmt_trims_iso_datetime():
+    assert _fmt("2025-01-31T00:00:00") == "2025-01-31"
+    assert _fmt(datetime(2025, 3, 31)) == "2025-03-31"
+    assert _fmt("Cost of Goods Sold") == "Cost of Goods Sold"
+
+
+def test_grid_shows_date_header_value_and_formula():
+    # end to end: a formula date header renders as its date AND keeps the formula
+    cells = [_c("C4", 4, 3, "=EOMONTH(AsOf,-1)", "formula", formula="=EOMONTH(AsOf,-1)")]
+    cells[0]["cached_value"] = "2025-01-31T00:00:00"
+    g = build_text_grid(_sheet(cells))
+    assert "C==2025-01-31 {=EOMONTH(AsOf,-1)}" in g
 
 
 def _sheet(cells, **kw):

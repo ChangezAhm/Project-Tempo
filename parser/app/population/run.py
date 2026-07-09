@@ -400,7 +400,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         # Filled cells that need a human eye: scale that couldn't be magnitude-verified,
         # OR a reconciled fill (source data cut differently — a provisional assumption).
         review = [{"template_sheet": lk.template_sheet, "template_cell": lk.template_cell, "note": lk.note}
-                  for lk in links if lk.note and ("unverified" in lk.note or "reconciled" in lk.note)]
+                  for lk in links if lk.note and any(t in lk.note for t in ("unverified", "reconciled", "positional"))]
         notes = [m.note for m in metric_maps if m.series_id and m.note][:200]
         # WHY the uncovered metrics are uncovered, in the mapper's own words: a null
         # mapping carries a reason ('source combines depreciation & amortisation',

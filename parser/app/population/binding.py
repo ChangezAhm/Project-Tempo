@@ -129,6 +129,26 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             if cur is None or m.confidence > cur.confidence:
                 by_metric[m.metric] = m
 
+    # DETERMINISTIC SINGLE-USE: a source series may feed at most ONE template metric,
+    # so an amount is never written into two template lines (double entry). The LLM is
+    # told to avoid this but must NOT be trusted with a global constraint. Claims are
+    # resolved by priority — direct > aggregate > reconcile, then higher confidence —
+    # so the strongest mapping keeps the series and any other metric wanting it (or one
+    # of its aggregated components) is blocked.
+    _RANK = {"direct": 0, "aggregate": 1, "reconcile": 2}
+    claimed: dict[str, str] = {}          # series_id -> owning metric key
+    blocked: dict[str, str] = {}          # metric key -> the metric that already owns a series it needs
+    for m in sorted(by_metric.values(),
+                    key=lambda mm: (_RANK.get(getattr(mm, "status", "direct"), 1), -mm.confidence)):
+        wants = [sid for sid in ([m.series_id] + list(m.also_series_ids or []))
+                 if sid and sid in catalogue]
+        taken = next((claimed[sid] for sid in wants if sid in claimed), None)
+        if taken is not None:
+            blocked[m.metric] = taken
+        else:
+            for sid in wants:
+                claimed[sid] = m.metric
+
     period_count = int(demand.get("period_count") or 0)
     pc_by_sheet: dict = demand.get("period_count_by_sheet") or {}
     grain = demand.get("period_grain") or "month"
@@ -156,6 +176,12 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
         mm = by_metric.get(key)
         if mm is None:
             unmatched.append(_unmatched(f, "no source series mapped to this metric"))
+            continue
+        # Single-use guard: this metric's source series is already owned by another
+        # metric — writing it here too would double-count the amount. Leave it blank.
+        if key in blocked:
+            unmatched.append(_unmatched(
+                f, f"source already used by '{blocked[key]}' — not written again (avoids double counting)"))
             continue
         # A reconcile is a DELIBERATE approximation (source data cut differently) — it is
         # kept whatever its confidence, but flagged and raised for user confirmation.

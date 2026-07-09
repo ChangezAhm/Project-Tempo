@@ -398,6 +398,41 @@ def test_bind_reconcile_fills_below_floor_and_flags():
     assert not l2 and "confidence" in u2[0]["reason"]
 
 
+def test_bind_prevents_double_use_of_a_source_series():
+    # Two template metrics mapped to the SAME source series must never both fill —
+    # that double-counts the amount. The stronger mapping (direct > reconcile) keeps
+    # it; the other is blocked and left blank.
+    cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
+    maps = [
+        MetricMap(metric="revenue", series_id="P&L!r5", confidence=0.9),            # direct -> wins
+        MetricMap(metric="other", series_id="P&L!r5", status="reconcile",
+                  assumption="same series", confidence=0.95),                        # blocked despite higher conf
+    ]
+    facts = [_fact("revenue", "B10"), _fact("other", "B11")]
+    links, unmatched = bind(facts, cat, maps, _demand())
+    assert len(links) == 1 and links[0].template_cell == "B10"
+    assert any("double counting" in u["reason"] for u in unmatched)
+
+
+def test_bind_double_use_guard_covers_aggregated_components():
+    # A component claimed by an aggregate cannot also be used alone by another metric.
+    snap = {"sheets": [{"name": "P&L", "cells": [
+        {"row": 5, "col": 1, "value": "S&M", "address": "A5"}, {"row": 5, "col": 3, "value": 3_000_000, "address": "C5"},
+        {"row": 6, "col": 1, "value": "G&A", "address": "A6"}, {"row": 6, "col": 3, "value": 2_000_000, "address": "C6"},
+    ]}]}
+    cat = build_catalogue(snap, {"P&L": [{"col": 3, "parsed_date": "2023-12", "period_type": "month"}]})
+    maps = [
+        MetricMap(metric="Other Opex", series_id="P&L!r5", also_series_ids=["P&L!r6"],
+                  status="aggregate", confidence=0.9),                 # claims r5 + r6
+        MetricMap(metric="Staff Costs", series_id="P&L!r5", status="reconcile",
+                  assumption="x", confidence=0.9),                     # r5 already claimed -> blocked
+    ]
+    facts = [_fact("Other Opex", "B10", pidx=2), _fact("Staff Costs", "B11", pidx=2)]
+    links, unmatched = bind(facts, cat, maps, _demand())
+    assert len(links) == 1 and links[0].template_cell == "B10"
+    assert any("double counting" in u["reason"] and "Other Opex" in u["reason"] for u in unmatched)
+
+
 def test_bind_reconcile_can_aggregate_into_residual():
     # The opex case: source S&M + G&A summed onto the template's residual line,
     # flagged reconciled — one general mechanism, not a special case.
@@ -456,6 +491,38 @@ def test_point_in_time_quarter_slot_accepts_quarter_end_month():
     # a FLOW quarterly slot stays blank — one month is not a quarter of P&L
     assert pick_column(1, 8, q2, monthly, "monthly", template_grain="quarter",
                        point_in_time=False) is None
+
+
+# --- deep rescue: per-metric parallel agents -------------------------------
+def test_rescue_metrics_runs_per_metric_and_forces_our_key(monkeypatch):
+    from app.population import rescue as R
+    cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
+    seen = []
+
+    def fake_stream(**kw):
+        seen.append(kw["content"])
+        # the model echoes a WRONG key ('X') — rescue must overwrite it with ours
+        return None, '{"mappings":[{"metric":"X","status":"reconcile","series_id":"P&L!r5",' \
+                     '"assumption":"assigned here","confidence":0.7}]}'
+
+    monkeypatch.setattr(R, "guarded_stream", fake_stream)
+    metrics = [{"metric": "staff", "label": "Staff Costs"}, {"metric": "opex", "label": "Other Opex"}]
+    out = R.rescue_metrics(metrics, cat, used_series={"P&L!r6"})
+    assert len(out) == 2 and len(seen) == 2                 # one focused call per metric
+    assert {m.metric for m in out} == {"staff", "opex"}     # our keys, not the model's echo
+    assert all(m.status == "reconcile" and m.series_id == "P&L!r5" for m in out)
+
+
+def test_rescue_metrics_is_best_effort_on_failure(monkeypatch):
+    from app.population import rescue as R
+    cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
+
+    def boom(**kw):
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(R, "guarded_stream", boom)
+    out = R.rescue_metrics([{"metric": "x", "label": "X"}], cat, used_series=set())
+    assert out == []   # a failing agent yields nothing, never raises
 
 
 # --- mapping: batch retry + loud failure -----------------------------------

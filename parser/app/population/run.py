@@ -284,7 +284,8 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                     as_of_date: str | None, *, content_hash: str | None = None,
                     source_path: Path | None = None,
                     display_unit: str | None = None, reset: str = "values",
-                    add_lines: str = "propose", dry_run: bool = False) -> dict:
+                    add_lines: str = "propose", dry_run: bool = False,
+                    deep_rescue: bool = True) -> dict:
     """Core: understand the SOURCE with AI (period columns + data series + units,
     cached by file), build the catalogue from that, ask the LLM to map template
     metrics → source series, then bind periods/scale(by magnitude)/sign and read
@@ -356,6 +357,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     coverage_notes: list[str] = []
     reconciled_metrics: list = []
     open_questions: list = []
+    unused_source_series: list = []
     routing = {"series": len(catalogue), "catalogue_source": catalogue_source}
     if biz_context:
         routing["context_chars"] = len(biz_context)
@@ -369,6 +371,28 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         metric_maps, mapping_failed = map_metrics(demand["metrics"], catalogue, context=biz_context)
         if mapping_failed:
             routing["mapping_failed_batches"] = mapping_failed
+
+        # DEEP RESCUE: give each metric the fast batched pass could NOT place its own
+        # focused agent (one metric + the whole catalogue), run in parallel. Their
+        # deeper opinions overlay the main map for those metrics and then flow through
+        # the same bind -> single-use guard -> reconcile/review machinery. Best-effort,
+        # spend-capped; a metric that isn't rescued stays exactly as the main pass had it.
+        if deep_rescue and catalogue:
+            mapped_ok = {m.metric for m in metric_maps if m.series_id}
+            weak = [dm for dm in demand["metrics"] if dm["metric"] not in mapped_ok]
+            if weak:
+                from app.population.rescue import rescue_metrics
+                used_series = ({m.series_id for m in metric_maps if m.series_id}
+                               | {sid for m in metric_maps for sid in (m.also_series_ids or [])})
+                rescued = rescue_metrics(weak, catalogue, used_series=used_series, context=biz_context)
+                if rescued:
+                    by = {m.metric: m for m in metric_maps}
+                    for rm in rescued:
+                        by[rm.metric] = rm     # per-metric deep opinion wins for the weak ones
+                    metric_maps = list(by.values())
+                    routing["rescue_attempted"] = len(weak)
+                    routing["rescue_placed"] = sum(1 for rm in rescued if rm.series_id)
+
         links, bind_unmatched = bind(
             target_inputs, catalogue, metric_maps, demand,
             display_unit=display_unit, template_context=template_context,
@@ -383,6 +407,12 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         # 'source splits opex by function, template wants it by nature') so a blank
         # is explained to the user instead of mysterious.
         coverage_notes = [m.note for m in metric_maps if not m.series_id and m.note][:100]
+        # Never silently drop source data: any source series no mapping used at all —
+        # this is how UNDER-counting (e.g. G&A left out of a reconciled opex line)
+        # surfaces instead of hiding. A real-but-unused cost line is a red flag.
+        used_series = ({m.series_id for m in metric_maps if m.series_id}
+                       | {sid for m in metric_maps for sid in (m.also_series_ids or [])})
+        unused_source_series = sorted(s.label for sid, s in catalogue.items() if sid not in used_series)
         result = apply_links(target_inputs, source_snapshot, links, skipped=[])
 
         # Rule enforcement: check every written value against the template's own
@@ -498,7 +528,8 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 "unmatched": result.unmatched, "unmatched_reasons": unmatched_reasons,
                 "skipped": result.skipped,
                 "review": review, "notes": notes, "coverage_notes": coverage_notes,
-                "reconciled": reconciled_metrics, "summary": result.summary,
+                "reconciled": reconciled_metrics, "unused_source_series": unused_source_series,
+                "summary": result.summary,
                 "rule_violations": violations, "context_chars": len(biz_context),
                 "reset": reset, **clear_stats,
                 "proposed_additions": proposals, "addition_notes": add_notes,
@@ -535,6 +566,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         "reconciled_count": len(reconciled_metrics),
         "open_questions": open_questions,
         "open_questions_count": len(open_questions),
+        "unused_source_series": unused_source_series,
         "rule_violations": violations[:100],
         "rule_violation_count": len(violations),
         "reset": reset,
@@ -564,7 +596,7 @@ def _detect_source_periods(parsed) -> dict[str, list[dict]]:
 def populate_from_bytes(target_template_id: str, source_filename: str, source_bytes: bytes,
                         as_of_date: str | None = None, *, display_unit: str | None = None,
                         reset: str = "values", add_lines: str = "propose",
-                        dry_run: bool = False) -> dict:
+                        dry_run: bool = False, deep_rescue: bool = True) -> dict:
     """Populate a template directly from an uploaded data file's bytes. Parses
     the source in-memory (Aspose → snapshot) — it is never stored as a template.
     This is the drag-a-file-onto-a-template path.
@@ -582,6 +614,6 @@ def populate_from_bytes(target_template_id: str, source_filename: str, source_by
                                content_hash=source_cache.content_hash(source_bytes),
                                source_path=src_tmp,   # alive until the run returns → images
                                display_unit=display_unit, reset=reset,
-                               add_lines=add_lines, dry_run=dry_run)
+                               add_lines=add_lines, dry_run=dry_run, deep_rescue=deep_rescue)
     finally:
         src_tmp.unlink(missing_ok=True)

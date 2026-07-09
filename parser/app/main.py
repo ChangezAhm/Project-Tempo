@@ -303,6 +303,7 @@ async def populate_route(
     display_unit: str | None = None,
     reset: str = "values",
     add_lines: str = "propose",
+    deep_rescue: bool = True,
 ) -> dict:
     if not settings.configured:
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
@@ -318,7 +319,7 @@ async def populate_route(
             return await run_in_threadpool(
                 partial(populate_from_bytes, target_template_id, filename, data, as_of_date,
                         display_unit=display_unit, reset=reset, add_lines=add_lines,
-                        dry_run=dry_run)
+                        dry_run=dry_run, deep_rescue=deep_rescue)
             )
     except SpendCapExceeded as e:
         # 402: the run hit its spend cap and was aborted before overspending.

@@ -11,7 +11,7 @@ from app.population.binding import _col_letters, bind
 from app.population.catalogue import build_catalogue
 from app.population.mapping import _parse
 from app.population.periods import parse_iso_period, pick_column
-from app.population.schema import MetricMap
+from app.population.schema import CellLink, MetricMap
 
 
 # --- periods --------------------------------------------------------------
@@ -222,11 +222,50 @@ def test_bind_reasons_for_no_map_low_conf_and_no_period():
     assert not l2 and "no source column" in u2[0]["reason"]
 
 
-def test_bind_blocks_non_actual_scenario():
+def test_bind_budget_demand_without_budget_source_is_unmatched():
+    # The deterministic catalogue tags every column 'actual'. A slot that
+    # explicitly wants BUDGET has no budget column to bind -> honest unmatched
+    # (not a blanket "actuals only" refusal).
     cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
     maps = [MetricMap(metric="revenue", series_id="P&L!r5", confidence=0.9)]
     links, unmatched = bind([_fact("revenue", "B10", scenario="budget")], cat, maps, _demand())
     assert not links and "budget" in unmatched[0]["reason"]
+
+
+def test_bind_budget_demand_fills_from_budget_column():
+    # When the source HAS a budget column for the period, a budget slot binds it —
+    # scenario is matched, not dropped.
+    from app.population.catalogue import catalogue_from_understanding
+    und = [{"sheet": "Cash", "periods": [
+        {"header_cell": "C3", "date": "2023-12-31", "grain": "month", "kind": "budget"},
+    ], "series": [{"label_cell": "A5", "label": "Cash at bank"}]}]
+    cat = catalogue_from_understanding(_ccy_snap(), und)
+    maps = [MetricMap(metric="cash", series_id="Cash!r5", confidence=0.9)]
+    f = _fact("cash", "B10", unit=None, currency=None, pidx=2, scenario="budget")
+    links, unmatched = bind([f], cat, maps, _demand())
+    assert links and links[0].source_cell == "C5" and not unmatched
+
+
+def test_bind_unknown_scenario_prefers_actual_on_tie():
+    # Two columns share the same month — one actual, one budget. An unflagged slot
+    # (scenario 'unknown') takes the ACTUAL, never the budget.
+    snap = {"sheets": [{"name": "Cash", "cells": [
+        {"row": 5, "col": 1, "value": "Cash at bank", "address": "A5"},
+        {"row": 5, "col": 3, "value": 100, "address": "C5"},   # actual Dec
+        {"row": 5, "col": 4, "value": 999, "address": "D5"},   # budget Dec
+    ]}]}
+    from app.population.catalogue import catalogue_from_understanding
+    und = [{"sheet": "Cash", "periods": [
+        {"header_cell": "C3", "date": "2023-12-31", "grain": "month", "kind": "actual"},
+        {"header_cell": "D3", "date": "2023-12-31", "grain": "month", "kind": "budget"},
+    ], "series": [{"label_cell": "A5", "label": "Cash at bank"}]}]
+    cat = catalogue_from_understanding(snap, und)
+    maps = [MetricMap(metric="cash", series_id="Cash!r5", confidence=0.9)]
+    f = _fact("cash", "B10", unit=None, currency=None, pidx=0, scenario="unknown")
+    f["col"] = 2
+    ctx = ({}, {}, {("Template", 2): date(2023, 12, 31)})
+    links, _ = bind([f], cat, maps, _demand(), template_context=ctx)
+    assert links and links[0].source_cell == "C5"   # actual, not budget D5
 
 
 def test_bind_one_sided_unknown_currency_is_clean():
@@ -283,45 +322,121 @@ def _ccy_snap():
     ]}]}
 
 
-def test_catalogue_from_understanding_excludes_future_budget_columns():
-    # A source's budget block carries REAL month dates; if catalogued it would
-    # date-match the template's empty future slots (actuals) — must be excluded.
+def test_catalogue_keeps_all_columns_and_tags_scenario():
+    # Every source column is KEPT; each carries its own scenario tag. A budget
+    # column is not dropped — binding decides whether it may fill a given slot.
     from app.population.catalogue import catalogue_from_understanding
     und = [{"sheet": "Cash", "periods": [
         {"header_cell": "C3", "date": "2026-06-30", "grain": "month", "kind": "actual"},
         {"header_cell": "D3", "date": "2026-07-31", "grain": "month", "kind": "budget"},
     ], "series": [{"label_cell": "A5", "label": "Cash at bank"}]}]
-    cat = catalogue_from_understanding(_ccy_snap(), und, as_of=date(2026, 7, 8))
-    cols = [c for (c, _d, _g) in cat["Cash!r5"].period_cols]
-    assert cols == [3]   # the Jul-26 budget column is not bindable
+    cat = catalogue_from_understanding(_ccy_snap(), und)
+    s = cat["Cash!r5"]
+    assert [c for (c, _d, _g) in s.period_cols] == [3, 4]   # nothing dropped
+    assert s.col_scenario == {3: "actual", 4: "budget"}
 
 
-def test_catalogue_trusts_tags_when_no_explicit_as_of():
-    # EXPLICIT-ONLY date policy: with no user-supplied as-of there is no
-    # implicit "today" — the model's kind tags stand, even for past-dated
-    # columns. (The run surfaces what setting the date would unlock.)
+def test_catalogue_scenario_tag_is_independent_of_as_of():
+    # as-of no longer classifies scenario: a forecast-tagged column is kept and
+    # stays 'forecast' whether or not an as-of is supplied (a time series carries
+    # data before and after the as-of alike).
     from app.population.catalogue import catalogue_from_understanding
     und = [{"sheet": "Cash", "periods": [
         {"header_cell": "C3", "date": "2026-05-31", "grain": "month", "kind": "forecast"},
         {"header_cell": "D3", "date": "2026-06-30", "grain": "month", "kind": "actual"},
     ], "series": [{"label_cell": "A5", "label": "Cash at bank"}]}]
-    cat = catalogue_from_understanding(_ccy_snap(), und)   # no as_of
-    cols = [c for (c, _d, _g) in cat["Cash!r5"].period_cols]
-    assert cols == [4]   # the forecast-tagged column is excluded without a date
+    without = catalogue_from_understanding(_ccy_snap(), und)                       # no as_of
+    withas = catalogue_from_understanding(_ccy_snap(), und, as_of=date(2026, 7, 8))
+    for cat in (without, withas):
+        s = cat["Cash!r5"]
+        assert [c for (c, _d, _g) in s.period_cols] == [3, 4]
+        assert s.col_scenario == {3: "forecast", 4: "actual"}
 
 
-def test_catalogue_past_columns_are_actuals_despite_model_tag():
-    # The model tags future-looking YEARS 'forecast' — it once mislabeled six
-    # months of real P&L actuals and they were dropped. The deterministic date
-    # beats the tag: on/before the as-of date == actuals.
-    from app.population.catalogue import catalogue_from_understanding
-    und = [{"sheet": "Cash", "periods": [
-        {"header_cell": "C3", "date": "2026-05-31", "grain": "month", "kind": "forecast"},
-        {"header_cell": "D3", "date": "2026-06-30", "grain": "month", "kind": "forecast"},
-    ], "series": [{"label_cell": "A5", "label": "Cash at bank"}]}]
-    cat = catalogue_from_understanding(_ccy_snap(), und, as_of=date(2026, 7, 8))
-    cols = [c for (c, _d, _g) in cat["Cash!r5"].period_cols]
-    assert cols == [3, 4]   # both kept — they're dated in the past
+def test_bind_and_apply_aggregate_sum_of_series():
+    # Template 'Total Revenue' = the sum of three regional turnover lines the
+    # source has no single total for. Binding emits ONE derived link citing all
+    # three cells; apply sums them; scale reconciles against the TOTAL (33m).
+    snap = {"sheets": [{"name": "P&L", "cells": [
+        {"row": 5, "col": 1, "value": "Revenue NA", "address": "A5"},
+        {"row": 5, "col": 3, "value": 10_000_000, "address": "C5"},
+        {"row": 6, "col": 1, "value": "Revenue EMEA", "address": "A6"},
+        {"row": 6, "col": 3, "value": 12_000_000, "address": "C6"},
+        {"row": 7, "col": 1, "value": "Revenue APAC", "address": "A7"},
+        {"row": 7, "col": 3, "value": 11_000_000, "address": "C7"},
+    ]}]}
+    periods = {"P&L": [{"col": 3, "parsed_date": "2023-12", "period_type": "month"}]}
+    cat = build_catalogue(snap, periods)
+    maps = [MetricMap(metric="revenue", series_id="P&L!r5",
+                      also_series_ids=["P&L!r6", "P&L!r7"], confidence=0.9)]
+    fact = _fact("revenue", "B10", pidx=0)
+    fact["row"] = 10
+    ctx = ({}, {("Template", 10): [33.0]}, {})   # template row is ~33 (millions)
+    demand = {"period_count": 1, "period_grain": "monthly", "as_of_date": None,
+              "period_count_by_sheet": {"Template": 1}, "metrics": []}
+    links, unmatched = bind([fact], cat, maps, demand, template_context=ctx)
+    assert not unmatched and len(links) == 1
+    lk = links[0]
+    assert lk.source_cell == "C5" and lk.agg_source_cells == ["P&L!C6", "P&L!C7"]
+    assert "SUM:" in (lk.note or "") and "derived:sum" in (lk.note or "")
+    result = apply_links([fact], snap, links, skipped=[])
+    assert len(result.filled) == 1 and result.filled[0].value == 33.0   # (10+12+11)m
+
+
+def test_bind_reconcile_fills_below_floor_and_flags():
+    # A reconcile is a deliberate approximation (source cut differently): it fills
+    # even below the confidence floor, and the note is flagged for the reviewer.
+    cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
+    maps = [MetricMap(metric="revenue", series_id="P&L!r5", status="reconcile",
+                      assumption="source combines lines; assigned here", confidence=0.4)]
+    links, unmatched = bind([_fact("revenue", "B10")], cat, maps, _demand())
+    assert links and not unmatched
+    assert "reconciled:" in (links[0].note or "")
+    # a DIRECT map at the same low confidence is still dropped (floor unchanged)
+    direct = [MetricMap(metric="revenue", series_id="P&L!r5", confidence=0.4)]
+    l2, u2 = bind([_fact("revenue", "B10")], cat, direct, _demand())
+    assert not l2 and "confidence" in u2[0]["reason"]
+
+
+def test_bind_reconcile_can_aggregate_into_residual():
+    # The opex case: source S&M + G&A summed onto the template's residual line,
+    # flagged reconciled — one general mechanism, not a special case.
+    snap = {"sheets": [{"name": "P&L", "cells": [
+        {"row": 5, "col": 1, "value": "Sales & marketing", "address": "A5"},
+        {"row": 5, "col": 3, "value": 3_000_000, "address": "C5"},
+        {"row": 6, "col": 1, "value": "General & admin", "address": "A6"},
+        {"row": 6, "col": 3, "value": 2_000_000, "address": "C6"},
+    ]}]}
+    periods = {"P&L": [{"col": 3, "parsed_date": "2023-12", "period_type": "month"}]}
+    cat = build_catalogue(snap, periods)
+    maps = [MetricMap(metric="Other Opex", series_id="P&L!r5", also_series_ids=["P&L!r6"],
+                      status="reconcile", assumption="source splits opex by function; summed into other opex",
+                      confidence=0.5)]
+    fact = _fact("Other Opex", "B10", pidx=0); fact["row"] = 10
+    ctx = ({}, {("Template", 10): [5.0]}, {})
+    d = {"period_count": 1, "period_grain": "monthly", "as_of_date": None,
+         "period_count_by_sheet": {"Template": 1}, "metrics": []}
+    links, _ = bind([fact], cat, maps, d, template_context=ctx)
+    assert links and links[0].agg_source_cells == ["P&L!C6"]
+    assert "reconciled:" in (links[0].note or "") and "SUM:" in (links[0].note or "")
+    result = apply_links([fact], snap, links, skipped=[])
+    assert result.filled[0].value == 5.0   # (3+2)m into other opex
+
+
+def test_apply_aggregation_never_writes_partial_total():
+    # Trust-first: if a component cell is empty at this period, NO partial sum is
+    # written — the cell is reported unmatched instead of a wrong number.
+    snap = {"sheets": [{"name": "P&L", "cells": [
+        {"row": 5, "col": 3, "value": 10_000_000, "address": "C5"},
+        # C6 (the EMEA component) is absent for this period
+        {"row": 7, "col": 3, "value": 11_000_000, "address": "C7"},
+    ]}]}
+    fact = _fact("revenue", "B10", pidx=0)
+    link = CellLink(template_sheet="Template", template_cell="B10", source_sheet="P&L",
+                    source_cell="C5", agg_source_cells=["P&L!C6", "P&L!C7"], unit_scale=1e-6)
+    result = apply_links([fact], snap, [link], skipped=[])
+    assert not result.filled
+    assert any("aggregation incomplete" in u["reason"] for u in result.unmatched)
 
 
 def test_point_in_time_quarter_slot_accepts_quarter_end_month():

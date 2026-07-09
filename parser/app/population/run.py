@@ -20,7 +20,7 @@ from app.population import source_cache
 from app.population.apply import apply_links
 from app.population.binding import bind
 from app.population.catalogue import build_catalogue, catalogue_from_understanding, effective_value
-from app.population.periods import parse_any_date, parse_iso_period
+from app.population.periods import parse_any_date
 from app.population.cost import SpendCapExceeded, SpendGuard, default_cap_usd, set_guard
 from app.population.context import load_context
 from app.population.mapping import estimate_mapping_usd, map_metrics
@@ -229,30 +229,22 @@ def _build_source_catalogue(snapshot: dict, source_periods: dict, content_hash: 
     """Catalogue the source via AI understanding (robust to PortCo layout variance),
     falling back to deterministic detection if understanding yields nothing. A spend
     cap breach is never swallowed. ``source_path`` (the uploaded workbook on disk)
-    lets understanding render sheet images for layout context.
+    lets understanding render sheet images for layout context. Every source column
+    is kept — scenario is enforced later, in binding, and a budget column can only
+    fill a slot that explicitly asks for budget; nothing is dropped by tag here.
 
-    Returns (catalogue, source_kind, excluded_by_tag) — the count of source
-    columns dropped because of their budget/forecast tag, so a run with no
-    explicit as-of can tell the user what setting the date would unlock."""
+    Returns (catalogue, source_kind)."""
     try:
         sheets = understand_source(snapshot, content_hash, source_path=source_path)
         cat = catalogue_from_understanding(snapshot, sheets, as_of=as_of)
-        excluded = 0
-        for sh in sheets:
-            for p in sh.get("periods", []):
-                if (p.get("kind") or "actual").lower() in ("", "actual"):
-                    continue
-                d = parse_iso_period(p.get("date"))
-                if as_of is None or d is None or d > as_of:
-                    excluded += 1
         if cat:
-            return cat, "ai_understanding", excluded
+            return cat, "ai_understanding"
         logger.warning("source understanding produced 0 series — falling back to deterministic detection")
     except SpendCapExceeded:
         raise
     except Exception:
         logger.exception("source understanding failed — falling back to deterministic detection")
-    return build_catalogue(snapshot, source_periods), "deterministic_fallback", 0
+    return build_catalogue(snapshot, source_periods), "deterministic_fallback"
 
 
 def _reset_preview(version_id: str, facts: list[dict]) -> dict:
@@ -303,10 +295,10 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     set_guard(SpendGuard(default_cap_usd()))
 
     demand, target_inputs = build_demand(target_template_id, as_of_date)
-    # EXPLICIT-ONLY date policy (user decision): a date changes behavior only
-    # when the user supplied it. No wall-clock default — with no as-of, the
-    # model's actual/budget/forecast tags stand and any excluded columns are
-    # surfaced in routing so the user can see what setting the date would add.
+    # as-of is the pack's reporting vintage / timeline anchor only — it does NOT
+    # classify actual vs forecast. Scenario is the source's own column tag, and no
+    # source column is ever dropped for lacking an as-of; a time series carries data
+    # before and after the as-of alike.
     as_of = parse_any_date(as_of_date)
 
     if dry_run:
@@ -339,7 +331,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             "context_chars": len(ctx),
         }
 
-    catalogue, catalogue_source, excluded_by_tag = _build_source_catalogue(
+    catalogue, catalogue_source = _build_source_catalogue(
         source_snapshot, source_periods, content_hash, source_path, as_of)
 
     # We only need the template WORKBOOK to write the filled values into — the
@@ -361,15 +353,12 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     biz_context = load_context(target_template_id, t_vid)
 
     links = notes = None
+    coverage_notes: list[str] = []
+    reconciled_metrics: list = []
+    open_questions: list = []
     routing = {"series": len(catalogue), "catalogue_source": catalogue_source}
     if biz_context:
         routing["context_chars"] = len(biz_context)
-    if excluded_by_tag:
-        routing["source_columns_excluded_by_tag"] = excluded_by_tag
-        if as_of is None:
-            routing["hint"] = (f"{excluded_by_tag} source column(s) tagged budget/forecast were "
-                               "excluded. If they are actually reported months, set the as-of "
-                               "date — columns dated on/before it are treated as actuals.")
     filled_url = audit_url = None
     clear_stats: dict = {}
     proposals: list = []
@@ -384,11 +373,16 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             target_inputs, catalogue, metric_maps, demand,
             display_unit=display_unit, template_context=template_context,
         )
-        # Filled cells whose scale couldn't be magnitude-verified — written, but
-        # surfaced so a human checks them rather than trusting a label-only scale.
+        # Filled cells that need a human eye: scale that couldn't be magnitude-verified,
+        # OR a reconciled fill (source data cut differently — a provisional assumption).
         review = [{"template_sheet": lk.template_sheet, "template_cell": lk.template_cell, "note": lk.note}
-                  for lk in links if lk.note and "unverified" in lk.note]
+                  for lk in links if lk.note and ("unverified" in lk.note or "reconciled" in lk.note)]
         notes = [m.note for m in metric_maps if m.series_id and m.note][:200]
+        # WHY the uncovered metrics are uncovered, in the mapper's own words: a null
+        # mapping carries a reason ('source combines depreciation & amortisation',
+        # 'source splits opex by function, template wants it by nature') so a blank
+        # is explained to the user instead of mysterious.
+        coverage_notes = [m.note for m in metric_maps if not m.series_id and m.note][:100]
         result = apply_links(target_inputs, source_snapshot, links, skipped=[])
 
         # Rule enforcement: check every written value against the template's own
@@ -425,6 +419,39 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         unmapped_metrics = sorted({label_by_key.get(u.get("metric"), str(u.get("metric")))
                                    for u in result.unmatched
                                    if str(u.get("reason", "")).startswith("no source series")})
+
+        # RECONCILIATIONS: metrics the source carries at a different granularity, filled
+        # provisionally with an explicit assumption. Surface them, and file each as a
+        # durable review question so the user confirms/corrects ONCE — the answer then
+        # feeds every future run via the mapping context channel (load_context).
+        reconciled_metrics = [{"metric": label_by_key.get(m.metric, m.metric),
+                               "assumption": m.assumption or ""}
+                              for m in metric_maps if getattr(m, "status", "direct") == "reconcile"]
+        # needs_decision: the source has related data but assigning it needs a human
+        # choice we must not guess — asked (never filled), so the user decides once.
+        open_questions = [{"metric": label_by_key.get(m.metric, m.metric),
+                           "question": m.assumption or m.note or ""}
+                          for m in metric_maps if getattr(m, "status", "direct") == "needs_decision"]
+        if reconciled_metrics or open_questions:
+            try:
+                from app.review.items import make_item
+                items = [make_item(
+                    source="populate", kind="judgment",
+                    question=(f"'{r['metric']}' has no exact source match — I reconciled it: "
+                              f"{r['assumption']}. Confirm this, or tell me how to map it."),
+                    why="Source and template use different breakdowns, so this fill is a provisional assumption.",
+                    affected={"metrics": [r["metric"]]},
+                    suggested_answer=(r["assumption"] or None),
+                ) for r in reconciled_metrics]
+                items += [make_item(
+                    source="populate", kind="judgment",
+                    question=f"'{q['metric']}' — {q['question']}",
+                    why="The source has related data but the mapping needs your decision; left blank until you choose.",
+                    affected={"metrics": [q["metric"]]},
+                ) for q in open_questions]
+                sb.insert_review_items(t_vid, items)
+            except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
+                logger.warning("could not file reconciliation/decision review items: %s", e)
 
         # Add-line proposals: source series that mapped to NO template metric are
         # candidates for NEW lines in the template's extensible regions. Report-only
@@ -470,7 +497,8 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 "filled": [fc.model_dump(mode="json") for fc in result.filled],
                 "unmatched": result.unmatched, "unmatched_reasons": unmatched_reasons,
                 "skipped": result.skipped,
-                "review": review, "notes": notes, "summary": result.summary,
+                "review": review, "notes": notes, "coverage_notes": coverage_notes,
+                "reconciled": reconciled_metrics, "summary": result.summary,
                 "rule_violations": violations, "context_chars": len(biz_context),
                 "reset": reset, **clear_stats,
                 "proposed_additions": proposals, "addition_notes": add_notes,
@@ -502,6 +530,11 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         "skipped_count": len(result.skipped),
         "review": review[:200],
         "review_count": len(review),
+        "coverage_notes": coverage_notes,
+        "reconciled": reconciled_metrics,
+        "reconciled_count": len(reconciled_metrics),
+        "open_questions": open_questions,
+        "open_questions_count": len(open_questions),
         "rule_violations": violations[:100],
         "rule_violation_count": len(violations),
         "reset": reset,

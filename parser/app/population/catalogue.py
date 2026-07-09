@@ -52,9 +52,26 @@ class Series:
     sheet: str
     row: int
     label: str
-    period_cols: list[tuple[int, date | None, str]]  # (col_index, date, period_type)
+    period_cols: list[tuple[int, date | None, str]]  # (col_index, date, grain)
     unit: Unit
     sample: list[float] = field(default_factory=list)
+    # per-column scenario, keyed by col_index: 'actual' | 'budget' | 'forecast'.
+    # Scenario comes from the source's OWN labelling — never from the as-of date.
+    # Binding uses it only to honour a template slot that explicitly asks for a
+    # non-actual scenario; unset columns default to 'actual'.
+    col_scenario: dict[int, str] = field(default_factory=dict)
+
+
+def normalise_scenario(kind: str | None) -> str:
+    """A source column's declared scenario, normalised. Anything the source didn't
+    tag as budget/forecast is treated as actuals (management accounts report the
+    past by default)."""
+    k = (kind or "").strip().lower()
+    if k.startswith("budget"):
+        return "budget"
+    if k.startswith(("forecast", "plan", "outlook")):
+        return "forecast"
+    return "actual"
 
 
 def effective_value(cell: dict):
@@ -164,6 +181,9 @@ def build_catalogue(snapshot: dict,
             continue
         period_cols = [(p["col"], parse_iso_period(p.get("parsed_date")), p.get("period_type", ""))
                        for p in raw_periods]
+        # deterministic detection carries no reliable actual/budget signal — treat
+        # every column as actuals so a scenario-agnostic demand fills normally.
+        col_scenario = {p["col"]: "actual" for p in raw_periods}
         pcol_idx = {p["col"] for p in raw_periods}
         cells = sheet.get("cells", [])
         sheet_ccy = _detect_sheet_currency(cells)
@@ -188,6 +208,7 @@ def build_catalogue(snapshot: dict,
                 period_cols=period_cols,
                 unit=_series_unit(label, number_format, sheet_ccy),
                 sample=[v for v in vals if v is not None][:5],
+                col_scenario=col_scenario,
             )
     return out
 
@@ -229,12 +250,14 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
     series:[{label_cell,label,canonical_metric,unit,currency,sign_flip}]}. The AI
     located the structure; we read the real values (cached results) deterministically.
 
-    ``as_of`` overrides the AI's actual/budget/forecast tag for PAST columns:
-    management accounts report the past, so a column dated on/before as_of IS
-    actuals no matter what the model called it (it tags future-looking years
-    'forecast' — that once dropped six months of real P&L actuals). Only
-    genuinely future non-actual columns are excluded, so a budget block can't
-    fill actual slots."""
+    Every source column is kept and tagged with its own scenario (actual / budget /
+    forecast), taken from the source's declared ``kind`` — NOT from the as-of date.
+    Scenario is enforced later, in binding, and only when a template slot explicitly
+    asks for a non-actual scenario; a budget column can never leak into an actual
+    slot because binding matches scenario-to-scenario. ``as_of`` is retained for
+    call compatibility (timeline/vintage) but no longer classifies actual vs
+    forecast — a time series carries data before and after the as-of alike."""
+    _ = as_of  # no longer used to classify scenario (see docstring)
     val_by_rc: dict[tuple[str, int, int], object] = {}
     fmt_by_rc: dict[tuple[str, int, int], str | None] = {}
     cells_by_sheet: dict[str, list[dict]] = defaultdict(list)
@@ -252,20 +275,18 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
             continue
         sheet_ccy = _detect_sheet_currency(cells_by_sheet.get(name, []))
         period_cols: list[tuple[int, date | None, str]] = []
+        col_scenario: dict[int, str] = {}
         for p in sh.get("periods", []):
             rc = a1_to_rowcol(p.get("header_cell", ""))
             if not rc:
                 continue
             d = parse_iso_period(p.get("date"))
-            # v1 fills ACTUALS only. A budget/forecast block carries real month
-            # dates and would date-match the template's empty future slots — but
-            # the tag is the MODEL's judgment and it mislabels past months, so
-            # the deterministic date beats it: on/before as_of => actuals.
-            kind = (p.get("kind") or "actual").lower()
-            is_past = d is not None and as_of is not None and d <= as_of
-            if not is_past and kind not in ("", "actual"):
-                continue
-            period_cols.append((rc[1], d, p.get("grain") or "month"))
+            col = rc[1]
+            # Keep the column whatever its scenario; record the scenario so binding
+            # can honour an explicit budget/forecast demand and keep budget out of
+            # actual slots. No column is ever dropped here.
+            period_cols.append((col, d, p.get("grain") or "month"))
+            col_scenario[col] = normalise_scenario(p.get("kind"))
         if not period_cols:
             continue
         for ser in sh.get("series", []):
@@ -289,5 +310,6 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
                 period_cols=period_cols,
                 unit=_unit_from_llm(ser.get("unit"), ser.get("currency"), number_format, sheet_ccy, sample),
                 sample=sample[:5],
+                col_scenario=col_scenario,
             )
     return out

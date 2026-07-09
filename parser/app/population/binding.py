@@ -36,6 +36,30 @@ def _metric_key(fact: dict) -> str | None:
     return fact.get("canonical_metric") or fact.get("metric_label")
 
 
+def _sum_samples(samples: list[list[float]]) -> list[float]:
+    """Elementwise sum of aligned component samples (truncated to the shortest), so
+    an aggregated series' magnitude/sign reconciles against the TOTAL the template
+    holds rather than against one component."""
+    lists = [s for s in samples if s]
+    if not lists:
+        return []
+    n = min(len(s) for s in lists)
+    return [sum(s[i] for s in lists) for i in range(n)]
+
+
+def _scenario_columns(series: Series, dem_scen: str) -> list[tuple]:
+    """Candidate period columns for a demanded scenario. Restrict to the demanded
+    scenario ONLY when the template explicitly asks for budget/forecast; otherwise
+    every column is a candidate, actuals first so a same-period tie resolves to the
+    actual. as-of plays no part here — scenario is the source's own tag."""
+    def scen_of(col: int) -> str:
+        return series.col_scenario.get(col) or "actual"
+    cols = series.period_cols
+    if dem_scen in ("budget", "forecast"):
+        return [pc for pc in cols if scen_of(pc[0]) == dem_scen]
+    return sorted(cols, key=lambda pc: 0 if scen_of(pc[0]) == "actual" else 1)
+
+
 def _dominant_sign(vals, min_n: int = 2) -> int:
     """-1 / +1 when ≥70% of the nonzero values share a sign (and there are at
     least ``min_n``), else 0 (no verdict). Mixed rows (variances) stay 0."""
@@ -133,7 +157,10 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
         if mm is None:
             unmatched.append(_unmatched(f, "no source series mapped to this metric"))
             continue
-        if mm.confidence < confidence_floor:
+        # A reconcile is a DELIBERATE approximation (source data cut differently) — it is
+        # kept whatever its confidence, but flagged and raised for user confirmation.
+        reconciled = getattr(mm, "status", "direct") == "reconcile"
+        if mm.confidence < confidence_floor and not reconciled:
             unmatched.append(_unmatched(f, f"mapping confidence {mm.confidence:.2f} < floor {confidence_floor:.2f}"))
             continue
         series = catalogue.get(mm.series_id)
@@ -141,10 +168,26 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             unmatched.append(_unmatched(f, f"mapped series '{mm.series_id}' not in catalogue"))
             continue
 
-        # v1: only fill actuals from an actuals source; flag forecast/budget slots.
-        scen = (f.get("scenario") or "").strip().lower()
-        if scen not in ("", "actual", "actuals", "unknown"):
-            unmatched.append(_unmatched(f, f"scenario '{scen}' not available from source (actuals only)"))
+        # AGGREGATION: a template line that is the exact SUM of several source lines
+        # (e.g. Total Revenue = NA + EMEA + APAC when the source has no single
+        # total). Components must share the primary's sheet and period columns;
+        # any that don't are ignored (the sum stays over aligned, cited cells).
+        components = [series]
+        for sid in mm.also_series_ids or []:
+            s2 = catalogue.get(sid)
+            if s2 is not None and s2 is not series and s2.sheet == series.sheet:
+                components.append(s2)
+        agg = len(components) > 1
+        # magnitude/sign reconcile against the combined total, not one component.
+        recon_sample = _sum_samples([c.sample for c in components]) if agg else series.sample
+
+        # SCENARIO is demand-gated: restrict to the template's scenario only when it
+        # explicitly asks for budget/forecast; otherwise take any column (actuals
+        # preferred). as-of never classifies scenario.
+        dem_scen = (f.get("scenario") or "").strip().lower()
+        cand_cols = _scenario_columns(series, dem_scen)
+        if dem_scen in ("budget", "forecast") and not cand_cols:
+            unmatched.append(_unmatched(f, f"source has no {dem_scen} column for '{mm.series_id}'"))
             continue
 
         # which source column for this template period slot — align by the template
@@ -152,7 +195,7 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
         sheet = f.get("sheet_name")
         tdate = dates_by_col.get((sheet, f.get("col"))) or parse_iso_period(f.get("parsed_date"))
         col = pick_column(f.get("period_index"), pc_by_sheet.get(sheet) or period_count, tdate,
-                          series.period_cols, grain, template_grain=sheet_grain.get(sheet),
+                          cand_cols, grain, template_grain=sheet_grain.get(sheet),
                           point_in_time=(f.get("basis") == "point_in_time"))
         if col is None:
             unmatched.append(_unmatched(f, f"no source column for period_index={f.get('period_index')} ({grain})"))
@@ -178,7 +221,7 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             scale, sflag = 1.0, None
         else:
             # SCALE by magnitude reconciliation (labels are unreliable); flag if unverified.
-            scale, sflag = resolve_scale(series.sample, tpl_mags, series.unit, tpl_unit,
+            scale, sflag = resolve_scale(recon_sample, tpl_mags, series.unit, tpl_unit,
                                          fallback_scale=fallback_scale)
             if scale is None:
                 unmatched.append(_unmatched(f, f"unit/scale unresolved ({sflag}); supply display_unit or check formats"))
@@ -194,7 +237,7 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
         # already in the row (a prior fill is ground truth for the convention),
         # (2) the L3 sign_convention read from the template's own formulas
         # (GP = E8+E9 means costs are entered negative). LLM only as fallback.
-        src_sign = _dominant_sign(series.sample)
+        src_sign = _dominant_sign(recon_sample)
         tpl_sign = _dominant_sign(tpl_mags) or _convention_sign(f.get("sign_convention"))
         sign_note = None
         if src_sign and tpl_sign:
@@ -205,7 +248,15 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             sign_flip = mm.sign_flip
 
         source_cell = f"{_col_letters(col)}{series.row}"
-        note = f"{series.label} @ {series.sheet}"
+        agg_source_cells: list[str] = []
+        if agg:
+            # every component sits on the primary's sheet at the SAME column
+            agg_source_cells = [f"{c.sheet}!{_col_letters(col)}{c.row}" for c in components[1:]]
+            note = "SUM: " + " + ".join(c.label for c in components) + f" @ {series.sheet} [derived:sum]"
+        else:
+            note = f"{series.label} @ {series.sheet}"
+        if reconciled:
+            note += f" [reconciled: {(mm.assumption or 'source granularity differs')[:140]}]"
         if sflag:
             note += f" [{sflag}]"
         if ccy_flag:   # written as-is despite differing declared currencies — review it
@@ -217,6 +268,7 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             template_cell=f.get("cell"),
             source_sheet=series.sheet,
             source_cell=source_cell,
+            agg_source_cells=agg_source_cells,
             unit_scale=scale,
             sign_flip=sign_flip,
             confidence=mm.confidence,

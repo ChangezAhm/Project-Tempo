@@ -24,6 +24,25 @@ def _first_addr(addr: str) -> str:
     return m.group(1) if m else ""
 
 
+def _num(v):
+    """A cell's numeric value, or None if it isn't a number (handles '1,234' and
+    parenthesised negatives). bool is never a number."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        t = v.strip().replace(",", "")
+        neg = t.startswith("(") and t.endswith(")")
+        t = t.strip("()").replace("%", "")
+        try:
+            f = float(t)
+            return -f if neg else f
+        except ValueError:
+            return None
+    return None
+
+
 def apply_links(facts: list[dict], source_snapshot: dict, links: list[CellLink],
                 skipped: list[dict]) -> PopulationResult:
     """facts = template input data points; links = LLM cell→cell map; skipped =
@@ -81,12 +100,43 @@ def apply_links(facts: list[dict], source_snapshot: dict, links: list[CellLink],
             unmatched.append({"reason": "source cell holds a formula/error, not a value",
                               "source_sheet": ssheet, "source_cell": saddr, **_ref(f)})
             continue
+
+        # AGGREGATION: sum the primary with each cited component cell. Trust-first —
+        # if ANY component is missing/non-numeric we do NOT write a partial total;
+        # the cell is reported unmatched so a wrong sum can never be produced.
+        raw_out = raw
+        if lk.agg_source_cells:
+            nums = [_num(raw)]
+            missing = None
+            if nums[0] is None:
+                missing = f"{ssheet}!{saddr}"
+            for spec in lk.agg_source_cells:
+                if missing is not None:
+                    break
+                s = (spec or "").strip()
+                if "!" in s:
+                    csheet_raw, caddr = s.split("!", 1)
+                    csheet = sheet_by_lower.get(csheet_raw.strip().lower(), csheet_raw.strip())
+                else:
+                    csheet, caddr = ssheet, s
+                cv = sval.get((csheet, _first_addr(caddr)))
+                n = _num(cv)
+                if n is None:
+                    missing = spec
+                else:
+                    nums.append(n)
+            if missing is not None:
+                unmatched.append({"reason": f"aggregation incomplete: component {missing} empty/non-numeric at this period",
+                                  "source_sheet": ssheet, "source_cell": saddr, **_ref(f)})
+                continue
+            raw_out = sum(nums)
+
         try:
-            value = float(raw) * lk.unit_scale * (-1.0 if lk.sign_flip else 1.0)
+            value = float(raw_out) * lk.unit_scale * (-1.0 if lk.sign_flip else 1.0)
         except (TypeError, ValueError):
-            value = raw   # genuine non-numeric text passes through unchanged
+            value = raw_out   # genuine non-numeric text passes through unchanged
         filled.append(FilledCell(
-            template_sheet=f["sheet_name"], template_cell=f["cell"], value=value, raw_source_value=raw,
+            template_sheet=f["sheet_name"], template_cell=f["cell"], value=value, raw_source_value=raw_out,
             source_sheet=ssheet, source_cell=saddr,
             metric=f.get("canonical_metric") or f.get("metric_label"),
             period_index=f.get("period_index"), scenario=f.get("scenario"), confidence=lk.confidence,

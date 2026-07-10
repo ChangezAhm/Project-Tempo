@@ -749,7 +749,7 @@ def test_map_metrics_retries_bad_json(monkeypatch):
     monkeypatch.setattr(mapping, "guarded_stream", fake_stream)
     cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
     maps, failed = mapping.map_metrics([{"metric": "revenue", "label": "Revenue"}], cat)
-    assert failed == 0 and len(maps) == 1 and calls["n"] == 2
+    assert failed == [] and len(maps) == 1 and calls["n"] == 2
 
 
 def test_map_metrics_counts_dead_batches(monkeypatch):
@@ -758,7 +758,7 @@ def test_map_metrics_counts_dead_batches(monkeypatch):
     monkeypatch.setattr(mapping, "guarded_stream", lambda **kw: (None, "still garbage"))
     cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
     maps, failed = mapping.map_metrics([{"metric": "revenue", "label": "Revenue"}], cat)
-    assert maps == [] and failed == 1   # dropped loudly, run continues
+    assert maps == [] and failed == ["revenue"]   # dropped loudly BY NAME, run continues
 
 
 # --- mapping response parsing --------------------------------------------

@@ -369,8 +369,16 @@ def verify(wb: WorkbookUnderstanding, snap: dict) -> dict:
 # --- Orchestrator ---------------------------------------------------------
 
 @traceable(name="understand_workbook", run_type="chain")
-def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_workers: int = 4,
+def understand_workbook(template_id: str, *, max_sheets: int | None = None, per_sheet_workers: int = 4,
                         force_deep: set[str] | None = None) -> dict:
+    # Deep-sheet cap, env-tunable: a 20-30 tab workbook used to silently lose tabs
+    # past 16 (review-flagged only). Default raised to 24; TEMPO_MAX_DEEP_SHEETS.
+    if max_sheets is None:
+        try:
+            max_sheets = int(os.environ.get("TEMPO_MAX_DEEP_SHEETS", "24"))
+        except ValueError:
+            max_sheets = 24
+
     # Arm the spend firewall for onboarding (Opus + per-sheet vision — legitimately
     # costs more than a populate, so it has its own higher ceiling). Every LLM call
     # below — per-sheet (in worker threads) and synthesis — checks against it.

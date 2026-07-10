@@ -398,12 +398,25 @@ def supersede_correction(correction_id: str) -> None:
 def replace_extensible_regions(version_id: str, rows: list[dict]) -> None:
     """Idempotent: clear this version's extensible regions, then insert — same
     delete-then-insert pattern as replace_rows (cheaply re-derivable, so no
-    compensating restore)."""
+    compensating restore). Pre-migration-0010 databases lack the slots columns:
+    the insert is retried once with the new keys stripped (logged loudly) so an
+    un-migrated environment degrades to legacy region shape instead of failing
+    the whole understand run."""
     sb = get_client()
     sb.table("template_extensible_regions").delete().eq(
         "template_version_id", version_id).execute()
-    if rows:
+    if not rows:
+        return
+    try:
         sb.table("template_extensible_regions").insert(rows).execute()
+    except Exception as e:  # noqa: BLE001 — likely missing 0010 columns
+        new_0010 = ("slots", "detection_source", "section_ref")
+        stripped = [{k: v for k, v in r.items() if k not in new_0010} for r in rows]
+        logger.warning(
+            "extensible-region insert failed (%s) — retrying WITHOUT the migration-0010 "
+            "columns (slots/detection_source/section_ref). Apply "
+            "supabase/migrations/0010_region_slots.sql to enable slot-aware regions.", e)
+        sb.table("template_extensible_regions").insert(stripped).execute()
 
 
 def list_extensible_regions(version_id: str) -> list[dict]:

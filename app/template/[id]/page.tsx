@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  answerReviewItem,
   detectRegions,
   getRegions,
   getReviewItems,
   getUnderstanding,
   populateTemplate,
   understandTemplate,
+  verifyReviewItem,
   type CriticalInput,
   type ExtensibleRegion,
   type PopulateResult,
@@ -385,6 +387,116 @@ function PopulatePanel({ templateId }: { templateId: string }) {
   );
 }
 
+// Inline one-tap clarification panel — the questions appear HERE, right after
+// understanding finishes, instead of hiding behind a chip → second screen →
+// free-text box. Machine-checkable items are auto-verified on load so only
+// human-judgment questions remain. Best-effort: hidden on any load failure.
+function OpenQuestionsPanel({
+  templateId,
+  refreshKey,
+}: {
+  templateId: string;
+  refreshKey: number;
+}) {
+  const [items, setItems] = useState<import("@/lib/templates").ReviewItem[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [autoVerified, setAutoVerified] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await getReviewItems(templateId);
+        let open = list.items.filter((i) => i.status === "open");
+        // auto-verify machine-checkables once (capped) — no human needed for those
+        if (!autoVerified) {
+          const machine = open.filter((i) => i.kind === "machine_checkable").slice(0, 10);
+          for (const m of machine) {
+            try {
+              await verifyReviewItem(templateId, m.id);
+            } catch {
+              /* verification is best-effort */
+            }
+          }
+          if (machine.length) {
+            const relisted = await getReviewItems(templateId);
+            open = relisted.items.filter((i) => i.status === "open");
+          }
+          if (!cancelled) setAutoVerified(true);
+        }
+        if (!cancelled) setItems(open);
+      } catch {
+        if (!cancelled) setItems(null); // hidden silently
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, refreshKey]);
+
+  async function answer(id: string, answer: string) {
+    setBusy(id);
+    try {
+      await answerReviewItem(templateId, id, { status: "answered", answer });
+      setItems((prev) => (prev ?? []).filter((i) => i.id !== id));
+    } catch {
+      /* leave the item; the contract page has full error handling */
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (!items || items.length === 0) return null;
+  const shown = items.slice(0, 5);
+  return (
+    <section className="rounded-xl border border-amber-200 bg-amber-50/40 p-4">
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-amber-900">
+          {items.length} question{items.length === 1 ? "" : "s"} for you
+        </h2>
+        <p className="text-xs text-amber-700">One tap each — answers persist and improve every future run.</p>
+        <Link
+          href={`/template/${templateId}/contract`}
+          className="ml-auto text-xs font-medium text-amber-800 underline hover:text-amber-900"
+        >
+          See all →
+        </Link>
+      </div>
+      <ul className="mt-3 space-y-2">
+        {shown.map((q) => (
+          <li key={q.id} className="rounded-lg border border-amber-200/70 bg-white p-3">
+            <p className="text-sm leading-snug">{q.question}</p>
+            {q.suggested_answer ? (
+              <p className="mt-1 text-xs text-neutral-500">Suggested: {q.suggested_answer}</p>
+            ) : null}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {q.suggested_answer ? (
+                <button
+                  onClick={() => void answer(q.id, q.suggested_answer!)}
+                  disabled={busy === q.id}
+                  className="rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {busy === q.id ? "Saving…" : "Yes — confirm"}
+                </button>
+              ) : null}
+              <Link
+                href={`/template/${templateId}/contract`}
+                className="rounded-md border border-neutral-300 px-2.5 py-1 text-[11px] font-medium text-neutral-600 transition hover:bg-neutral-50"
+              >
+                {q.suggested_answer ? "No / different…" : "Answer…"}
+              </Link>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {items.length > shown.length ? (
+        <p className="mt-2 text-xs text-amber-700">+{items.length - shown.length} more in the inbox.</p>
+      ) : null}
+    </section>
+  );
+}
+
 // Small header chip linking to the contract page's Questions inbox. Hidden
 // silently when the count can't load — no error noise on the main page.
 function OpenQuestionsChip({ templateId }: { templateId: string }) {
@@ -559,6 +671,7 @@ export default function TemplatePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [ready, setReady] = useState(false);
+  const [questionsRefresh, setQuestionsRefresh] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -587,6 +700,7 @@ export default function TemplatePage() {
     try {
       await understandTemplate(id);
       await load();
+      setQuestionsRefresh((k) => k + 1);   // surface fresh questions immediately
     } catch (e) {
       setError(e instanceof Error ? e.message : "Understanding failed");
     } finally {
@@ -695,6 +809,8 @@ export default function TemplatePage() {
               </p>
             ) : null}
           </header>
+
+          <OpenQuestionsPanel templateId={id} refreshKey={questionsRefresh} />
 
           <PopulatePanel templateId={id} />
 

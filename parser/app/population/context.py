@@ -21,8 +21,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_MAX_CHARS = 2400          # rides on every mapping batch — keep it lean
-_MAX_ITEMS_PER_SOURCE = 8
+import os as _os
+
+# Rides on every mapping batch. 2,400 chars was capping how much of the user's
+# OWN confirmed guidance reached the matcher — raised to 6,000, env-tunable.
+try:
+    _MAX_CHARS = int(_os.environ.get("TEMPO_CONTEXT_MAX_CHARS", "6000"))
+except ValueError:
+    _MAX_CHARS = 6000
+_MAX_ITEMS_PER_SOURCE = 16
 
 
 def build_context(notes: str | None, answered: list[dict], strict_rules: list[dict],

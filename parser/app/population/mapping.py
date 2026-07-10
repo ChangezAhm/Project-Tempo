@@ -206,21 +206,22 @@ def _map_chunk(chunk: list[dict], series_block: str, max_tokens: int,
 
 
 def map_metrics(metrics: list[dict], catalogue: dict[str, Series],
-                max_tokens: int = 8000, context: str = "") -> tuple[list[MetricMap], int]:
+                max_tokens: int = 8000, context: str = "") -> tuple[list[MetricMap], list[str]]:
     """Run the mapping (chunked). ``context`` is the template's business-context
     block (sponsor notes, answered review questions, strict rules) — authoritative
-    knowledge the mapper must honor. Returns (mappings, failed_batches). A batch
-    whose retry also fails is dropped LOUDLY — logged and counted, so the run
-    report can say why coverage is low — instead of either silently vanishing or
-    killing a paid run. Guarded by the run's spend cap inside guarded_stream; a
-    SpendCapExceeded still aborts everything."""
+    knowledge the mapper must honor. Returns (mappings, failed_metric_keys). A
+    batch whose retry also fails is dropped LOUDLY — the affected METRIC KEYS are
+    returned so the run report can name exactly what went unmapped and why —
+    instead of either silently vanishing or killing a paid run. Guarded by the
+    run's spend cap inside guarded_stream; a SpendCapExceeded still aborts
+    everything."""
     from app.population.cost import SpendCapExceeded
 
     if not metrics or not catalogue:
-        return [], 0
+        return [], []
     series_block = _series_lines(catalogue)
     out: list[MetricMap] = []
-    failed = 0
+    failed_metrics: list[str] = []
     for i in range(0, len(metrics), _BATCH):
         chunk = metrics[i:i + _BATCH]
         try:
@@ -228,7 +229,7 @@ def map_metrics(metrics: list[dict], catalogue: dict[str, Series],
         except SpendCapExceeded:
             raise
         except Exception:  # noqa: BLE001
-            failed += 1
+            failed_metrics.extend(str(m.get("metric")) for m in chunk)
             logger.exception("mapping batch %d-%d failed after retry — %d metrics unmapped",
                              i, i + len(chunk), len(chunk))
-    return out, failed
+    return out, failed_metrics

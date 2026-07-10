@@ -23,8 +23,19 @@ import re
 from app.raw_extraction.cell_analyzer import is_input_fill
 from app.raw_extraction.column_utils import column_index, column_letter
 
-_MAX_BODY = 60
+import os as _os
+
+# Cell body cap: 90 keeps the tails of verbose adjustment/definition labels the
+# 60-char cap used to cut (exactly the text this product cares about).
+_MAX_BODY = 90
 _VINPUT_BUDGET = 300           # cap on injected empty-validation cells per sheet
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(_os.environ.get(name, default))
+    except ValueError:
+        return default
 _RANGE_RE = re.compile(r"^\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?$")
 
 
@@ -131,7 +142,14 @@ def _validation_empty_cells(sheet: dict, occupied: set, max_cols: int) -> set:
     return injected
 
 
-def build_text_grid(sheet: dict, max_rows: int = 250, max_cols: int = 80) -> str:
+def build_text_grid(sheet: dict, max_rows: int | None = None, max_cols: int | None = None) -> str:
+    # Window caps are env-tunable: rows past the window are INVISIBLE to
+    # understanding (a note is emitted, but the data is gone) — raise for big
+    # templates. Defaults: 350 rows (was 250), 80 cols.
+    if max_rows is None:
+        max_rows = _env_int("TEMPO_GRID_MAX_ROWS", 350)
+    if max_cols is None:
+        max_cols = _env_int("TEMPO_GRID_MAX_COLS", 80)
     name = sheet["name"]
     protected = bool(sheet.get("is_protected"))
     cells = sheet.get("cells", [])

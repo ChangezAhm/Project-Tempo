@@ -447,7 +447,20 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     try:
         metric_maps, mapping_failed = map_metrics(demand["metrics"], catalogue, context=biz_context)
         if mapping_failed:
-            routing["mapping_failed_batches"] = mapping_failed
+            # LOUD: name the affected metrics and file a durable review item —
+            # a silently-dropped batch once meant up to 80 metrics vanished.
+            routing["mapping_failed_metrics"] = mapping_failed[:80]
+            try:
+                from app.review.items import make_item
+                sb.insert_review_items(t_vid, [make_item(
+                    source="populate", kind="judgment",
+                    question=(f"{len(mapping_failed)} template metric(s) went unmapped because a "
+                              "mapping batch failed after retry — re-run populate for these."),
+                    why=f"Affected: {', '.join(mapping_failed[:15])}"
+                        + ("…" if len(mapping_failed) > 15 else ""),
+                )])
+            except Exception as e:  # noqa: BLE001
+                logger.warning("could not file mapping-failure review item: %s", e)
 
         # DEEP RESCUE: give each metric the fast batched pass could NOT place its own
         # focused agent (one metric + the whole catalogue), run in parallel. Their
@@ -673,12 +686,15 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         "filled": filled[:500],
         "filled_truncated": len(filled) > 500,
         "unmatched": result.unmatched[:200],
+        "unmatched_truncated": len(result.unmatched) > 200,
         "unmatched_count": len(result.unmatched),
         "unmatched_reasons": unmatched_reasons,
         "unmapped_metrics": unmapped_metrics[:60],
         "skipped": result.skipped[:200],
+        "skipped_truncated": len(result.skipped) > 200,
         "skipped_count": len(result.skipped),
         "review": review[:200],
+        "review_truncated": len(review) > 200,
         "review_count": len(review),
         "coverage_notes": coverage_notes,
         "reconciled": reconciled_metrics,

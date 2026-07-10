@@ -113,6 +113,12 @@ titles and headers; propagate to the rows they govern and cite the declaring cel
   - SIGN CONVENTION: infer from formulas where possible — `=D5-D9` implies costs \
 are entered positive and subtracted; `=SUM(D5:D9)` across a P&L implies costs are \
 entered negative.
+  - SCENARIO PER ROW: when a row carries a specific scenario, set `scenario` \
+(actual/budget/forecast; null if unclear). When a row RESTATES another metric row \
+under a different scenario — a bare 'Budget' row beneath Revenue, a 'Budget \
+(Revenue)' row, a budget block repeating the P&L lines — set `variant_of_cell` to \
+the PARENT metric row's label_cell, so the two rows are paired. A row that is the \
+primary statement of its metric keeps variant_of_cell=null.
   - LARGE TABLES: if a region is a data dump or lookup with many structurally \
 identical rows (roughly 50+), do NOT enumerate them as metric_rows. Emit ONE \
 section describing the header row, what each column means, the data range, and the \
@@ -141,10 +147,13 @@ own labelling — a scenario header row/column, a block banner ("Budget Monthly 
 P&L"), a column-group header. Output ONE region per scenario with the cell_range \
 it covers, and COVER EVERY data area that holds inputs/values (the whole block, \
 not just the header). Scenarios may be laid out as stacked row-blocks OR \
-side-by-side column-groups — give ranges accordingly. If the entire sheet is a \
-single scenario, emit one region spanning the data. If scenario does not apply \
-(lookup/reference/cover/instructions sheets), leave it empty. This is usually \
-visually obvious in the image — use it.
+side-by-side column-groups — give ranges accordingly. BUT when scenario varies \
+ROW BY ROW (a Budget row interleaved under each metric row), do NOT paint a \
+region over the block — a rectangle cannot express that layout and would swallow \
+the actual rows; express it per metric_row via `scenario`/`variant_of_cell` \
+instead. If the entire sheet is a single scenario, emit one region spanning the \
+data. If scenario does not apply (lookup/reference/cover/instructions sheets), \
+leave it empty. This is usually visually obvious in the image — use it.
 - input_fields — the cells the portfolio company actually FILLS IN. Combine the \
 image's input-styled cells, "please provide" prompts, validations, and the \
 deterministic hints. Use exact addresses. When ONE logical input repeats across \

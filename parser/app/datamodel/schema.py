@@ -71,8 +71,10 @@ class DataPoint(_Model):
     definition: str | None
     expected_source: str | None
     needs_value: bool
-    # data | config | exclude — a correction can re-categorise a slot (e.g. a
-    # selector/control input that isn't a reporting data point).
+    # data | sourced | computed | config | exclude | staging — a correction can
+    # re-categorise a slot (e.g. a selector/control input that isn't a reporting
+    # data point, or a 'staging' cell the sheet-role gate blocked that IS a real
+    # input: patch category='data').
     category: str = "data"
     # --- provenance / audit ---
     scenario_source: Provenance

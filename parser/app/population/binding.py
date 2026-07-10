@@ -172,6 +172,13 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
     unmatched: list[dict] = []
 
     for f in facts:
+        # value_role guard: the template computes its own totals/subtotals — a
+        # total row whose cells happen to be literals (not formulas) still must
+        # never be WRITTEN, or we'd fight the template's own arithmetic.
+        if (f.get("value_role") or "").strip().lower() in ("total", "subtotal", "header"):
+            unmatched.append(_unmatched(
+                f, f"template {f.get('value_role')} row — computed by the template, never written"))
+            continue
         key = _metric_key(f)
         mm = by_metric.get(key)
         if mm is None:
@@ -211,10 +218,23 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
         # explicitly asks for budget/forecast; otherwise take any column (actuals
         # preferred). as-of never classifies scenario.
         dem_scen = (f.get("scenario") or "").strip().lower()
-        cand_cols = _scenario_columns(series, dem_scen)
-        if dem_scen in ("budget", "forecast") and not cand_cols:
-            unmatched.append(_unmatched(f, f"source has no {dem_scen} column for '{mm.series_id}'"))
-            continue
+        if dem_scen in ("budget", "forecast") and not agg and dem_scen in series.variants:
+            # scenario-by-ROW source: the bare 'Budget'/'Forecast' row under the
+            # mapped metric row carries this slot's figures — swap to that variant.
+            series = series.variants[dem_scen]
+            components = [series]
+            recon_sample = series.sample
+            cand_cols = sorted(series.period_cols, key=lambda pc: pc[0])
+        elif dem_scen in ("budget", "forecast") and getattr(series, "scenario", None) == dem_scen:
+            # the whole mapped ROW is tagged with the demanded scenario — every
+            # dated column is a candidate.
+            cand_cols = sorted(series.period_cols, key=lambda pc: pc[0])
+        else:
+            cand_cols = _scenario_columns(series, dem_scen)
+            if dem_scen in ("budget", "forecast") and not cand_cols:
+                unmatched.append(_unmatched(
+                    f, f"source has no {dem_scen} column or row-variant for '{mm.series_id}'"))
+                continue
 
         # which source column for this template period slot — align by the template
         # column's REAL date (read from its timeline) when we have it, else positional.

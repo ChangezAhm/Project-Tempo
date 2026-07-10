@@ -60,6 +60,111 @@ class Series:
     # Binding uses it only to honour a template slot that explicitly asks for a
     # non-actual scenario; unset columns default to 'actual'.
     col_scenario: dict[int, str] = field(default_factory=dict)
+    # scenario-by-ROW sources (a bare 'Budget' row under each metric row): the
+    # variant rows, keyed by scenario. Attached to the METRIC row's series and
+    # hidden from the mapper — binding resolves the variant for budget/forecast slots.
+    variants: dict[str, "Series"] = field(default_factory=dict)
+    # the whole ROW's scenario when tagged (by the AI's per-row judgment or an
+    # explicit label); None = untagged/actual-ish.
+    scenario: str | None = None
+
+
+_SCEN_WORDS = {"budget": "budget", "bud": "budget",
+               "forecast": "forecast", "fcst": "forecast",
+               "plan": "forecast", "outlook": "forecast"}
+_SCEN_ALT = "budget|forecast|plan|outlook|fcst|bud"
+# "Budget (Revenue)" / "Budget - Revenue" / "Budget: Revenue"
+_SCEN_FIRST = re.compile(rf"^\s*({_SCEN_ALT})\s*[\(\-–—:]\s*(.+?)\)?\s*$", re.I)
+# "Revenue (Budget)" / "Revenue - Budget" / "Revenue: Budget"
+_SCEN_LAST = re.compile(rf"^\s*(.+?)\s*[\(\-–—:]\s*({_SCEN_ALT})\s*\)?\s*$", re.I)
+
+
+def parse_scenario_variant(label: str | None) -> tuple[str | None, str | None]:
+    """(scenario, explicit_parent_name) when a row label is an EXPLICIT scenario tag:
+      - bare word  ('Budget')            -> ('budget', None)   — variant of the row above
+      - compound   ('Budget (Revenue)',
+                    'Revenue - Budget')  -> ('budget', 'Revenue') — parent named in the tag
+    (None, None) when the label is a normal metric. The tag is the source's own
+    labelling — honoured wherever it appears, never inferred."""
+    t = (label or "").strip()
+    if not t:
+        return None, None
+    bare = _SCEN_WORDS.get(re.sub(r"[^a-z]", "", t.lower()))
+    if bare:
+        return bare, None
+    m = _SCEN_FIRST.match(t)
+    if m:
+        return _SCEN_WORDS[m.group(1).lower()], m.group(2).strip()
+    m = _SCEN_LAST.match(t)
+    if m:
+        return _SCEN_WORDS[m.group(2).lower()], m.group(1).strip()
+    return None, None
+
+
+def _norm_label(s: str | None) -> str:
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def _attach_scenario_variant_rows(out: dict[str, "Series"],
+                                  ai_tags: dict[str, tuple[str | None, str | None]] | None = None) -> None:
+    """Scenario-by-ROW layout: a row that carries another metric's budget/forecast
+    figures is attached to that parent series (parent.variants); binding picks the
+    right variant per template slot.
+
+    WHO decides is layered (layouts vary too much for rules alone):
+      1. the AI's per-row judgment (``ai_tags``: sid -> (scenario, variant_of)) — it
+         reads ANY layout: interleaved rows, budget blocks, colour conventions;
+      2. the label's own explicit tag ('Budget', 'Budget (Revenue)', 'Revenue -
+         Budget') — deterministic validation and the fallback when the AI is silent.
+    Parent resolution: the explicitly NAMED metric first, else the metric row above
+    (a dataless bare 'Budget' row is a SECTION HEADING, never a variant).
+
+    Guardrail — an LLM tag never hard-gates data: a series is REMOVED from the
+    mapper-facing catalogue only when its own label confirms it's a scenario tag;
+    an AI-only claim attaches the variant but leaves the row visible to the mapper."""
+    ai_tags = ai_tags or {}
+    by_sheet: dict[str, list[Series]] = defaultdict(list)
+    for s in out.values():
+        by_sheet[s.sheet].append(s)
+    for ss in by_sheet.values():
+        ss.sort(key=lambda s: s.row)
+
+        def _claim(s: Series) -> tuple[str | None, str | None, bool]:
+            """(scenario, parent_name, label_confirms) for a row's variant claim."""
+            lab_scen, lab_parent = parse_scenario_variant(s.label)
+            ai_scen, ai_parent = ai_tags.get(s.id, (None, None))
+            if ai_parent or (ai_scen in ("budget", "forecast")):
+                return (ai_scen if ai_scen in ("budget", "forecast") else lab_scen,
+                        ai_parent or lab_parent, lab_scen is not None)
+            return lab_scen, lab_parent, lab_scen is not None
+
+        by_name: dict[str, Series] = {}
+        for s in ss:
+            scen, pname, _ = _claim(s)
+            if scen is None or (pname is None and ai_tags.get(s.id, (None, None))[1] is None
+                                and parse_scenario_variant(s.label) == (None, None)):
+                by_name.setdefault(_norm_label(s.label), s)
+        parent: Series | None = None
+        for s in ss:
+            scen, pname, label_confirms = _claim(s)
+            if scen not in ("budget", "forecast") or (pname is None and not label_confirms):
+                # a whole row the AI tagged budget WITHOUT a parent is a row-level
+                # scenario tag, not a variant — record it and treat as a metric row.
+                if scen and not label_confirms:
+                    s.scenario = scen
+                parent = s
+                continue
+            target: Series | None = None
+            if pname:                                   # explicitly named parent wins
+                target = by_name.get(_norm_label(pname))
+            if target is None and parent is not None and s.sample:   # adjacency, data required
+                target = parent
+            if target is not None and target is not s:
+                s.scenario = scen
+                s.label = f"{target.label} ({scen})"
+                target.variants.setdefault(scen, s)
+                if label_confirms:                      # deterministic confirmation -> hide from mapper
+                    out.pop(s.id, None)
 
 
 def normalise_scenario(kind: str | None) -> str:
@@ -210,6 +315,7 @@ def build_catalogue(snapshot: dict,
                 sample=[v for v in vals if v is not None][:5],
                 col_scenario=col_scenario,
             )
+    _attach_scenario_variant_rows(out)
     return out
 
 
@@ -269,6 +375,7 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
             fmt_by_rc[(nm, c["row"], c["col"])] = (c.get("style") or {}).get("number_format")
 
     out: dict[str, Series] = {}
+    ai_tags: dict[str, tuple[str | None, str | None]] = {}
     for sh in sheets:
         name = sh.get("sheet")
         if name is None:
@@ -318,4 +425,9 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
                 sample=sample[:5],
                 col_scenario=col_scenario,
             )
+            scen = (ser.get("scenario") or "").strip().lower() or None
+            vof = (ser.get("variant_of") or "").strip() or None
+            if scen or vof:
+                ai_tags[sid] = (scen, vof)
+    _attach_scenario_variant_rows(out, ai_tags)
     return out

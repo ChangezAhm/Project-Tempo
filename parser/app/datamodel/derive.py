@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 3
+DERIVATION_VERSION = 6
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -135,6 +135,120 @@ def _grain_from_dates(isos) -> str | None:
         return None
     g = Counter(gaps).most_common(1)[0][0]
     return "monthly" if g <= 1 else "quarterly" if g <= 3 else "annual"
+
+
+_SCEN_ENUM = {"budget": Scenario.budget, "forecast": Scenario.forecast}
+
+# Sheet roles that are NOT a fill surface: blank/literal cells there are scratch or
+# derived state, not input slots. `input`/`mixed` sheets pass; membership in the
+# workbook-level input_surface_sheets overrides any per-sheet role.
+_NON_INPUT_ROLES = {"calc", "lookup", "data_dump", "cover", "instructions"}
+
+
+def _role_blocks_writes(role: str | None, sheet: str, input_surface: set[str]) -> bool:
+    """True when populate must not write blank/literal cells on this sheet. The
+    workbook-level judgment wins: a sheet the synthesis names as input surface is
+    fillable whatever its role. A missing role fails OPEN (legacy understandings)."""
+    if sheet in input_surface:
+        return False
+    return (role or "").lower() in _NON_INPUT_ROLES
+
+
+def apply_row_scenario_layout(facts: list, role_by_sheet: dict,
+                              l3_tags: dict[str, dict[int, tuple[str | None, int | None]]] | None = None) -> int:
+    """Handle sheets that encode scenario BY ROW — a metric row paired with a
+    scenario restatement row (a bare 'Budget' row, 'Budget (Revenue)', or a budget
+    block repeating the lines). WHO decides is layered:
+      1. the model's PER-ROW judgment (``l3_tags``: sheet -> row -> (scenario,
+         parent_row)) — it reads ANY layout;
+      2. the row's own explicit label tag — deterministic validation + fallback;
+      3. the column's explicit tag (a budget-typed period header);
+      4. nothing — unknown. A scenario REGION painted over such a sheet is ignored:
+         a rectangle cannot express a row-interleaved layout and it once swallowed
+         the actual COGS row.
+    Guardrail — a model claim never silently MERGES identities: a variant inherits
+    its parent's metric identity only when the label confirms the tag or the two
+    labels already match (a budget block repeating names); otherwise the row keeps
+    its own identity and only the scenario is applied. Sheets with no tagged rows
+    are untouched (regions still apply there — the column-block layout they were
+    designed for). Mutates facts in place; fact_keys are recomputed."""
+    from app.datamodel.identity import fact_key
+    from app.population.catalogue import _norm_label, parse_scenario_variant
+    from app.raw_extraction.column_utils import column_letter
+
+    l3_tags = l3_tags or {}
+    by_sheet: dict[str, list] = defaultdict(list)
+    for f in facts:
+        by_sheet[f.sheet_name].append(f)
+    changed = 0
+    for sheet, fs in by_sheet.items():
+        tags = l3_tags.get(sheet, {})
+        rows: dict[int, list] = defaultdict(list)
+        for f in fs:
+            rows[f.row].append(f)
+
+        # per-row claim: (scenario, parent_row, parent_name, label_confirms)
+        variants: dict[int, tuple[Scenario, int | None, str | None, bool]] = {}
+        row_scen: dict[int, Scenario] = {}       # AI row-level scenario, no parent claim
+        for r, lst in rows.items():
+            lab_scen, lab_pname = parse_scenario_variant(lst[0].metric_label)
+            ai_scen, ai_prow = tags.get(r, (None, None))
+            scen = ai_scen if ai_scen in ("budget", "forecast") else lab_scen
+            if scen in _SCEN_ENUM and (ai_prow is not None or lab_scen is not None or lab_pname):
+                variants[r] = (_SCEN_ENUM[scen], ai_prow, lab_pname, lab_scen is not None)
+            elif ai_scen in ("actual", "budget", "forecast"):
+                row_scen[r] = {"actual": Scenario.actual, "budget": Scenario.budget,
+                               "forecast": Scenario.forecast}[ai_scen]
+        if not variants:
+            continue
+        metric_rows = sorted(r for r in rows if r not in variants)
+        by_name = {}
+        for r in metric_rows:
+            by_name.setdefault(_norm_label(rows[r][0].metric_label), rows[r][0])
+        touched = []
+        for r in sorted(rows):
+            lst = rows[r]
+            if r in variants:
+                scen, prow, pname, label_confirms = variants[r]
+                # parent: the model's cited row first, then the named label, then above
+                parent = rows[prow][0] if (prow in rows and prow != r) else None
+                if parent is None and pname:
+                    parent = by_name.get(_norm_label(pname))
+                if parent is None:
+                    above = [mr for mr in metric_rows if mr < r]
+                    parent = rows[above[-1]][0] if above else None
+                inherit = parent is not None and (
+                    label_confirms or pname is not None
+                    or _norm_label(lst[0].metric_label) == _norm_label(parent.metric_label))
+                for f in lst:
+                    f.scenario = scen
+                    f.scenario_source = (Provenance.deterministic if label_confirms
+                                         else Provenance.llm)
+                    if inherit:
+                        f.metric_label = parent.metric_label
+                        f.canonical_metric = parent.canonical_metric
+                    touched.append(f)
+            else:
+                own = _scenario_from_label(lst[0].metric_label)
+                for f in lst:
+                    # row label > model row tag > column tag > unknown
+                    col_tag = Scenario.budget if (f.period_type or "").lower() == "budget" else None
+                    new = own or row_scen.get(r) or col_tag or Scenario.unknown
+                    if f.scenario != new:
+                        f.scenario = new
+                        f.scenario_source = (Provenance.deterministic if (own or col_tag)
+                                             else Provenance.llm if r in row_scen
+                                             else Provenance.default)
+                        touched.append(f)
+        for f in touched:
+            f.fact_key = fact_key(
+                sheet_role=role_by_sheet.get(sheet), metric=f.canonical_metric or f.metric_label,
+                period=(f.parsed_date or f.period_label
+                        or (f"c{column_letter(f.col)}" if f.period_type else None)),
+                scenario=f.scenario.value, basis=f.basis.value, entity=None,
+            )
+        changed += len(touched)
+    return changed
 
 
 def _scenario_from_status(period: dict | None) -> Scenario | None:
@@ -261,6 +375,10 @@ def derive_data_model(template_id: str) -> DataModelResult:
         raise RuntimeError("No Layer-3 understanding yet — run /understand first.")
     structure = get_structure(template_id)
     version_id = und["template_version_id"]
+    # The workbook-level judgment of WHERE the portfolio company actually enters
+    # data — used by the sheet-role write gate (a sheet named here is fillable
+    # whatever its per-sheet role says).
+    input_surface = set((und.get("workbook") or {}).get("input_surface_sheets") or [])
 
     # Snapshot cell values — to read the real period-header label for every column.
     snap = _load_snapshot(version_id, template_id)
@@ -298,14 +416,25 @@ def derive_data_model(template_id: str) -> DataModelResult:
     flags: list[str] = []
     orphan_cells = 0
     seen: set[tuple[str, str]] = set()
+    role_by_sheet: dict[str, str | None] = {}
+    l3_row_tags: dict[str, dict[int, tuple[str | None, int | None]]] = {}
+    gated_by_role: dict[str, int] = {}
 
     for srow in und.get("sheets", []):
         sheet = srow["sheet_name"]
         role = srow.get("role")
+        role_by_sheet[sheet] = role
         u = srow.get("understanding") or {}
         pidx = period_idx.get(sheet, {})
         l2m = l2_metric_idx.get(sheet, {})
         l3_by_row = {rc[1]: m for m in u.get("metric_rows", []) if (rc := _rc(m.get("label_cell") or ""))}
+        # the model's PER-ROW scenario judgment (any layout) — primary signal for
+        # the row-scenario post-process; label parsing validates / fills gaps.
+        for _r, _m in l3_by_row.items():
+            _scen = (_m.get("scenario") or "").strip().lower() or None
+            _vrc = _rc(_m.get("variant_of_cell") or "")
+            if _scen or _vrc:
+                l3_row_tags.setdefault(sheet, {})[_r] = (_scen, _vrc[1] if _vrc else None)
 
         # Detected column periods + the header rows they sit on.
         col_period: dict[int, dict] = {}
@@ -438,6 +567,10 @@ def derive_data_model(template_id: str) -> DataModelResult:
             #   - instructions/cover region     → exclude  (never filled)
             #   - holds a real (non-connector) formula → computed (a calculated OUTPUT — NEVER
             #                                     overwrite it; stops clobbering formula sheets)
+            #   - blank / typed literal on a NON-INPUT sheet (calc/lookup/data_dump/
+            #     cover/instructions role, not on the input surface) → staging —
+            #     a live cell but never a write target; a template correction
+            #     (patch category='data') re-opens it per-fact
             #   - blank / typed literal         → data     (a data-entry slot → fillable)
             formula = cell_formula.get((sheet, row, col), "")
             if _CONNECTOR.search(formula):
@@ -446,6 +579,9 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 category = "exclude"
             elif formula:
                 category = "computed"
+            elif _role_blocks_writes(role, sheet, input_surface):
+                category = "staging"
+                gated_by_role[(role or "?").lower()] = gated_by_role.get((role or "?").lower(), 0) + 1
             else:
                 category = "data"
 
@@ -507,6 +643,29 @@ def derive_data_model(template_id: str) -> DataModelResult:
     for f in facts:
         if f.period_type:
             f.period_index = index_map[f.sheet_name].get(f.col)
+
+    # Sheet-role write gate accounting — exclusions must never be silent.
+    if gated_by_role:
+        detail = ", ".join(f"{r}: {n}" for r, n in sorted(gated_by_role.items()))
+        flags.append(
+            f"{sum(gated_by_role.values())} input-looking cells on non-input sheets were "
+            f"gated from population ({detail}) — if any are real inputs, re-categorise via "
+            "a template correction (patch category='data')."
+        )
+    roleless = sorted(s for s, r in role_by_sheet.items() if not r)
+    if roleless:
+        flags.append(
+            f"{len(roleless)} sheet(s) have no role in the understanding "
+            f"({', '.join(roleless[:5])}{'…' if len(roleless) > 5 else ''}) — the write "
+            "gate fails open there; re-run Understand to enable it."
+        )
+
+    # Row-scenario layout (metric row + bare 'Budget' row): variant rows inherit
+    # their parent's metric identity; row labels beat painted scenario regions.
+    adjusted = apply_row_scenario_layout(facts, role_by_sheet, l3_row_tags)
+    if adjusted:
+        flags.append(f"{adjusted} facts re-dimensioned for the row-scenario layout "
+                     "(bare Budget/Forecast rows inherit the metric row above).")
 
     timeline_relative = any(f.period_type and not f.parsed_date for f in facts)
     if timeline_relative:

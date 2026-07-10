@@ -76,6 +76,10 @@ _SYSTEM = (
     "- A metric may carry `def:`/`qualifies:` from the template. For a DIRECT match they "
     "are binding: if a source series fails the qualification, do not map it directly. You "
     "MAY still reconcile with an explicit assumption.\n"
+    "- A metric may carry `source:` — the provenance the template EXPECTS (e.g. "
+    "'management accounts', 'deal model', 'Flash Report'). Prefer source series consistent "
+    "with it; when the uploaded workbook is clearly the WRONG kind for a metric, mark that "
+    "metric unavailable and say so in `note` rather than forcing a match.\n"
     "- A TEMPLATE CONTEXT block, when present, carries sponsor-confirmed rules and answered "
     "review questions — it is AUTHORITATIVE. If it states how to reconcile a line, follow "
     "it exactly (that is a human decision that must win over your own).\n"
@@ -125,6 +129,10 @@ def _metric_lines(metrics: list[dict]) -> str:
             meta += f" | def: {str(m['definition'])[:90]}"
         if m.get("qualification_criteria"):
             meta += f" | qualifies: {str(m['qualification_criteria'])[:110]}"
+        # provenance the template expects ("management accounts", "deal model") —
+        # lets the mapper prefer/refuse a source of the wrong kind.
+        if m.get("expected_source"):
+            meta += f" | source: {str(m['expected_source'])[:60]}"
         out.append(f"{m.get('metric')} | {label}{meta}")
     return "\n".join(out)
 

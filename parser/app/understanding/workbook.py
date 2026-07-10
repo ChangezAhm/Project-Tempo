@@ -60,7 +60,7 @@ _SYNTH_SCHEMA = to_strict_schema(WorkbookUnderstanding)
 # key includes the template version, so a re-uploaded template never reuses old
 # results. Bump this constant whenever prompts.SYSTEM or the SheetUnderstanding
 # schema changes shape — that invalidates every cached result built under them.
-_SHEET_CACHE_VERSION = 5   # v5: the text grid shows a formula cell's RESULT and its formula
+_SHEET_CACHE_VERSION = 6   # v6: metric_rows carry per-row scenario + variant_of_cell
 
 # Light sheets are cheap (Sonnet, text-only, no tiles) and don't consume the
 # deep max_sheets cap — but bound them anyway so a pathological workbook can't

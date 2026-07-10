@@ -88,6 +88,8 @@ def get_contract(template_id: str) -> dict:
 
 
 # Categories population actually writes into (see derive._emit's category rules).
+# 'staging' (blank/literal cells on non-input sheets, gated by sheet role) is
+# deliberately NOT fillable — a correction (category='data') re-opens a cell.
 _FILLABLE = ("data", "sourced")
 
 
@@ -151,7 +153,8 @@ def get_contract_fields(template_id: str) -> dict:
     }
 
 
-# Reportable statement lines for the time-series view (config/instruction cells excluded).
+# Reportable statement lines for the time-series view (config/instruction cells
+# excluded; 'staging' scratch cells on calc/lookup sheets are not statement lines).
 _TS_INCLUDE = ("data", "sourced", "computed")
 
 

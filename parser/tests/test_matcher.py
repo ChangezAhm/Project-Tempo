@@ -347,6 +347,191 @@ def test_pick_column_positional_when_source_has_no_dates():
     assert pick_column(0, 5, None, undated, "monthly") is None            # out of range
 
 
+def _row_scenario_snap():
+    # metric rows with a bare 'Budget' row under each (flash-pack layout)
+    return {"sheets": [{"name": "P&L", "cells": [
+        {"row": 3, "col": 3, "value": "2025-01-31T00:00:00", "address": "C3"},
+        {"row": 5, "col": 1, "value": "Cost of Goods Sold", "address": "A5"},
+        {"row": 5, "col": 3, "value": 400, "address": "C5"},
+        {"row": 6, "col": 1, "value": "Budget", "address": "A6"},
+        {"row": 6, "col": 3, "value": 450, "address": "C6"},
+    ]}]}
+
+
+def _row_scenario_und():
+    return [{"sheet": "P&L",
+             "periods": [{"header_cell": "C3", "date": "2025-01-31", "grain": "month", "kind": "actual"}],
+             "series": [{"label_cell": "A5", "label": "Cost of Goods Sold"},
+                        {"label_cell": "A6", "label": "Budget"}]}]
+
+
+def test_catalogue_attaches_budget_row_as_variant():
+    # A bare 'Budget' row is the budget VARIANT of the metric row above: attached to
+    # the parent, renamed, and hidden from the mapper-facing catalogue.
+    from app.population.catalogue import catalogue_from_understanding
+    cat = catalogue_from_understanding(_row_scenario_snap(), _row_scenario_und())
+    assert set(cat) == {"P&L!r5"}                      # the Budget row is not standalone
+    parent = cat["P&L!r5"]
+    var = parent.variants["budget"]
+    assert var.row == 6 and var.label == "Cost of Goods Sold (budget)"
+
+
+def test_parse_scenario_variant_patterns():
+    from app.population.catalogue import parse_scenario_variant as p
+    assert p("Budget") == ("budget", None)
+    assert p("Forecast:") == ("forecast", None)
+    assert p("Plan") == ("forecast", None)
+    assert p("Budget (Revenue)") == ("budget", "Revenue")
+    assert p("Revenue (Budget)") == ("budget", "Revenue")
+    assert p("Revenue - Budget") == ("budget", "Revenue")
+    assert p("Budget - Cost of Goods Sold") == ("budget", "Cost of Goods Sold")
+    assert p("Revenue") == (None, None)
+    assert p("Budget variance %") == (None, None)      # not a scenario tag
+    assert p("Budget vs Actual") == (None, None)
+
+
+def test_catalogue_attaches_named_variant_regardless_of_position():
+    # 'Budget (Revenue)' names its parent explicitly — attaches to Revenue even when
+    # it is NOT the row directly below it.
+    from app.population.catalogue import catalogue_from_understanding
+    snap = {"sheets": [{"name": "P&L", "cells": [
+        {"row": 5, "col": 3, "value": 100, "address": "C5"},
+        {"row": 6, "col": 3, "value": 200, "address": "C6"},
+        {"row": 9, "col": 3, "value": 110, "address": "C9"},
+    ]}]}
+    und = [{"sheet": "P&L",
+            "periods": [{"header_cell": "C3", "date": "2025-01-31", "grain": "month", "kind": "actual"}],
+            "series": [{"label_cell": "A5", "label": "Revenue"},
+                       {"label_cell": "A6", "label": "COGS"},
+                       {"label_cell": "A9", "label": "Budget (Revenue)"}]}]
+    cat = catalogue_from_understanding(snap, und)
+    assert set(cat) == {"P&L!r5", "P&L!r6"}
+    assert cat["P&L!r5"].variants["budget"].row == 9   # attached to Revenue, not COGS
+
+
+def test_catalogue_dataless_budget_row_is_a_heading_not_a_variant():
+    # A bare 'Budget' row with NO data is a SECTION HEADING — it must not be
+    # swallowed as a variant of the metric above it.
+    from app.population.catalogue import catalogue_from_understanding
+    snap = {"sheets": [{"name": "P&L", "cells": [
+        {"row": 5, "col": 3, "value": 100, "address": "C5"},
+    ]}]}
+    und = [{"sheet": "P&L",
+            "periods": [{"header_cell": "C3", "date": "2025-01-31", "grain": "month", "kind": "actual"}],
+            "series": [{"label_cell": "A5", "label": "Revenue"},
+                       {"label_cell": "A7", "label": "Budget"}]}]   # heading, no numbers
+    cat = catalogue_from_understanding(snap, und)
+    assert cat["P&L!r5"].variants == {}                 # not attached
+    assert "P&L!r7" in cat                              # left standalone
+
+
+def test_catalogue_ai_variant_of_attaches_normal_labelled_row():
+    # A budget BLOCK repeats the metric names (row 9 'Revenue' again). No label tag —
+    # only the AI's per-row judgment (scenario+variant_of) can pair it. It attaches as
+    # the variant BUT stays visible to the mapper (an LLM tag never hard-gates data).
+    from app.population.catalogue import catalogue_from_understanding
+    snap = {"sheets": [{"name": "P&L", "cells": [
+        {"row": 5, "col": 3, "value": 100, "address": "C5"},
+        {"row": 9, "col": 3, "value": 110, "address": "C9"},
+    ]}]}
+    und = [{"sheet": "P&L",
+            "periods": [{"header_cell": "C3", "date": "2025-01-31", "grain": "month", "kind": "actual"}],
+            "series": [{"label_cell": "A5", "label": "Revenue"},
+                       {"label_cell": "A9", "label": "Revenue",
+                        "scenario": "budget", "variant_of": "Revenue"}]}]
+    cat = catalogue_from_understanding(snap, und)
+    assert cat["P&L!r5"].variants["budget"].row == 9    # paired by the AI's judgment
+    assert "P&L!r9" in cat                              # NOT removed — label didn't confirm
+    assert cat["P&L!r9"].scenario == "budget"
+
+
+def test_catalogue_ai_tag_beats_nothing_and_label_confirms_removal():
+    # When the label ALSO confirms ('Budget'), the variant is hidden from the mapper.
+    from app.population.catalogue import catalogue_from_understanding
+    cat = catalogue_from_understanding(_row_scenario_snap(), [{
+        "sheet": "P&L",
+        "periods": [{"header_cell": "C3", "date": "2025-01-31", "grain": "month", "kind": "actual"}],
+        "series": [{"label_cell": "A5", "label": "Cost of Goods Sold"},
+                   {"label_cell": "A6", "label": "Budget",
+                    "scenario": "budget", "variant_of": "Cost of Goods Sold"}]}])
+    assert set(cat) == {"P&L!r5"}
+    assert cat["P&L!r5"].variants["budget"].row == 6
+
+
+def test_bind_budget_slot_fills_from_variant_row():
+    # A template budget slot binds the parent's budget VARIANT row — the
+    # scenario-by-row counterpart of a budget column.
+    from app.population.catalogue import catalogue_from_understanding
+    cat = catalogue_from_understanding(_row_scenario_snap(), _row_scenario_und())
+    maps = [MetricMap(metric="cogs", series_id="P&L!r5", confidence=0.9)]
+    bud = _fact("cogs", "B10", unit=None, currency=None, pidx=0, scenario="budget")
+    act = _fact("cogs", "B11", unit=None, currency=None, pidx=0, scenario="unknown")
+    d = {"period_count": 1, "period_grain": "monthly", "as_of_date": None,
+         "period_count_by_sheet": {"Template": 1}, "metrics": []}
+    links, unmatched = bind([bud, act], cat, maps, d)
+    assert not unmatched and len(links) == 2
+    by_cell = {lk.template_cell: lk for lk in links}
+    assert by_cell["B10"].source_cell == "C6"          # budget slot -> variant row
+    assert by_cell["B11"].source_cell == "C5"          # unflagged slot -> metric row
+    result = apply_links([bud, act], _row_scenario_snap(), links, skipped=[])
+    vals = {f.template_cell: f.value for f in result.filled}
+    assert vals["B10"] == 450.0 and vals["B11"] == 400.0
+
+
+def test_derive_row_scenario_layout_repairs_facts():
+    # Pure post-process: bare 'Budget' rows inherit the metric row above; metric
+    # rows painted 'budget' by a scenario region flip back to their own label's
+    # scenario (unknown here) — the region is ignored on row-scenario sheets.
+    from app.datamodel.derive import apply_row_scenario_layout
+    from app.datamodel.schema import Basis, DataPoint, Provenance, Scenario
+
+    def dp(row, label, scen, cell):
+        return DataPoint(fact_key="x", sheet_name="P&L", cell=cell, row=row, col=3,
+                         metric_row_id=None, metric_label=label, canonical_metric=None,
+                         period_index=0, period_label="Jan-25", parsed_date="2025-01",
+                         period_type="monthly", scenario=scen, basis=Basis.flow,
+                         entity=None, unit=None, currency=None, value_role=None,
+                         sign_convention=None, qualification_criteria=None, definition=None,
+                         expected_source=None, needs_value=True,
+                         scenario_source=Provenance.deterministic, basis_source=Provenance.default)
+
+    facts = [dp(5, "Cost of Goods Sold", Scenario.budget, "C5"),   # painted wrong by a region
+             dp(6, "Budget", Scenario.budget, "C6")]                # variant row, no identity
+    changed = apply_row_scenario_layout(facts, {"P&L": "income_statement"})
+    assert changed >= 2
+    assert facts[0].scenario == Scenario.unknown                    # region ignored
+    assert facts[1].metric_label == "Cost of Goods Sold"            # identity inherited
+    assert facts[1].scenario == Scenario.budget
+    assert facts[0].fact_key != "x" and facts[1].fact_key != "x"    # keys recomputed
+
+
+def test_derive_l3_row_tags_pair_budget_block_rows():
+    # A budget BLOCK repeats the metric names lower down — no label tag can pair
+    # them; the model's per-row judgment (scenario + parent row) does. Identity
+    # inheritance is allowed here because the labels already match.
+    from app.datamodel.derive import apply_row_scenario_layout
+    from app.datamodel.schema import Basis, DataPoint, Provenance, Scenario
+
+    def dp(row, label, cell):
+        return DataPoint(fact_key="x", sheet_name="P&L", cell=cell, row=row, col=3,
+                         metric_row_id=None, metric_label=label, canonical_metric=None,
+                         period_index=0, period_label="Jan-25", parsed_date="2025-01",
+                         period_type="monthly", scenario=Scenario.unknown, basis=Basis.flow,
+                         entity=None, unit=None, currency=None, value_role=None,
+                         sign_convention=None, qualification_criteria=None, definition=None,
+                         expected_source=None, needs_value=True,
+                         scenario_source=Provenance.default, basis_source=Provenance.default)
+
+    facts = [dp(5, "Revenue", "C5"), dp(20, "Revenue", "C20")]
+    # the model judged: row 20 is the budget restatement of row 5
+    tags = {"P&L": {20: ("budget", 5)}}
+    apply_row_scenario_layout(facts, {"P&L": "income_statement"}, tags)
+    assert facts[0].scenario == Scenario.unknown          # primary row untouched
+    assert facts[1].scenario == Scenario.budget           # paired by the model
+    assert facts[1].metric_label == "Revenue"
+    assert facts[1].scenario_source == Provenance.llm     # provenance is honest
+
+
 def test_catalogue_keeps_all_columns_and_tags_scenario():
     # Every source column is KEPT; each carries its own scenario tag. A budget
     # column is not dropped — binding decides whether it may fill a given slot.

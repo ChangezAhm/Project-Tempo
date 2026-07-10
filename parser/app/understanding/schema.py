@@ -142,6 +142,12 @@ class MetricRow(_Strict):
     value_role: LenientValueRole
     unit: str | None              # "£m","%","x","#"
     sign_convention: str | None   # e.g. "costs entered negative"
+    # Scenario, judged PER ROW (layouts vary: interleaved Budget rows, budget
+    # blocks, column groups): the scenario this row carries, and — when the row
+    # RESTATES another metric row under a different scenario — that parent row's
+    # label_cell, so downstream code can pair them.
+    scenario: str | None = None          # actual | budget | forecast | null (unclear)
+    variant_of_cell: str | None = None   # parent metric row's label_cell, when a restatement
     # --- interpretation layer (business logic) — populate for INPUT / non-obvious
     # rows; leave null for plain totals/subtotals/formulas. interpretation_source
     # flags provenance so model knowledge is never mistaken for template fact.

@@ -53,6 +53,12 @@ class SrcSeries(_M):
     unit: str | None = None        # "EUR'm", "%", "x" — as the sheet implies
     currency: str | None = None
     sign_flip: bool = False        # source shows this with the opposite sign to convention
+    # Scenario is judged PER ROW by the model (layouts vary too much for rules):
+    # which scenario this row carries, and — when the row is a scenario RESTATEMENT
+    # of another metric row (a 'Budget' row under Revenue; a budget block repeating
+    # the P&L) — the label of that parent metric row.
+    scenario: str | None = None    # actual | budget | forecast | null (unclear)
+    variant_of: str | None = None  # parent metric row's label, when this row restates it
 
 
 class SrcSheetOut(_M):
@@ -73,6 +79,15 @@ _SYSTEM = (
     "its unit (e.g. \"EUR'm\", \"%\", \"x\") and currency if known, and sign_flip=true only "
     "if the row is shown with the opposite sign to the usual convention. Skip header/"
     "section/total-only rows that aren't data.\n"
+    "SCENARIO — judge it PER ROW from whatever the sheet actually does (layouts vary: "
+    "interleaved 'Budget' rows, budget blocks, side-by-side columns, colour/section "
+    "conventions): set scenario to actual/budget/forecast (null if unclear). When a row "
+    "RESTATES another metric row under a different scenario — a bare 'Budget' row under "
+    "Revenue, a 'Budget (Revenue)' row, a budget block repeating the P&L lines — set "
+    "variant_of to the PARENT metric row's label exactly as it appears, so the program "
+    "can pair them. A row that is itself the primary statement of its metric has "
+    "variant_of=null. When scenario differs BY COLUMN rather than by row, express it "
+    "with the periods' kind instead.\n"
     "If rendered image(s) of the sheet are provided, use them ONLY to understand the "
     "LAYOUT — merged period headers, units/currency declared in banners, Actual vs "
     "Budget blocks, which rows are real data vs headings. Every header_cell/label_cell "
@@ -91,8 +106,8 @@ _MAX_SAMPLES = 8
 _MAX_IMAGE_BYTES = 5_000_000   # Anthropic's per-image cap; oversized tiles are dropped
 _MAX_TILES = 3                 # per sheet
 _EST_TILES_PER_SHEET = 2       # dry-run estimate (tiles aren't rendered for a dry run)
-_CACHE_VERSION = 2             # bump when the understanding inputs change materially
-                               # (v2: sheet images added) — older cache entries re-run
+_CACHE_VERSION = 3             # bump when the understanding inputs change materially
+                               # (v3: per-series scenario + variant_of) — older entries re-run
 
 
 def vision_enabled() -> bool:

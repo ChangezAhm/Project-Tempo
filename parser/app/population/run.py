@@ -56,18 +56,29 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
         dm = get_data_model(template_id, limit=30000)
         if not dm.get("available"):
             raise RuntimeError("Could not build a data model for the target.")
-    inputs = [f for f in dm["facts"] if f.get("category") in ("data", "sourced")]
+    fillable = [f for f in dm["facts"] if f.get("category") in ("data", "sourced")]
+    # value_role guard: a total/subtotal/header row is the TEMPLATE'S arithmetic —
+    # even when its cells are literals it must be neither cleared nor written.
+    _ROLE_PROTECTED = ("total", "subtotal", "header")
+    inputs = [f for f in fillable
+              if (f.get("value_role") or "").strip().lower() not in _ROLE_PROTECTED]
+    protected_totals = len(fillable) - len(inputs)
+    # sheet-role write gate accounting — how many input-looking cells were blocked
+    # (category='staging'); surfaced so a smaller fill explains itself.
+    gated_cells = sum(1 for f in dm["facts"] if f.get("category") == "staging")
     metrics: dict[str, dict] = {}
     for f in inputs:
         key = f.get("canonical_metric") or f.get("metric_label")
         if key and key not in metrics:
-            # definition/qualification_criteria are the L3 business logic — the
-            # mapper needs them to tell 'Adjusted' from 'Reported', and to refuse
-            # a source series that fails the template's own qualification rules.
+            # definition/qualification_criteria/expected_source are the L3 business
+            # logic — the mapper needs them to tell 'Adjusted' from 'Reported', to
+            # refuse a series that fails the template's own qualification rules,
+            # and to prefer/refuse a source of the wrong provenance.
             metrics[key] = {"metric": key, "label": f.get("metric_label"), "unit": f.get("unit"),
                             "sign_convention": f.get("sign_convention"),
                             "definition": f.get("definition"),
-                            "qualification_criteria": f.get("qualification_criteria")}
+                            "qualification_criteria": f.get("qualification_criteria"),
+                            "expected_source": f.get("expected_source")}
     # period_index is a PER-SHEET ordinal, so the count used for positional
     # alignment must be per-sheet too — a global max would misalign sheets whose
     # timelines are shorter than the longest one in the workbook.
@@ -87,7 +98,8 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
     demand = {"as_of_date": as_of_date, "period_count": period_count,
               "period_count_by_sheet": period_count_by_sheet,
               "period_grain": period_grain,
-              "scenarios": scenarios, "metrics": list(metrics.values())}
+              "scenarios": scenarios, "metrics": list(metrics.values()),
+              "gated_cells": gated_cells, "protected_totals": protected_totals}
     return demand, inputs
 
 
@@ -100,8 +112,12 @@ def _is_clearable_value(value, is_formula: bool) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _calc_enabled() -> bool:
+    return os.environ.get("TEMPO_VERIFY_CALC", "1").lower() not in ("0", "false", "off")
+
+
 def render_filled(template_workbook_path, filled, clear_facts=(), *, reset: str = "values",
-                  additions=None, sval=None) -> tuple[bytes, dict, list, list]:
+                  additions=None, sval=None, checks=None) -> tuple[bytes, dict, list, list, list]:
     """Refresh-then-fill on a COPY of the template (the stored master is never
     touched). ``clear_facts`` = the in-scope input facts (data/sourced only —
     computed formulas are never in scope).
@@ -115,11 +131,24 @@ def render_filled(template_workbook_path, filled, clear_facts=(), *, reset: str 
       another company's number.
 
     ``additions``: approved add-line proposals, written via authoring.apply_additions
-    (needs ``sval``, the source value map). Returns (bytes, clear_stats,
-    additions_applied, additions_skipped)."""
+    (needs ``sval``, the source value map).
+
+    ``checks``: template check cells (template_checks.collect_check_cells). After
+    the deliverable bytes are captured, the workbook is RECALCULATED and each
+    check read back — "fill it and see what the template itself says". The bytes
+    are saved BEFORE calc because a recalc turns connector cells (CX_GET…) into
+    #NAME? which must never reach the delivered file.
+
+    Returns (bytes, clear_stats, additions_applied, additions_skipped, check_results)."""
     from aspose.cells import Workbook
     wb = Workbook(str(template_workbook_path))
     ws_by_name = {w.name: w for w in wb.worksheets}
+
+    # authoritative BEFORE values for the checks, from the same live workbook
+    for ch in checks or []:
+        ws = ws_by_name.get(ch.get("sheet"))
+        if ws is not None:
+            ch["before"] = ws.cells.get(ch["cell"]).value
 
     cleared_values = cleared_formulas = 0
     for f in clear_facts:
@@ -149,8 +178,27 @@ def render_filled(template_workbook_path, filled, clear_facts=(), *, reset: str 
     out = Path(name)
     try:
         wb.save(str(out))
+        data = out.read_bytes()          # deliverable frozen BEFORE any recalc
         stats = {"cleared_values": cleared_values, "cleared_formulas": cleared_formulas}
-        return out.read_bytes(), stats, applied, skipped
+
+        check_results: list = []
+        if checks and _calc_enabled():
+            try:
+                from time import monotonic
+
+                from aspose.cells import CalculationOptions
+
+                from app.population.template_checks import evaluate_checks
+                opts = CalculationOptions()
+                opts.ignore_error = True
+                t0 = monotonic()
+                wb.calculate_formula(opts)
+                stats["calc_seconds"] = round(monotonic() - t0, 2)
+                check_results = evaluate_checks(wb, checks)
+            except Exception as e:  # noqa: BLE001 — verification must never sink the fill
+                logger.warning("post-fill recalculation failed: %s", e)
+                stats["calc_error"] = str(e)[:200]
+        return data, stats, applied, skipped, check_results
     finally:
         out.unlink(missing_ok=True)
 
@@ -187,7 +235,17 @@ def _pick_timeline(row_dates: dict[int, dict[int, object]]) -> dict[int, object]
     return max(pool, key=len)
 
 
-def _template_context(version_id: str) -> tuple[dict, dict, dict]:
+def _load_template_snap(version_id: str) -> dict | None:
+    """The template's stored snapshot, or None. Best-effort — populate degrades
+    (no scale/date context, no check discovery) rather than failing."""
+    try:
+        return json.loads(gzip.decompress(sb.download_snapshot(version_id)))
+    except Exception as e:  # noqa: BLE001
+        logger.info("template snapshot unavailable (%s)", e)
+        return None
+
+
+def _template_context(snap: dict | None) -> tuple[dict, dict, dict]:
     """From the template snapshot, the maps binding needs:
       - numfmt[(sheet, A1)]      -> number format (kind/currency for scale)
       - mags[(sheet, row)]       -> numeric magnitudes already in the row (scale by
@@ -199,10 +257,7 @@ def _template_context(version_id: str) -> tuple[dict, dict, dict]:
     numfmt: dict[tuple[str, str], str] = {}
     mags: dict[tuple[str, int], list[float]] = defaultdict(list)
     dates_by_col: dict[tuple[str, int], object] = {}
-    try:
-        snap = json.loads(gzip.decompress(sb.download_snapshot(version_id)))
-    except Exception as e:  # noqa: BLE001
-        logger.info("template snapshot unavailable for scale/date context (%s)", e)
+    if not snap:
         return {}, {}, {}
     for s in snap.get("sheets", []):
         name = s.get("name")
@@ -346,7 +401,23 @@ def _run_population(target_template_id: str, source_snapshot: dict,
 
     # Template cell formats + per-row magnitudes — lets scale be decided by what the
     # template cell actually holds (robust) instead of by unit labels (a mess).
-    template_context = _template_context(t_vid)
+    t_snap = _load_template_snap(t_vid)
+    template_context = _template_context(t_snap)
+
+    # The template's OWN check cells (Checks sheets, tie-outs, OK/ERROR flags) —
+    # discovered up front so render_filled can recalculate and read them back.
+    template_check_cells: list = []
+    if t_snap:
+        try:
+            from app.population.template_checks import collect_check_cells
+            from app.understanding.persist import get_understanding
+            try:
+                t_und = get_understanding(target_template_id)
+            except Exception:  # noqa: BLE001 — checks degrade to name/shape discovery
+                t_und = None
+            template_check_cells = collect_check_cells(t_snap, t_und)
+        except Exception as e:  # noqa: BLE001 — verification must never block a fill
+            logger.warning("check discovery failed: %s", e)
 
     # The business-context channel: sponsor notes + answered review questions +
     # strict author rules ride into every mapping batch. Best-effort — an empty
@@ -361,7 +432,13 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     routing = {"series": len(catalogue), "catalogue_source": catalogue_source}
     if biz_context:
         routing["context_chars"] = len(biz_context)
+    if demand.get("gated_cells"):
+        routing["gated_cells"] = demand["gated_cells"]   # role-gated, never silent
+    if demand.get("protected_totals"):
+        routing["protected_totals"] = demand["protected_totals"]
     filled_url = audit_url = None
+    check_results: list = []
+    template_checks: dict = {}
     clear_stats: dict = {}
     proposals: list = []
     add_notes: list[str] = []
@@ -510,13 +587,32 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                         a = (c.get("address") or "").upper()
                         if a:
                             sval[(s["name"], a)] = effective_value(c)
-            filled_bytes, clear_stats, additions_applied, additions_skipped = render_filled(
+            filled_bytes, clear_stats, additions_applied, additions_skipped, check_results = render_filled(
                 tgt_tmp, result.filled, target_inputs, reset=reset,
-                additions=(proposals if add_lines == "apply" else None), sval=sval)
+                additions=(proposals if add_lines == "apply" else None), sval=sval,
+                checks=template_check_cells)
             filled_path = sb.upload_filled(t_vid, source_label, filled_bytes)
             filled_url = sb.signed_filled_url(filled_path)
         except Exception as e:  # noqa: BLE001 — render failure shouldn't lose the mapping/report
             logger.warning("filled-workbook render/upload failed: %s", e)
+
+        # The template's own verdict: recalculated check cells. Failures are
+        # surfaced in the run AND filed as durable review questions.
+        if check_results:
+            from app.population.template_checks import checks_to_review_items, summarize_checks
+            template_checks = {**summarize_checks(check_results),
+                               "items": check_results[:100],
+                               "calc_seconds": clear_stats.get("calc_seconds")}
+            failed_checks = [r for r in check_results if r.get("status") == "fail"]
+            for r in failed_checks[:50]:
+                review.append({"template_sheet": r["sheet"], "template_cell": r["cell"],
+                               "note": f"template check FAILED: {r['label']} "
+                                       f"({str(r.get('before'))[:24]} → {str(r.get('after'))[:24]})"})
+            if failed_checks:
+                try:
+                    sb.insert_review_items(t_vid, checks_to_review_items(failed_checks, source_label))
+                except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
+                    logger.warning("could not file template-check review items: %s", e)
 
         # Persist the full audit (demand, routing, every link, skipped, unmatched).
         try:
@@ -529,6 +625,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 "skipped": result.skipped,
                 "review": review, "notes": notes, "coverage_notes": coverage_notes,
                 "reconciled": reconciled_metrics, "unused_source_series": unused_source_series,
+                "template_checks": template_checks,
                 "summary": result.summary,
                 "rule_violations": violations, "context_chars": len(biz_context),
                 "reset": reset, **clear_stats,
@@ -567,6 +664,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         "open_questions": open_questions,
         "open_questions_count": len(open_questions),
         "unused_source_series": unused_source_series,
+        "template_checks": template_checks,
         "rule_violations": violations[:100],
         "rule_violation_count": len(violations),
         "reset": reset,

@@ -302,7 +302,7 @@ async def populate_route(
     dry_run: bool = False,
     display_unit: str | None = None,
     reset: str = "values",
-    add_lines: str = "propose",
+    add_lines: str = "apply",
     deep_rescue: bool = True,
 ) -> dict:
     if not settings.configured:

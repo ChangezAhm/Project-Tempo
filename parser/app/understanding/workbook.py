@@ -60,7 +60,7 @@ _SYNTH_SCHEMA = to_strict_schema(WorkbookUnderstanding)
 # key includes the template version, so a re-uploaded template never reuses old
 # results. Bump this constant whenever prompts.SYSTEM or the SheetUnderstanding
 # schema changes shape — that invalidates every cached result built under them.
-_SHEET_CACHE_VERSION = 6   # v6: metric_rows carry per-row scenario + variant_of_cell
+_SHEET_CACHE_VERSION = 7   # v7: extensible_regions carry per-row SLOTS (blank/placeholder/editable)
 
 # Light sheets are cheap (Sonnet, text-only, no tiles) and don't consume the
 # deep max_sheets cap — but bound them anyway so a pathological workbook can't
@@ -505,19 +505,19 @@ def understand_workbook(template_id: str, *, max_sheets: int = 16, per_sheet_wor
     # invitation blocks in the image) become authoring surface only after the
     # SAME deterministic verification the standalone detector uses — code owns
     # the facts, so a claim over occupied rows is dropped, never persisted.
-    from app.authoring.regions import RegionOut, _cell_map, _convert
+    from app.authoring.regions import RegionOut, _cell_map, _convert, _label_signals
     region_rows, region_skipped = [], []
     for u in understandings:
         sheet = by_name.get(u.sheet_name)
         if sheet is None:
             continue
         cmap = _cell_map(sheet)
+        signals = _label_signals(sheet)
         for claim in (getattr(u, "extensible_regions", None) or []):
-            row, reason = _convert(RegionOut(**claim.model_dump()), u.sheet_name, cmap)
+            row, reasons = _convert(RegionOut(**claim.model_dump()), u.sheet_name, cmap, signals)
             if row is not None:
-                region_rows.append(row)
-            else:
-                region_skipped.append(reason)
+                region_rows.append({**row, "detection_source": "understanding"})
+            region_skipped.extend(reasons)
 
     wb, synth_usage = synthesize(snap, understandings)
     verify_summary = verify(wb, snap)

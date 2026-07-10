@@ -339,7 +339,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                     as_of_date: str | None, *, content_hash: str | None = None,
                     source_path: Path | None = None,
                     display_unit: str | None = None, reset: str = "values",
-                    add_lines: str = "propose", dry_run: bool = False,
+                    add_lines: str = "apply", dry_run: bool = False,
                     deep_rescue: bool = True) -> dict:
     """Core: understand the SOURCE with AI (period columns + data series + units,
     cached by file), build the catalogue from that, ask the LLM to map template
@@ -560,28 +560,40 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
                 logger.warning("could not file reconciliation/decision review items: %s", e)
 
-        # Add-line proposals: source series that mapped to NO template metric are
-        # candidates for NEW lines in the template's extensible regions. Report-only
-        # by default; written only on an explicit add_lines="apply".
+        # Add-line additions: source series that mapped to NO template metric are
+        # routed into the template's extensible regions (the BRIDGE: a region whose
+        # hosted metric came back unavailable activates with ranked candidates).
+        # Default is "apply": blank-slot lines write immediately (flagged + filed
+        # in the inbox); occupied-label overwrites are approval-gated one-tap items,
+        # and previously-approved ones replay automatically.
+        pending_overwrites: list = []
         if add_lines in ("propose", "apply"):
             try:
-                from app.population.authoring import propose_additions
+                from app.population.region_bridge import (
+                    approved_addition_proposals, route_additions)
                 regions = sb.list_extensible_regions(t_vid)
                 if regions:
-                    used = {m.series_id for m in metric_maps if m.series_id}
-                    proposals, add_notes = propose_additions(catalogue, used, regions)
+                    proposals, add_notes = route_additions(
+                        catalogue, metric_maps, regions, target_inputs)
+                    proposals.extend(approved_addition_proposals(t_vid))
                 else:
-                    add_notes = ["no extensible regions stored — run region detection on this template first"]
+                    add_notes = ["no extensible regions stored — re-run Understand (or region detection) first"]
             except Exception as e:  # noqa: BLE001 — additions must never sink the fill
                 logger.exception("add-line proposal failed")
                 add_notes = [f"add-line proposals unavailable: {e}"]
 
+        def _writable(p: dict) -> bool:
+            return (p.get("slot_mode") or "blank") == "blank" or p.get("approved") is True
+
+        writable_proposals = [p for p in proposals if _writable(p)] if add_lines == "apply" else []
+        pending_overwrites = [p for p in proposals if not _writable(p)]
+
         try:
             # refresh-then-fill on the copy: wipe stale data across ALL in-scope
-            # inputs (per the reset mode), write the matches, then any APPROVED
+            # inputs (per the reset mode), write the matches, then the writable
             # additions — so uncovered inputs end up empty, not stale.
             sval: dict = {}
-            if proposals and add_lines == "apply":
+            if writable_proposals:
                 for s in source_snapshot.get("sheets", []):
                     for c in s.get("cells", []):
                         a = (c.get("address") or "").upper()
@@ -589,7 +601,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                             sval[(s["name"], a)] = effective_value(c)
             filled_bytes, clear_stats, additions_applied, additions_skipped, check_results = render_filled(
                 tgt_tmp, result.filled, target_inputs, reset=reset,
-                additions=(proposals if add_lines == "apply" else None), sval=sval,
+                additions=(writable_proposals or None), sval=sval,
                 checks=template_check_cells)
             filled_path = sb.upload_filled(t_vid, source_label, filled_bytes)
             filled_url = sb.signed_filled_url(filled_path)
@@ -613,6 +625,16 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                     sb.insert_review_items(t_vid, checks_to_review_items(failed_checks, source_label))
                 except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
                     logger.warning("could not file template-check review items: %s", e)
+
+        # Additions into the inbox: written lines as informational "keep it?" items,
+        # occupied-label proposals as one-tap approvals (approving replays next run).
+        if additions_applied or pending_overwrites:
+            try:
+                from app.population.region_bridge import addition_review_items
+                sb.insert_review_items(
+                    t_vid, addition_review_items(additions_applied, pending_overwrites, source_label))
+            except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
+                logger.warning("could not file addition review items: %s", e)
 
         # Persist the full audit (demand, routing, every link, skipped, unmatched).
         try:
@@ -672,6 +694,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         "cleared_values": clear_stats.get("cleared_values", 0),
         "cleared_formulas": clear_stats.get("cleared_formulas", 0),
         "proposed_additions": proposals[:100],
+        "pending_label_overwrites": pending_overwrites[:50],
         "addition_notes": add_notes[:20],
         "additions_applied": additions_applied[:100],
         "additions_skipped": additions_skipped[:50],
@@ -693,7 +716,7 @@ def _detect_source_periods(parsed) -> dict[str, list[dict]]:
 
 def populate_from_bytes(target_template_id: str, source_filename: str, source_bytes: bytes,
                         as_of_date: str | None = None, *, display_unit: str | None = None,
-                        reset: str = "values", add_lines: str = "propose",
+                        reset: str = "values", add_lines: str = "apply",
                         dry_run: bool = False, deep_rescue: bool = True) -> dict:
     """Populate a template directly from an uploaded data file's bytes. Parses
     the source in-memory (Aspose → snapshot) — it is never stored as a template.

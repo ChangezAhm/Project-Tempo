@@ -88,55 +88,91 @@ def test_rc_a1_to_col():
 # --- Deterministic conversion ---------------------------------------------------
 
 def test_convert_happy_path():
-    row, reason = _convert(_region(), "KPIs", _cell_map(_sheet()))
-    assert reason is None
+    row, reasons = _convert(_region(), "KPIs", _cell_map(_sheet()))
+    assert reasons == []
     assert row["sheet_name"] == "KPIs" and row["kind"] == "kpi_list"
     assert row["label_col"] == 2                     # from B31
     assert row["row_start"] == 31 and row["row_end"] == 38
     assert row["total_row"] == 39
-    # value columns resolved from the header cells' addresses + real cell dates
-    assert row["value_cols"] == [{"col": 5, "parsed_date": "2024-01-31"},
-                                 {"col": 6, "parsed_date": "2024-02-29"}]
+    # value columns resolved from the header cells' addresses + real cell dates,
+    # with header_label + left-to-right position (for positional matching)
+    assert row["value_cols"] == [
+        {"col": 5, "parsed_date": "2024-01-31", "header_label": "2024-01-31", "position": 0},
+        {"col": 6, "parsed_date": "2024-02-29", "header_label": "2024-02-29", "position": 1}]
+    # no explicit slots claimed → the whole range synthesizes blank slots
+    assert [s["row"] for s in row["slots"]] == list(range(31, 39))
+    assert all(s["mode"] == "blank" for s in row["slots"])
     assert row["rules"] == "one KPI per row" and row["confidence"] == 0.9
     assert row["evidence"] == ["B25", "B39"]
 
 
 def test_convert_value_header_without_date_keeps_col():
     # G10 doesn't exist in the snapshot → the column is kept, date null
-    row, reason = _convert(_region(value_header_cells=["E10", "G10"]), "KPIs",
-                           _cell_map(_sheet()))
-    assert reason is None
-    assert row["value_cols"] == [{"col": 5, "parsed_date": "2024-01-31"},
-                                 {"col": 7, "parsed_date": None}]
+    row, reasons = _convert(_region(value_header_cells=["E10", "G10"]), "KPIs",
+                            _cell_map(_sheet()))
+    assert reasons == []
+    assert row["value_cols"] == [
+        {"col": 5, "parsed_date": "2024-01-31", "header_label": "2024-01-31", "position": 0},
+        {"col": 7, "parsed_date": None, "header_label": None, "position": 1}]
 
 
-def test_convert_rejects_occupied_rows():
-    # rows 25/26 hold 'Revenue'/'EBITDA' labels — the model must not claim them
-    row, reason = _convert(_region(label_col_cell="B25", row_start=25, row_end=38),
-                           "KPIs", _cell_map(_sheet()))
-    assert row is None and "occupied" in reason and "25" in reason
+def test_convert_drops_occupied_blank_claims_but_keeps_the_rest():
+    # rows 25/26 hold 'Revenue'/'EBITDA' labels: those blank-claims DROP (with a
+    # reason each); the genuinely free rows survive — offending rows, not regions.
+    row, reasons = _convert(_region(label_col_cell="B25", row_start=25, row_end=38),
+                            "KPIs", _cell_map(_sheet()))
+    assert row is not None
+    assert {s["row"] for s in row["slots"]} == set(range(27, 39))
+    assert len(reasons) == 2 and all("occupied" in r for r in reasons)
+
+
+def test_convert_placeholder_and_editable_acceptance_is_layered():
+    from app.authoring.regions import SlotOut
+    sheet = _sheet()
+    sheet["cells"].append(_cell("B27", 27, 2, "Custom KPI 1"))      # placeholder text
+    sheet["cells"].append(_cell("B28", 28, 2, "Net Revenue"))       # a REAL label
+    cmap = _cell_map(sheet)
+    r = _region(label_col_cell="B27", row_start=27, row_end=28, slots=[
+        SlotOut(row=27, mode="placeholder"),
+        SlotOut(row=28, mode="placeholder"),       # model claim, no corroboration
+    ])
+    row, reasons = _convert(r, "KPIs", cmap, signals={})
+    slots = {s["row"]: s for s in row["slots"]}
+    assert slots[27]["mode"] == "placeholder" and slots[27]["current_label"] == "Custom KPI 1"
+    assert 28 not in slots and any("real" in x for x in reasons)     # real label protected
+    # editable_label needs a STRUCTURAL signal
+    r2 = _region(label_col_cell="B28", row_start=28, row_end=28,
+                 slots=[SlotOut(row=28, mode="editable_label")])
+    row2, reasons2 = _convert(r2, "KPIs", cmap, signals={(28, 2): ["unlocked"]})
+    assert row2 and row2["slots"][0]["mode"] == "editable_label"
+    row3, reasons3 = _convert(r2, "KPIs", cmap, signals={})
+    assert row3 is None and any("structural" in x for x in reasons3)
 
 
 def test_convert_rejects_capacity_below_one():
-    row, reason = _convert(_region(row_start=38, row_end=37), "KPIs", _cell_map(_sheet()))
-    assert row is None and "capacity" in reason
+    row, reasons = _convert(_region(row_start=38, row_end=37), "KPIs", _cell_map(_sheet()))
+    assert row is None and "capacity" in reasons[0]
 
 
-def test_convert_rejects_total_row_inside_range():
-    row, reason = _convert(_region(row_end=39), "KPIs", _cell_map(_sheet()))
-    assert row is None and "total_row" in reason
+def test_convert_total_row_inside_range_drops_that_row_only():
+    row, reasons = _convert(_region(row_end=39), "KPIs", _cell_map(_sheet()))
+    assert row is not None
+    assert 39 not in {s["row"] for s in row["slots"]}
+    assert any("total row" in x for x in reasons)
 
 
 def test_convert_rejects_bad_label_address():
-    row, reason = _convert(_region(label_col_cell="nope"), "KPIs", _cell_map(_sheet()))
-    assert row is None and "A1" in reason
+    row, reasons = _convert(_region(label_col_cell="nope"), "KPIs", _cell_map(_sheet()))
+    assert row is None and "A1" in reasons[0]
 
 
-def test_convert_normalises_unknown_kind_and_clamps_confidence():
-    row, reason = _convert(_region(kind="Mystery Block", confidence=7.0), "KPIs",
-                           _cell_map(_sheet()))
-    assert reason is None
+def test_convert_normalises_unknown_and_legacy_kinds_and_clamps_confidence():
+    row, reasons = _convert(_region(kind="Mystery Block", confidence=7.0), "KPIs",
+                            _cell_map(_sheet()))
+    assert reasons == []
     assert row["kind"] == "other" and row["confidence"] == 1.0
+    row2, _ = _convert(_region(kind="other_adjustments"), "KPIs", _cell_map(_sheet()))
+    assert row2["kind"] == "adjustment_rows"        # legacy normalization
 
 
 # --- Digest ---------------------------------------------------------------------
@@ -171,12 +207,13 @@ def test_detect_sheet_regions_with_stubbed_llm(monkeypatch):
     good = {"kind": "kpi_list", "label_col_cell": "B31", "row_start": 31, "row_end": 38,
             "total_row": 39, "value_header_cells": ["E10", "F10"],
             "rules": "one KPI per row", "confidence": 0.9, "evidence": ["B39"]}
-    bad = {**good, "label_col_cell": "B25", "row_start": 25}   # claims occupied rows
+    # a claim ENTIRELY over occupied real labels dies (every slot drops)
+    bad = {**good, "label_col_cell": "B25", "row_start": 25, "row_end": 26, "total_row": None}
     monkeypatch.setattr(R, "guarded_stream", _reply(json.dumps({"regions": [good, bad]})))
 
     rows, skipped = R.detect_sheet_regions(_sheet())
     assert len(rows) == 1 and rows[0]["label_col"] == 2 and rows[0]["row_start"] == 31
-    assert len(skipped) == 1 and "occupied" in skipped[0]
+    assert skipped and all("occupied" in s for s in skipped)
 
 
 def test_detect_retries_once_on_unparseable_reply(monkeypatch):
@@ -241,6 +278,8 @@ def test_understanding_claim_converts_through_verifier():
                                   row_start=31, row_end=34, total_row=35,
                                   value_header_cells=["E10"], rules="one per row",
                                   confidence=0.9, evidence=["B30"])
-    row, reason = _convert(RegionOut(**claim.model_dump()), "KPI", _cell_map(sheet))
-    assert reason is None and row["label_col"] == 2 and row["row_start"] == 31
-    assert row["value_cols"] == [{"col": 5, "parsed_date": "2026-01-31"}]
+    row, reasons = _convert(RegionOut(**claim.model_dump()), "KPI", _cell_map(sheet))
+    assert reasons == [] and row["label_col"] == 2 and row["row_start"] == 31
+    assert row["value_cols"] == [{"col": 5, "parsed_date": "2026-01-31",
+                                  "header_label": "2026-01-31", "position": 0}]
+    assert [s["mode"] for s in row["slots"]] == ["blank"] * 4

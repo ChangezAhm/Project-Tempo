@@ -511,6 +511,13 @@ export async function answerReviewItem(
 
 // --- Extensible regions -------------------------------------------------------
 
+export type RegionSlot = {
+  row: number;
+  mode: "blank" | "placeholder" | "editable_label";
+  current_label: string | null;
+  evidence?: string[];
+};
+
 export type ExtensibleRegion = {
   id?: string;
   sheet_name: string;
@@ -519,6 +526,9 @@ export type ExtensibleRegion = {
   row_end: number;
   capacity: number | null;
   rules?: unknown;
+  slots?: RegionSlot[];
+  detection_source?: string; // 'standalone' | 'understanding'
+  section_ref?: string | null;
 };
 
 function normalizeRegions(body: unknown): ExtensibleRegion[] {

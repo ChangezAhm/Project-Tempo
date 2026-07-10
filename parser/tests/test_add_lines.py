@@ -55,9 +55,10 @@ def test_unused_series_with_date_overlap_is_proposed_with_correct_source_cells()
     # 31-Jan source matches the region's '2024-01' column (monthly bucket),
     # and the cited address uses correct multi-letter columns.
     assert p["values"] == [
-        {"col": 3, "source_sheet": "Src", "source_cell": "AB7"},
-        {"col": 4, "source_sheet": "Src", "source_cell": "AC7"},
+        {"col": 3, "source_sheet": "Src", "source_cell": "AB7", "match": "date"},
+        {"col": 4, "source_sheet": "Src", "source_cell": "AC7", "match": "date"},
     ]
+    assert p["slot_mode"] == "blank" and p["expected_label"] is None
 
 
 def test_used_series_are_excluded():
@@ -73,19 +74,36 @@ def test_no_date_overlap_means_no_proposal():
     assert props == []
 
 
-def test_dateless_value_col_matches_nothing():
-    # parsed_date=None is conservative: with no date we'd be guessing alignment.
+def test_fully_dateless_region_matches_positionally_and_is_flagged():
+    # A region whose columns carry NO dates aligns newest-anchored (positional),
+    # each value tagged and the run noted — filled-but-flagged beats silently empty.
     s = _series("Src!r7", "Src", 7, "Churn", [(3, date(2024, 1, 31))])
     region = _region(value_cols=[{"col": 3, "parsed_date": None}])
-    props, _ = propose_additions(_cat(s), set(), [region])
-    assert props == []
+    props, notes = propose_additions(_cat(s), set(), [region])
+    assert len(props) == 1
+    assert props[0]["values"] == [
+        {"col": 3, "source_sheet": "Src", "source_cell": "C7", "match": "positional"}]
+    assert any("POSITIONALLY" in n for n in notes)
+
+
+def test_partially_dated_region_never_falls_back_positionally():
+    # SOME dated columns -> the undated one is something else (label/total): only
+    # date matches are used, never a positional guess.
+    s = _series("Src!r7", "Src", 7, "Churn", [(5, date(2024, 1, 1))])
+    region = _region(value_cols=[{"col": 3, "parsed_date": "2024-01"},
+                                 {"col": 4, "parsed_date": None}])
+    props, notes = propose_additions(_cat(s), set(), [region])
+    assert props[0]["values"] == [
+        {"col": 3, "source_sheet": "Src", "source_cell": "E7", "match": "date"}]
+    assert not any("POSITIONALLY" in n for n in notes)
 
 
 def test_partial_overlap_only_cites_the_matching_columns():
     # Series has Jan only -> the Feb region column gets no value entry.
     s = _series("Src!r7", "Src", 7, "Churn", [(5, date(2024, 1, 1))])
     props, _ = propose_additions(_cat(s), set(), [_region()])
-    assert props[0]["values"] == [{"col": 3, "source_sheet": "Src", "source_cell": "E7"}]
+    assert props[0]["values"] == [
+        {"col": 3, "source_sheet": "Src", "source_cell": "E7", "match": "date"}]
 
 
 def test_capacity_and_overflow_note():
@@ -259,6 +277,42 @@ def test_apply_copies_sibling_style_from_row_above_row_start():
     # style source is row_start-1 = row 9, same column, for label and value cells
     assert ws.styles_set["B10"] == "style@B9"
     assert ws.styles_set["C10"] == "style@C9"
+
+
+def test_apply_overwrites_approved_placeholder_when_live_label_matches():
+    ws = FakeWs()
+    ws.cells.get("B10").put_value("Custom KPI 1")
+    p = _proposal(slot_mode="placeholder", expected_label="Custom KPI 1", approved=True)
+    applied, skipped = apply_additions({"KPIs": ws}, [p], {("Src", "AB7"): 9.0})
+    assert skipped == []
+    assert ws.cells.get("B10").value == "Churn"
+    assert applied[0]["overwrote_label"] == {"from": "Custom KPI 1", "to": "Churn"}
+
+
+def test_apply_placeholder_without_approval_is_gated():
+    ws = FakeWs()
+    ws.cells.get("B10").put_value("Custom KPI 1")
+    p = _proposal(slot_mode="placeholder", expected_label="Custom KPI 1")   # no approved
+    applied, skipped = apply_additions({"KPIs": ws}, [p], {("Src", "AB7"): 9.0})
+    assert applied == [] and "approval" in skipped[0]["reason"]
+    assert ws.cells.get("B10").value == "Custom KPI 1"                       # untouched
+
+
+def test_apply_skips_when_live_label_drifted_since_detection():
+    ws = FakeWs()
+    ws.cells.get("B10").put_value("My Renamed KPI")     # user changed it meanwhile
+    p = _proposal(slot_mode="placeholder", expected_label="Custom KPI 1", approved=True)
+    applied, skipped = apply_additions({"KPIs": ws}, [p], {("Src", "AB7"): 9.0})
+    assert applied == [] and "changed since detection" in skipped[0]["reason"]
+    assert ws.cells.get("B10").value == "My Renamed KPI"
+
+
+def test_apply_never_writes_formula_cells():
+    ws = FakeWs()
+    label = ws.cells.get("B10")
+    label.is_formula = True                              # duck-typed formula flag
+    applied, skipped = apply_additions({"KPIs": ws}, [_proposal()], {("Src", "AB7"): 9.0})
+    assert applied == [] and "formula" in skipped[0]["reason"]
 
 
 def test_style_failure_never_loses_the_written_value():

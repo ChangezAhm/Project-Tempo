@@ -202,22 +202,35 @@ class ScenarioRegion(_Strict):
     evidence: list[str] = []
 
 
+class RegionSlotClaim(_Strict):
+    # One ROW of an extensible/editable region with its write mode:
+    #   blank          — an empty append slot
+    #   placeholder    — a throwaway pre-printed label ("Custom KPI 1", "[Specify]")
+    #   editable_label — a real-looking label the author marked editable (unlocked/
+    #                    validated label cell — cite the signal in evidence)
+    row: int = 0
+    mode: str = "blank"
+    current_label: str | None = None   # the label text VERBATIM (occupied slots)
+    evidence: list[str] = []
+
+
 class ExtensibleRegionClaim(_Strict):
-    # A place the template INVITES the filler to ADD line items: blank repeating
-    # rows under a section with the same column shape as the filled rows above,
-    # "(specify)"/"Other…" labels, dropdowns on label cells, a subtotal whose SUM
-    # already spans the blank rows. The IMAGE is the primary signal (the blank
-    # formatted block under a "Custom KPIs" heading is visual); addresses must
-    # still come from the grid. Claims are verified deterministically against the
-    # snapshot before persisting (occupied rows are rejected) — see
-    # app/authoring/regions.py.
-    kind: str = "other"            # kpi_list | other_adjustments | custom_rows | other
-    label_col_cell: str = ""       # A1 in the label column of the FIRST free row
+    # A place the template INVITES the filler to ADD line items or CHANGE labels:
+    # blank repeating rows under a section, placeholder rows, author-unlocked/
+    # validated label rows (LFL adjustments, renamable titles, chart of accounts),
+    # a subtotal whose SUM already spans the rows. The IMAGE is the primary signal
+    # for blank blocks; addresses must still come from the grid. Claims are
+    # verified deterministically ROW BY ROW against the snapshot before persisting
+    # (a real label with no structural signal is never accepted as editable) —
+    # see app/authoring/regions.py.
+    kind: str = "other"            # kpi_list | custom_rows | adjustment_rows | editable_labels | chart_of_accounts | other
+    label_col_cell: str = ""       # A1 in the label column of the first slot row
     row_start: int = 0
     row_end: int = 0
     total_row: int | None = None   # the subtotal row that must NEVER be written
     value_header_cells: list[str] = []   # period/value header cells new lines must fill
     rules: str | None = None       # author guidance ("one KPI per row", units, sign)
+    slots: list[RegionSlotClaim] = []    # per-row modes; [] => whole range is blank slots
     confidence: float = 0.5
     evidence: list[str] = []
 

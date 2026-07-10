@@ -498,27 +498,52 @@ function RegionsPanel({ templateId }: { templateId: string }) {
         </p>
       ) : (
         <ul className="mt-3 space-y-2">
-          {regions.map((r, i) => (
-            <li key={r.id ?? i} className="rounded-lg border border-neutral-200 p-3">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-medium">{r.sheet_name}</span>
-                {r.kind ? (
-                  <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500">
-                    {r.kind}
+          {regions.map((r, i) => {
+            const slots = r.slots ?? [];
+            const nBlank = slots.filter((s) => s.mode === "blank").length;
+            const nPlaceholder = slots.filter((s) => s.mode === "placeholder").length;
+            const nEditable = slots.filter((s) => s.mode === "editable_label").length;
+            const placeholderLabels = slots
+              .filter((s) => s.mode !== "blank" && s.current_label)
+              .map((s) => s.current_label)
+              .slice(0, 6);
+            return (
+              <li key={r.id ?? i} className="rounded-lg border border-neutral-200 p-3">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-medium">{r.sheet_name}</span>
+                  {r.kind ? (
+                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500">
+                      {r.kind}
+                    </span>
+                  ) : null}
+                  <span className="font-mono text-xs text-neutral-400">
+                    rows {r.row_start}–{r.row_end}
                   </span>
+                  {slots.length > 0 ? (
+                    <span className="text-xs text-neutral-500">
+                      {[
+                        nBlank ? `${nBlank} blank` : null,
+                        nPlaceholder ? `${nPlaceholder} placeholder` : null,
+                        nEditable ? `${nEditable} editable` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  ) : r.capacity != null ? (
+                    <span className="text-xs text-neutral-500">capacity {r.capacity}</span>
+                  ) : null}
+                </div>
+                {placeholderLabels.length ? (
+                  <p className="mt-1 text-xs text-neutral-400">
+                    Replaceable labels: {placeholderLabels.join(" · ")}
+                  </p>
                 ) : null}
-                <span className="font-mono text-xs text-neutral-400">
-                  rows {r.row_start}–{r.row_end}
-                </span>
-                {r.capacity != null ? (
-                  <span className="text-xs text-neutral-500">capacity {r.capacity}</span>
+                {formatRules(r.rules) ? (
+                  <p className="mt-1.5 text-xs text-neutral-500">{formatRules(r.rules)}</p>
                 ) : null}
-              </div>
-              {formatRules(r.rules) ? (
-                <p className="mt-1.5 text-xs text-neutral-500">{formatRules(r.rules)}</p>
-              ) : null}
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

@@ -52,6 +52,30 @@ def _sheet_of(target: str) -> str:
     return (t[:i] if i != -1 else t).strip().strip("'")
 
 
+def _human(target: str) -> str:
+    """A cell reference as a PERSON would name it — the business label, never the
+    address. 'Monthly Flash!B20 (Net Debt)' -> 'Net Debt'; 'P&L!B15' -> 'the P&L
+    figure'. The owner built the template by meaning, not by coordinate, so the
+    question must speak in meaning."""
+    t = str(target).strip()
+    a, b = t.rfind("("), t.rfind(")")
+    if a != -1 and b > a:
+        label = t[a + 1:b].strip()
+        if label:
+            return label
+    sheet = _sheet_of(t)
+    return f"the {sheet} figure" if sheet else t
+
+
+def _human_list(targets: list[str]) -> str:
+    labels = [_human(t) for t in targets if str(t).strip()]
+    if not labels:
+        return "these figures"
+    if len(labels) == 1:
+        return labels[0]
+    return ", ".join(labels[:-1]) + " and " + labels[-1]
+
+
 def build_items_from_understanding(workbook: dict) -> list[dict]:
     """PURE: WorkbookUnderstanding-shaped dict → review-item rows.
 
@@ -72,17 +96,22 @@ def build_items_from_understanding(workbook: dict) -> list[dict]:
     for ch in workbook.get("impact_chains") or []:
         if ch.get("graph_supported") is not False:
             continue
-        name = ch.get("name") or "(unnamed)"
         start = ch.get("start") or ""
         flows_to = [str(t) for t in (ch.get("flows_to") or [])]
+        # The LLM expected an input to drive some outputs, but no formula confirms
+        # it. Don't make the owner referee that — ask the ONE thing it decides for
+        # populating: are those outputs calculated by the template, or entered?
+        outs = _human_list(flows_to)
         items.append(make_item(
             source="understanding",
             kind="machine_checkable",
             question=(
-                f"Impact chain '{name}' was NOT confirmed by the dependency graph — "
-                f"verify {start} actually flows to {', '.join(flows_to)}."
+                f"Does the template work out {outs} on its own, or is that a figure someone "
+                f"types in (or brings in from another report)?"
             ),
-            why=ch.get("significance"),
+            why=(f"I can see {_human(start)}, plus {outs}, in the template but couldn't find a "
+                 "formula linking them, so I'm not sure whether to fill those cells from your "
+                 "source file or leave them for the template to calculate."),
             affected={"sheets": sorted({s for s in map(_sheet_of, flows_to) if s})},
             check_spec={"type": "impact_chain", "start": start, "flows_to": flows_to},
         ))
@@ -92,14 +121,17 @@ def build_items_from_understanding(workbook: dict) -> list[dict]:
             continue
         frm = e.get("from_sheet") or ""
         to = e.get("to_sheet") or ""
-        what = e.get("what") or "unspecified data"
+        what = e.get("what") or "these figures"
         items.append(make_item(
             source="understanding",
             kind="machine_checkable",
             question=(
-                f"Claimed data flow '{frm}' → '{to}' ({what}) was NOT supported by the "
-                f"dependency graph — verify formulas on '{to}' actually read from '{frm}'."
+                f"On '{to}', are the {what} figures pulled from '{frm}', or entered separately "
+                f"on '{to}'?"
             ),
+            why=(f"I expected {what} to carry over from '{frm}' into '{to}' but the formulas "
+                 "don't show that link — this tells me whether to fill those cells or leave "
+                 "them linked to the other sheet."),
             affected={"sheets": [s for s in (frm, to) if s]},
             check_spec={"type": "sheet_flow", "from_sheet": frm, "to_sheet": to},
         ))

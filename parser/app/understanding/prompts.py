@@ -229,8 +229,17 @@ actually enters data — usually role=input and read by many calcs); reconciled 
 workbook-level `business_rules` (especially covenant / valuation / sign conventions, drawn \
 from the per-sheet author rules); and `impact_chains` (a key input → the outputs it drives, \
 consistent with the dependency edges).
-- Calibrate confidence honestly and put genuinely uncertain conclusions in `review_flags` \
-for a human to confirm. Prefer fewer, well-grounded conclusions."""
+- Calibrate confidence honestly. When something is genuinely uncertain, put it in \
+`review_flags` as a PLAIN-LANGUAGE QUESTION the person who built the template can answer in \
+one line. STRICT rules for every flag:
+  * NO cell addresses, NO sheet!cell refs, NO talk of formulas, dependency graphs, or \
+internal checks — name things by their business label ("Adjusted EBITDA", "the KPI Dashboard").
+  * Frame it around HOW THE TEMPLATE GETS FILLED or a real business rule — the answer must \
+help decide what to populate. Good: "Are ARR, Headcount and Churn on the KPI Dashboard typed \
+in each quarter, or pulled from the Monthly Flash figures?" Bad: "Confirm the exact formula \
+construction and sign handling."
+  * It must be answerable by someone who knows the BUSINESS, not the spreadsheet internals.
+  Prefer fewer, well-grounded questions."""
 
 
 def build_synth_user(per_sheet_json: str, graph_edges: str, named_ranges: str, schema_json: str) -> str:

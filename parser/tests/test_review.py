@@ -62,10 +62,13 @@ def test_build_items_unsupported_chain_is_machine_checkable():
     assert ch["kind"] == "machine_checkable"
     assert ch["check_spec"] == {"type": "impact_chain", "start": "Input!E12",
                                 "flows_to": ["Valuation", "Output!B3"]}
-    assert ch["why"] == "drives the headline multiple"
     assert ch["affected"] == {"sheets": ["Output", "Valuation"]}
-    assert "EBITDA → Valuation" in ch["question"]
-    assert "Input!E12" in ch["question"]
+    # the QUESTION is now plain-language + population-oriented: no cell addresses,
+    # no "dependency graph" jargon; it asks the one thing populate needs to know.
+    assert "the Valuation figure" in ch["question"]
+    assert "work out" in ch["question"] or "types in" in ch["question"]
+    assert "Input!E12" not in ch["question"] and "dependency graph" not in ch["question"]
+    assert "fill those cells" in ch["why"]         # explains WHY it matters for filling
 
 
 def test_build_items_unsupported_flow_is_machine_checkable():
@@ -78,7 +81,9 @@ def test_build_items_unsupported_flow_is_machine_checkable():
     assert f["check_spec"] == {"type": "sheet_flow",
                                "from_sheet": "Input", "to_sheet": "Valuation"}
     assert f["affected"] == {"sheets": ["Input", "Valuation"]}
-    assert "Adjusted EBITDA" in f["question"]
+    assert "Adjusted EBITDA" in f["question"]              # names the business figure
+    assert "dependency graph" not in f["question"]         # no internal jargon
+    assert "pulled from" in f["question"] or "entered separately" in f["question"]
 
 
 def test_build_items_supported_claims_produce_nothing():

@@ -101,6 +101,7 @@ def _unmatched(fact: dict, reason: str) -> dict:
 def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[MetricMap],
          demand: dict, *, display_unit: str | None = None, confidence_floor: float = 0.6,
          template_context: tuple[dict, dict] | None = None,
+         agg_membership: dict[str, frozenset] | None = None,
          ) -> tuple[list[CellLink], list[dict]]:
     """Returns (links, unmatched). Each template input fact becomes a CellLink with
     a fully-resolved unit_scale and sign, or an unmatched entry whose reason says
@@ -129,25 +130,46 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             if cur is None or m.confidence > cur.confidence:
                 by_metric[m.metric] = m
 
-    # DETERMINISTIC SINGLE-USE: a source series may feed at most ONE template metric,
-    # so an amount is never written into two template lines (double entry). The LLM is
-    # told to avoid this but must NOT be trusted with a global constraint. Claims are
-    # resolved by priority — direct > aggregate > reconcile, then higher confidence —
-    # so the strongest mapping keeps the series and any other metric wanting it (or one
-    # of its aggregated components) is blocked.
+    # DETERMINISTIC DOUBLE-COUNT GUARD: a source amount must never be counted
+    # twice INSIDE THE SAME TOTAL — that is the only way a reuse inflates a figure
+    # (the Adjusted-EBITDA-adjustments case). A KPI (ARR, Headcount, Churn) shown
+    # on several sheets shares no total and may repeat as often as needed.
+    #
+    # `agg_membership` (metric_key -> the set of totals its cells feed, from the
+    # template's own formulas — aggregation.metric_totals) is the arbiter: two
+    # metrics conflict over a shared source series ONLY when their totals
+    # intersect. An EMPTY set means the metric feeds no total → free to repeat.
+    # When it's None (no formula graph available — a parse gap), fall back to the
+    # conservative GLOBAL block: any cross-metric reuse is blocked, so the
+    # inflation bug can never silently return.
+    #
+    # Claims are resolved by priority — direct > aggregate > reconcile, then higher
+    # confidence — so the strongest mapping keeps the series; a weaker metric that
+    # would double-count against it (or one of its aggregated components) is blocked.
     _RANK = {"direct": 0, "aggregate": 1, "reconcile": 2}
-    claimed: dict[str, str] = {}          # series_id -> owning metric key
-    blocked: dict[str, str] = {}          # metric key -> the metric that already owns a series it needs
+    graph = agg_membership is not None
+    claimed: dict[str, list[str]] = {}    # series_id -> metrics legitimately using it
+    blocked: dict[str, str] = {}          # metric key -> the metric it would double-count against
     for m in sorted(by_metric.values(),
                     key=lambda mm: (_RANK.get(getattr(mm, "status", "direct"), 1), -mm.confidence)):
         wants = [sid for sid in ([m.series_id] + list(m.also_series_ids or []))
                  if sid and sid in catalogue]
-        taken = next((claimed[sid] for sid in wants if sid in claimed), None)
-        if taken is not None:
-            blocked[m.metric] = taken
+        owner = None
+        for sid in wants:
+            for prior in claimed.get(sid, ()):
+                shares_total = (bool(agg_membership.get(m.metric, frozenset())
+                                     & agg_membership.get(prior, frozenset()))
+                                if graph else True)
+                if shares_total:
+                    owner = prior
+                    break
+            if owner:
+                break
+        if owner is not None:
+            blocked[m.metric] = owner
         else:
             for sid in wants:
-                claimed[sid] = m.metric
+                claimed.setdefault(sid, []).append(m.metric)
 
     period_count = int(demand.get("period_count") or 0)
     pc_by_sheet: dict = demand.get("period_count_by_sheet") or {}
@@ -184,11 +206,15 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
         if mm is None:
             unmatched.append(_unmatched(f, "no source series mapped to this metric"))
             continue
-        # Single-use guard: this metric's source series is already owned by another
-        # metric — writing it here too would double-count the amount. Leave it blank.
+        # Double-count guard: this metric's source series already feeds another
+        # metric it would be summed with — writing it here too double-counts.
         if key in blocked:
-            unmatched.append(_unmatched(
-                f, f"source already used by '{blocked[key]}' — not written again (avoids double counting)"))
+            owner = blocked[key]
+            reason = (f"source already feeds '{owner}' and both roll into the same template total "
+                      "— not written again (avoids double counting)"
+                      if agg_membership is not None else
+                      f"source already used by '{owner}' — not written again (avoids double counting)")
+            unmatched.append(_unmatched(f, reason))
             continue
         # A reconcile is a DELIBERATE approximation (source data cut differently) — it is
         # kept whatever its confidence, but flagged and raised for user confirmation.

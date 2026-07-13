@@ -483,9 +483,24 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                     routing["rescue_attempted"] = len(weak)
                     routing["rescue_placed"] = sum(1 for rm in rescued if rm.series_id)
 
+        # Double-count guard scope: from the template's OWN formulas, which totals
+        # each metric feeds. Reuse of a source series is blocked only when two
+        # metrics share a total (would inflate it); a KPI mirrored across sheets
+        # feeds no shared total and fills freely. None (no formula graph) => the
+        # guard falls back to the conservative global block inside bind().
+        from app.population.aggregation import metric_totals
+        try:
+            agg_membership = metric_totals(target_inputs, t_snap)
+        except Exception as e:  # noqa: BLE001 — never let graph analysis sink a fill
+            logger.warning("aggregation membership failed (%s) — global double-count guard", e)
+            agg_membership = None
+        if agg_membership is not None:
+            routing["totals_modelled"] = len({t for ts in agg_membership.values() for t in ts})
+
         links, bind_unmatched = bind(
             target_inputs, catalogue, metric_maps, demand,
             display_unit=display_unit, template_context=template_context,
+            agg_membership=agg_membership,
         )
         # Filled cells that need a human eye: scale that couldn't be magnitude-verified,
         # OR a reconciled fill (source data cut differently — a provisional assumption).

@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 8
+DERIVATION_VERSION = 9
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -227,6 +227,94 @@ _META_FIELD = re.compile(r"(?i)\b(url|link|hyperlink|ident|status|flag|note|comm
 def _connector_field(formula: str) -> str | None:
     m = _CX_FIELD.search(formula or "")
     return m.group(1).strip() if m and m.group(1).strip() else None
+
+
+# Grain vocabulary the CX_GET 4th argument uses → the system's period_type words.
+_GRAIN_MAP = {"month": "monthly", "quarter": "quarterly", "year": "annual",
+              "annual": "annual", "ltm": "LTM", "ytd": "YTD"}
+
+
+def _cx_args(formula: str) -> list[str]:
+    """Top-level, comma-separated arguments of the CX_GET(...) call — respecting
+    quoted strings, quoted sheet names, and nested parens. [] if not connector."""
+    m = re.search(r"(?i)CX_GET\s*\(", formula or "")
+    if not m:
+        return []
+    i, depth, q, cur, args = m.end(), 1, None, "", []
+    while i < len(formula):
+        ch = formula[i]
+        if q:
+            cur += ch
+            if ch == q:
+                q = None
+        elif ch in ('"', "'"):
+            q, cur = ch, cur + ch
+        elif ch == "(":
+            depth, cur = depth + 1, cur + ch
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                args.append(cur)
+                break
+            cur += ch
+        elif ch == "," and depth == 1:
+            args.append(cur)
+            cur = ""
+        else:
+            cur += ch
+        i += 1
+    if depth > 0 and cur.strip():     # unclosed formula — keep the trailing arg
+        args.append(cur)
+    return [a.strip() for a in args]
+
+
+def _cx_resolve(arg: str, sheet: str, cell_val: dict, cell_cached: dict):
+    """Resolve one CX_GET argument that is either a quoted literal or a
+    (sheet-qualified, $-anchored) cell reference → its value. None if unresolvable."""
+    a = (arg or "").strip()
+    if not a:
+        return None
+    if a[0] == '"' and a[-1] == '"':
+        return a[1:-1].strip() or None
+    ref = a.replace("$", "")
+    rs = sheet
+    if "!" in ref:
+        rs, ref = ref.rsplit("!", 1)
+        rs = rs.strip().strip("'")
+    rc = _rc(ref)
+    if not rc:
+        return None
+    v = cell_cached.get((rs, rc[1], rc[0]))
+    if v in (None, ""):
+        v = cell_val.get((rs, rc[1], rc[0]))
+    return v
+
+
+def _cx_identity(formula: str, sheet: str, cell_val: dict, cell_cached: dict
+                 ) -> tuple[str | None, str | None, str | None]:
+    """A connector cell's SELF-DESCRIBED identity, read from
+    CX_GET(entity, metric, period, grain, …): returns (metric_label,
+    parsed_date_iso, period_type). metric/period may be literals or cell-refs — a
+    transposed grid references a metric header cell (arg 2) and a period-axis date
+    cell (arg 3). Any part is None when absent/unresolvable."""
+    # Multiple CX_GET in one formula (e.g. DATE(YEAR(CX_GET(…)), CX_GET(…))) makes
+    # the arg positions ambiguous — the leftmost may be a config-field wrapper, not
+    # the value fetch. Don't guess: fall back to the ordinary detector.
+    if len(re.findall(r"(?i)CX_GET\s*\(", formula or "")) > 1:
+        return None, None, None
+    args = _cx_args(formula)
+    metric = period = grain = None
+    if len(args) >= 2:
+        mv = _cx_resolve(args[1], sheet, cell_val, cell_cached)
+        if isinstance(mv, str) and mv.strip() and not mv.startswith("="):
+            metric = mv.strip()
+    if len(args) >= 3:
+        period = _parse_header_date(_cx_resolve(args[2], sheet, cell_val, cell_cached))
+    if len(args) >= 4:
+        g = _cx_resolve(args[3], sheet, cell_val, cell_cached)
+        if isinstance(g, str):
+            grain = _GRAIN_MAP.get(g.strip().lower())
+    return metric, period, grain
 
 
 def _is_date_format(fmt: str | None) -> bool:
@@ -659,20 +747,24 @@ def derive_data_model(template_id: str) -> DataModelResult:
             l3m = l3_by_row.get(row, {})
             l2mr = l2m.get(row, {})
             formula = cell_formula.get((sheet, row, col), "")
-            # A connector cell's authoritative metric name is its CX_GET field
-            # argument — it beats the row's column-A text, which a multi-block row
-            # mis-attributes (the R-block financials otherwise inherit the B-block
-            # label). A cell-ref field arg won't match, so normal resolution wins there.
-            cx_field = _connector_field(formula) if _CONNECTOR.search(formula) else None
-            # cx_field (the CX_GET literal field name) is authoritative for a
-            # connector cell — it beats the L2/L3 row label, which a multi-block
-            # row mis-attributes. It's None for cell-ref field args, so ordinary
-            # rows fall through to their real label.
-            metric_label = (cx_field or l3m.get("label_as_written") or l3m.get("label")
+            # A connector cell is SELF-DESCRIBING: CX_GET(entity, metric, period,
+            # grain) names its own metric (arg 2) and period (arg 3) — as literals
+            # or cell-refs into a metric header / period axis. This is authoritative:
+            # it beats the row's column-A text (which multi-block and TRANSPOSED
+            # grids mis-attribute) and recovers period identity the column-oriented
+            # detector can't see when periods run down the rows.
+            cx_metric = cx_date = cx_grain = None
+            if _CONNECTOR.search(formula):
+                cx_metric, cx_date, cx_grain = _cx_identity(formula, sheet, cell_val, cell_cached)
+            metric_label = (cx_metric or l3m.get("label_as_written") or l3m.get("label")
                             or l2mr.get("label_text") or _row_label(cell_val, sheet, row)
                             or (llm_field or {}).get("label") or f"row {row}")
             canonical = l3m.get("canonical_metric")
             period = period_for(col, row)
+            if cx_date:
+                period = {"label": _iso_label(cx_date),
+                          "period_type": cx_grain or (period or {}).get("period_type") or default_ptype,
+                          "status": (period or {}).get("status"), "parsed_date": cx_date}
             if period is None:
                 orphan_cells += 1
 

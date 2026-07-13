@@ -8,6 +8,8 @@ import math
 from app.datamodel.derive import (
     _classify_category,
     _connector_field,
+    _cx_args,
+    _cx_identity,
     _is_date_format,
     _numeric,
 )
@@ -39,6 +41,41 @@ def test_connector_field_extraction():
     assert _connector_field(f) == "Cash returned LCY [Inv]"
     assert _connector_field('=CX_GET(1,$A23)') is None          # cell-ref arg, not a literal
     assert _connector_field("=SUM(A1:A9)") is None              # not a connector
+
+
+# --- _cx_args / _cx_identity: the self-describing connector grid --------------
+def test_cx_args_respects_quotes_sheet_names_and_nesting():
+    f = '=IF("CX.UNLINK"="CX.UNLINK",95.76,IFERROR(_xldudf_CX_GET(CX_ENTITY,' \
+        "'Flash Rolling Monthly'!G$5,$F25,\"Month\",,0),0))"
+    assert _cx_args(f) == ["CX_ENTITY", "'Flash Rolling Monthly'!G$5", "$F25", '"Month"', "", "0"]
+    assert _cx_args("=SUM(A1:A2)") == []
+
+
+def test_cx_identity_resolves_transposed_grid():
+    # arg2 (G5) -> metric header; arg3 (F25) -> period-axis date; arg4 -> grain.
+    f = '=IF("CX.UNLINK"="CX.UNLINK",95.76,IFERROR(_xldudf_CX_GET(CX_ENTITY,' \
+        "'Flash Rolling Monthly'!G$5,$F25,\"Month\",,0),0))"
+    cell_val = {("Flash Rolling Monthly", 5, 7): "Net Revenue",
+                ("Flash Rolling Monthly", 25, 6): "2023-11-30T00:00:00"}
+    assert _cx_identity(f, "Flash Rolling Monthly", cell_val, {}) == ("Net Revenue", "2023-11", "monthly")
+
+
+def test_cx_identity_literal_metric_no_period():
+    # a summary cell: literal metric name, no resolvable period/grain.
+    f = '=IFERROR(CX_GET(CX_INV_ID,"Cash returned LCY [Inv]",X),0)'
+    assert _cx_identity(f, "S", {}, {}) == ("Cash returned LCY [Inv]", None, None)
+
+
+def test_cx_identity_bails_on_multiple_cx_get():
+    # two CX_GET → ambiguous arg positions (leftmost may be a config wrapper) →
+    # no guessed identity, fall back to the ordinary detector.
+    f = '=DATE(YEAR(CX_GET(E,"fiscal_year_end")),CX_GET(E,"Revenue",D))'
+    assert _cx_identity(f, "S", {}, {}) == (None, None, None)
+
+
+def test_cx_args_keeps_trailing_arg_on_missing_close_paren():
+    # a truncated formula must not silently drop its last argument
+    assert _cx_args('=CX_GET(E,"Rev",D') == ["E", '"Rev"', "D"]
 
 
 # --- _classify_category: the full cascade, table-driven ----------------------

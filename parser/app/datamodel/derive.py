@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 6
+DERIVATION_VERSION = 7
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -152,6 +152,40 @@ def _role_blocks_writes(role: str | None, sheet: str, input_surface: set[str]) -
     if sheet in input_surface:
         return False
     return (role or "").lower() in _NON_INPUT_ROLES
+
+
+# CONTROL cells parametrise a report's VIEW (scenario/company/mode selectors,
+# override flags) — they are neither collected inputs nor derived outputs, so
+# they must never generate populate demand. PLACEHOLDER cells are the empty,
+# generically-named slots of an extensible area ("KPI Label 3", "Custom Metric
+# Amount 1") — the additions/region path fills those, not the data model. Both
+# → category 'config' (not fillable). High precision by design; every hit is
+# review-flagged and a correction (patch category='data') re-opens it.
+_CONTROL_RES = [
+    re.compile(r"(?i)\bmode\b"),                         # POC Mode, View Mode
+    re.compile(r"(?i)\bselection\b"),                    # Scenario Selection N
+    re.compile(r"(?i)^\s*selected\b"),                   # Selected <X> Company:
+    re.compile(r"(?i)\boverride\b|\bflags?\b"),          # …override flags
+    re.compile(r"(?i)\btoggle\b|\bsettings?\b|\bconfig\b|\bselector\b"),
+]
+_PLACEHOLDER_RES = [
+    re.compile(r"(?i)^(?:custom\s+)?(?:kpi|metric|line\s*item|item)(?:\s+(?:label|amount|name))?\s*#?\d+(?:\s*\[[^\]]*\])?\s*$"),
+    re.compile(r"(?i)^(?:kpi|metric|line|item|label)\s+label\s*#?\d+\s*$"),   # 'KPI Label 1'
+    re.compile(r"(?i)\blabel\s*#?\d+\s*$"),                                   # '… - Label 2'
+    re.compile(r"(?i)^\[[^\]]*\]\s*$"),                                       # [Specify]
+    re.compile(r"(?i)^(?:specify|tbd|placeholder|n/?a)\s*:?\s*$"),
+    re.compile(r"…\s*$"),                                                # trailing ellipsis
+]
+
+
+def _is_control_label(label: str | None) -> bool:
+    t = (label or "").strip()
+    return bool(t) and any(rx.search(t) for rx in _CONTROL_RES)
+
+
+def _is_placeholder_label(label: str | None) -> bool:
+    t = (label or "").strip()
+    return bool(t) and any(rx.search(t) for rx in _PLACEHOLDER_RES)
 
 
 def apply_row_scenario_layout(facts: list, role_by_sheet: dict,
@@ -419,6 +453,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
     role_by_sheet: dict[str, str | None] = {}
     l3_row_tags: dict[str, dict[int, tuple[str | None, int | None]]] = {}
     gated_by_role: dict[str, int] = {}
+    config_by_kind: dict[str, int] = {}    # {'control': n, 'placeholder': n, 'selector': n}
 
     for srow in und.get("sheets", []):
         sheet = srow["sheet_name"]
@@ -572,13 +607,25 @@ def derive_data_model(template_id: str) -> DataModelResult:
             #     a live cell but never a write target; a template correction
             #     (patch category='data') re-opens it per-fact
             #   - blank / typed literal         → data     (a data-entry slot → fillable)
+            #   - a CONTROL/selector (scenario/company/mode picker, override flag)
+            #     or a generic PLACEHOLDER slot ("KPI Label 3") → config — it
+            #     parametrises or extends the view, it is not a data input, so it
+            #     must never demand a source value. Correction (patch
+            #     category='data') re-opens it.
             formula = cell_formula.get((sheet, row, col), "")
+            _cfg_kind = (
+                "control" if _is_control_label(metric_label)
+                else "placeholder" if _is_placeholder_label(metric_label)
+                else None)
             if _CONNECTOR.search(formula):
                 category = "sourced"
             elif sec_cat == "exclude":
                 category = "exclude"
             elif formula:
                 category = "computed"
+            elif _cfg_kind:
+                category = "config"
+                config_by_kind[_cfg_kind] = config_by_kind.get(_cfg_kind, 0) + 1
             elif _role_blocks_writes(role, sheet, input_surface):
                 category = "staging"
                 gated_by_role[(role or "?").lower()] = gated_by_role.get((role or "?").lower(), 0) + 1
@@ -652,6 +699,15 @@ def derive_data_model(template_id: str) -> DataModelResult:
             f"gated from population ({detail}) — if any are real inputs, re-categorise via "
             "a template correction (patch category='data')."
         )
+    if config_by_kind:
+        detail = ", ".join(f"{k}: {n}" for k, n in sorted(config_by_kind.items()))
+        flags.append(
+            f"{sum(config_by_kind.values())} control/placeholder cells were classified as "
+            f"config ({detail}) and excluded from population — selectors, mode/scenario "
+            "toggles, override flags, and empty custom-metric slots are not data inputs. "
+            "If any is a real input, re-categorise via a correction (patch category='data')."
+        )
+
     roleless = sorted(s for s, r in role_by_sheet.items() if not r)
     if roleless:
         flags.append(

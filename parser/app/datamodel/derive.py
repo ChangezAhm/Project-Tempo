@@ -17,6 +17,7 @@ from __future__ import annotations
 import gzip
 import json
 import logging
+import math
 import os
 import re
 import tempfile
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 7
+DERIVATION_VERSION = 8
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -186,6 +187,85 @@ def _is_control_label(label: str | None) -> bool:
 def _is_placeholder_label(label: str | None) -> bool:
     t = (label or "").strip()
     return bool(t) and any(rx.search(t) for rx in _PLACEHOLDER_RES)
+
+
+def _numeric(v) -> bool:
+    """A concrete, FINITE number — int/float, or a numeric string like '95.76',
+    '1,200', '68.6%', '(1,200)'. The signal that a connector-fed cell holds a
+    financial FIGURE (a replaceable input) rather than a RAG/status flag
+    ('GREEN'), 'n/a', 'inf'/'nan', or a blank. This is a permissive sniff test,
+    NOT a strict parser; the date-FORMAT guard (see _is_date_format) is what keeps
+    date serials and years out — a bare '2025' passes here by design."""
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, (int, float)):
+        return math.isfinite(v)
+    if isinstance(v, str):
+        s = v.strip().replace(",", "").replace("%", "").replace("€", "").replace("$", "").replace("£", "")
+        if s.startswith("(") and s.endswith(")"):
+            s = "-" + s[1:-1]
+        if not s:
+            return False
+        try:
+            return math.isfinite(float(s))     # rejects 'inf'/'nan'
+        except ValueError:
+            return False
+    return False
+
+
+# The metric name a connector formula fetches lives in its SECOND argument:
+# CX_GET(<id>, "Cash returned LCY [Inv]", …). When that arg is a quoted literal it
+# is the authoritative label — far better than the row's column-A text, which a
+# multi-block row mis-attributes. (A cell-ref arg like $A23 won't match, so the
+# normal label resolution still wins there.)
+_CX_FIELD = re.compile(r'(?i)(?:CX_GET|CVC\.GET)\s*\(\s*[^,]*,\s*"([^"]+)"')
+# Metadata field-names that are never a financial figure (matched on the CX field
+# name, not the unreliable row label). Tight on purpose.
+_META_FIELD = re.compile(r"(?i)\b(url|link|hyperlink|ident|status|flag|note|comment|task)\b")
+
+
+def _connector_field(formula: str) -> str | None:
+    m = _CX_FIELD.search(formula or "")
+    return m.group(1).strip() if m and m.group(1).strip() else None
+
+
+def _is_date_format(fmt: str | None) -> bool:
+    """A number format that renders a DATE (so its numeric serial is a date, not a
+    money/ratio figure). Reject-based: has y/m/d placeholders and no #/0/% number
+    placeholders. Quoted literals and [color]/[locale] tags are stripped first."""
+    if not fmt:
+        return False
+    core = re.sub(r'"[^"]*"|\[[^\]]*\]', "", fmt)
+    return bool(re.search(r"[ymd]", core, re.I)) and not re.search(r"[#0%]", core)
+
+
+def _classify_category(metric_label: str | None, formula: str, sec_cat: str | None,
+                       role: str | None, sheet: str, input_surface: set[str]) -> tuple[str, str | None]:
+    """PURE per-cell category decision (returns (category, cfg_kind)). Extracted so
+    the whole cascade is table-testable without a snapshot. Order matters:
+      - a CONTROL/PLACEHOLDER label wins — a selector or generic slot is not a data
+        input even when connector-fed ('Selected Company') — EXCEPT when the cell
+        is a genuine (non-connector) FORMULA, which is a computed output we must
+        never reclassify as fillable config;
+      - connector-fed (CX_GET …) → sourced (system-fed financial input, replaceable);
+      - instructions/cover section → exclude;
+      - other formula → computed (a calculated output — never overwritten);
+      - blank/literal on a non-input sheet (role gate) → staging;
+      - blank/literal → data."""
+    is_connector = bool(_CONNECTOR.search(formula or ""))
+    cfg_kind = ("control" if _is_control_label(metric_label)
+                else "placeholder" if _is_placeholder_label(metric_label) else None)
+    if cfg_kind and not (formula and not is_connector):
+        return "config", cfg_kind
+    if is_connector:
+        return "sourced", None
+    if sec_cat == "exclude":
+        return "exclude", None
+    if formula:
+        return "computed", None
+    if _role_blocks_writes(role, sheet, input_surface):
+        return "staging", None
+    return "data", None
 
 
 def apply_row_scenario_layout(facts: list, role_by_sheet: dict,
@@ -419,6 +499,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
     cell_val: dict[tuple[str, int, int], object] = {}
     cell_cached: dict[tuple[str, int, int], object] = {}
     cell_formula: dict[tuple[str, int, int], str] = {}
+    cell_fmt: dict[tuple[str, int, int], str] = {}   # number format, for the date guard
     for s in snap.get("sheets", []):
         nm = s["name"]
         for c in s.get("cells", []):
@@ -430,6 +511,9 @@ def derive_data_model(template_id: str) -> DataModelResult:
                     cell_cached[(nm, rc[1], rc[0])] = cv
                 if c.get("formula"):
                     cell_formula[(nm, rc[1], rc[0])] = c["formula"]
+                fmt = (c.get("style") or {}).get("number_format")
+                if fmt:
+                    cell_fmt[(nm, rc[1], rc[0])] = fmt
 
     period_idx: dict[str, dict[int, dict]] = {}     # L2 parsed_date by (sheet, col)
     for p in structure.get("periods", []):
@@ -454,6 +538,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
     l3_row_tags: dict[str, dict[int, tuple[str | None, int | None]]] = {}
     gated_by_role: dict[str, int] = {}
     config_by_kind: dict[str, int] = {}    # {'control': n, 'placeholder': n, 'selector': n}
+    connector_inputs = 0                   # connector-fed financial cells enumerated as sourced
 
     for srow in und.get("sheets", []):
         sheet = srow["sheet_name"]
@@ -573,7 +658,17 @@ def derive_data_model(template_id: str) -> DataModelResult:
 
             l3m = l3_by_row.get(row, {})
             l2mr = l2m.get(row, {})
-            metric_label = (l3m.get("label_as_written") or l3m.get("label")
+            formula = cell_formula.get((sheet, row, col), "")
+            # A connector cell's authoritative metric name is its CX_GET field
+            # argument — it beats the row's column-A text, which a multi-block row
+            # mis-attributes (the R-block financials otherwise inherit the B-block
+            # label). A cell-ref field arg won't match, so normal resolution wins there.
+            cx_field = _connector_field(formula) if _CONNECTOR.search(formula) else None
+            # cx_field (the CX_GET literal field name) is authoritative for a
+            # connector cell — it beats the L2/L3 row label, which a multi-block
+            # row mis-attributes. It's None for cell-ref field args, so ordinary
+            # rows fall through to their real label.
+            metric_label = (cx_field or l3m.get("label_as_written") or l3m.get("label")
                             or l2mr.get("label_text") or _row_label(cell_val, sheet, row)
                             or (llm_field or {}).get("label") or f"row {row}")
             canonical = l3m.get("canonical_metric")
@@ -596,41 +691,13 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 if bt:
                     basis, b_src = bt, Provenance.deterministic
             unit = l3m.get("unit") or l2mr.get("unit") or (llm_field or {}).get("unit")
-            # Category is decided per CELL by what the cell actually IS, so population
-            # only ever writes into genuine data-entry inputs:
-            #   - connector-fed (CX_GET …)      → sourced  (system-fed, overridable → fillable)
-            #   - instructions/cover region     → exclude  (never filled)
-            #   - holds a real (non-connector) formula → computed (a calculated OUTPUT — NEVER
-            #                                     overwrite it; stops clobbering formula sheets)
-            #   - blank / typed literal on a NON-INPUT sheet (calc/lookup/data_dump/
-            #     cover/instructions role, not on the input surface) → staging —
-            #     a live cell but never a write target; a template correction
-            #     (patch category='data') re-opens it per-fact
-            #   - blank / typed literal         → data     (a data-entry slot → fillable)
-            #   - a CONTROL/selector (scenario/company/mode picker, override flag)
-            #     or a generic PLACEHOLDER slot ("KPI Label 3") → config — it
-            #     parametrises or extends the view, it is not a data input, so it
-            #     must never demand a source value. Correction (patch
-            #     category='data') re-opens it.
-            formula = cell_formula.get((sheet, row, col), "")
-            _cfg_kind = (
-                "control" if _is_control_label(metric_label)
-                else "placeholder" if _is_placeholder_label(metric_label)
-                else None)
-            if _CONNECTOR.search(formula):
-                category = "sourced"
-            elif sec_cat == "exclude":
-                category = "exclude"
-            elif formula:
-                category = "computed"
-            elif _cfg_kind:
-                category = "config"
-                config_by_kind[_cfg_kind] = config_by_kind.get(_cfg_kind, 0) + 1
-            elif _role_blocks_writes(role, sheet, input_surface):
-                category = "staging"
+            # Per-cell category (see _classify_category for the full cascade + rules).
+            category, cfg_kind = _classify_category(
+                metric_label, formula, sec_cat, role, sheet, input_surface)
+            if cfg_kind:
+                config_by_kind[cfg_kind] = config_by_kind.get(cfg_kind, 0) + 1
+            elif category == "staging":
                 gated_by_role[(role or "?").lower()] = gated_by_role.get((role or "?").lower(), 0) + 1
-            else:
-                category = "data"
 
             needs = (bool(llm_field.get("needs_value", True)) if llm_field
                      else cell_val.get((sheet, row, col)) in (None, "", 0))
@@ -676,6 +743,29 @@ def derive_data_model(template_id: str) -> DataModelResult:
             for col in (df.get("input_columns") or []):
                 _emit(int(col), int(drow), None)
 
+        # 3) CONNECTOR-fed financial inputs. A cell whose formula FETCHES a value
+        # (CX_GET / cube / pivot) and currently HOLDS A NUMBER is a company
+        # financial figure that a new data upload replaces — an input, not a
+        # computed output, however the value arrives (typed, snapshotted, or
+        # live-fetched). The LLM/six-signal detectors miss these because they look
+        # for blank/unlocked FORM fields; a locked connector cell displaying 95.76
+        # is not a form field but IS a replaceable input. Numeric-only, so RAG/
+        # status connector cells ('GREEN', 'n/a', blank) are excluded. _emit skips
+        # already-seen cells (LLM semantics win) and its cascade classifies a
+        # connector formula as 'sourced' (fillable).
+        for (nm, r, c), fml in cell_formula.items():
+            if nm != sheet or not _CONNECTOR.search(fml):
+                continue
+            cv = cell_cached.get((sheet, r, c), cell_val.get((sheet, r, c)))
+            if not _numeric(cv):
+                continue
+            if _is_date_format(cell_fmt.get((sheet, r, c))):
+                continue    # a date/serial, not a financial figure
+            if (sheet, f"{column_letter(c)}{r}") in seen:
+                continue
+            _emit(c, r, None)
+            connector_inputs += 1
+
     if orphan_cells:
         flags.append(f"{orphan_cells} input cells got no period (no header row above them) — review period detection.")
 
@@ -698,6 +788,12 @@ def derive_data_model(template_id: str) -> DataModelResult:
             f"{sum(gated_by_role.values())} input-looking cells on non-input sheets were "
             f"gated from population ({detail}) — if any are real inputs, re-categorise via "
             "a template correction (patch category='data')."
+        )
+    if connector_inputs:
+        flags.append(
+            f"{connector_inputs} connector-fed financial cells enumerated as replaceable inputs "
+            "('sourced') — a new data upload overwrites the fetched value. Mapping them to a "
+            "source still needs period/scenario resolution on the connected sheets."
         )
     if config_by_kind:
         detail = ", ".join(f"{k}: {n}" for k, n in sorted(config_by_kind.items()))

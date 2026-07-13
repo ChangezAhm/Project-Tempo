@@ -8,6 +8,7 @@ import gzip
 import json
 import logging
 import os
+import re
 import tempfile
 from collections import Counter, defaultdict
 from datetime import date
@@ -32,6 +33,8 @@ from app.snapshot import workbook_to_snapshot
 from app.structure.detect import detect_structure
 
 logger = logging.getLogger(__name__)
+
+_ROWN = re.compile(r"^row \d+$")   # a pure positional fallback label (no metric identity)
 
 
 def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[dict]]:
@@ -69,6 +72,13 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
     metrics: dict[str, dict] = {}
     for f in inputs:
         key = f.get("canonical_metric") or f.get("metric_label")
+        # A pure positional fallback label ('row 25') carries no meaning for the
+        # mapper — it can never match a source series by name, so it would only
+        # waste a mapping slot and pollute the report. The cell stays a fact (it's
+        # still an input in the model); it just doesn't generate mapping demand
+        # until it earns a real metric identity (e.g. via grid understanding).
+        if key and _ROWN.match(key):
+            continue
         if key and key not in metrics:
             # definition/qualification_criteria/expected_source are the L3 business
             # logic — the mapper needs them to tell 'Adjusted' from 'Reported', to
@@ -151,9 +161,19 @@ def render_filled(template_workbook_path, filled, clear_facts=(), *, reset: str 
             ch["before"] = ws.cells.get(ch["cell"]).value
 
     cleared_values = cleared_formulas = 0
+    # Cells a match will actually refill — a 'sourced' (connector-fed / system-fed)
+    # cell holds real CURRENT company data, so it is cleared ONLY when a mapped
+    # value will replace it. Otherwise a connector cell with no source match (e.g.
+    # one still awaiting period/scenario resolution) would be wiped and left blank,
+    # destroying the last-fetched financials. Manual 'data' inputs keep the stale-
+    # wipe (an unfilled input should read empty, not show a prior company's number).
+    fill_targets = {(fc.template_sheet, fc.template_cell) for fc in filled}
     for f in clear_facts:
         ws = ws_by_name.get(f.get("sheet_name"))
         if ws is None or not f.get("cell"):
+            continue
+        if (f.get("category") == "sourced"
+                and (f.get("sheet_name"), f["cell"]) not in fill_targets):
             continue
         cell = ws.cells.get(f["cell"])
         if _is_clearable_value(cell.value, cell.is_formula):

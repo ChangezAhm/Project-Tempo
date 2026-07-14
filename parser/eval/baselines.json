@@ -1,0 +1,58 @@
+{
+  "38d240a2": {
+    "data": 1083
+  },
+  "3ee0051b": {
+    "data": 390,
+    "staging": 8
+  },
+  "5a6e9620": {
+    "data": 169
+  },
+  "6c047599": {
+    "computed": 5506,
+    "config": 1277,
+    "data": 274,
+    "exclude": 3,
+    "sourced": 5585,
+    "staging": 236
+  },
+  "787d2d51": {
+    "computed": 6650,
+    "config": 2176,
+    "data": 503,
+    "exclude": 1,
+    "sourced": 4838,
+    "staging": 162
+  },
+  "aeb5f285": {
+    "computed": 7,
+    "config": 76,
+    "data": 5,
+    "sourced": 592,
+    "staging": 76
+  },
+  "constructed:config-pollution": {
+    "config": 2,
+    "data": 2
+  },
+  "constructed:connector-inputs": {
+    "computed": 1,
+    "data": 1,
+    "sourced": 1
+  },
+  "constructed:transposed-grid": {
+    "sourced": 1
+  },
+  "d7f0f4ac": {
+    "data": 1131
+  },
+  "d9c1589d": {
+    "config": 78,
+    "data": 643
+  },
+  "e8d562f4": {
+    "computed": 26,
+    "data": 1066
+  }
+}

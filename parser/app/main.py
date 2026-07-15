@@ -225,7 +225,19 @@ def understand_route(template_id: str, max_sheets: int = 16, force_deep: str | N
     forced = {s.strip() for s in force_deep.split(",") if s.strip()} if force_deep else None
     try:
         with _single_run("understand", template_id):
-            return understand_and_persist(template_id, max_sheets=max_sheets, force_deep=forced)
+            result = understand_and_persist(template_id, max_sheets=max_sheets, force_deep=forced)
+            # Run the AUTHORITY region detector as part of onboarding. The per-sheet
+            # understanding only proposes a conservative bootstrap (blank slots); the
+            # standalone detector uses the six-signal + validation digest to catch
+            # editable-label / dropdown-driven field slots the bootstrap misses.
+            # Best-effort — a region-detection failure must not fail understanding.
+            try:
+                from app.authoring.regions import detect_and_persist
+                reg = detect_and_persist(template_id)
+                result["extensible_regions"] = reg.get("count")
+            except Exception as e:  # noqa: BLE001
+                logger.warning("standalone region detection failed post-understand: %s", e)
+            return result
     except SpendCapExceeded as e:
         raise HTTPException(402, str(e))
     except TemplateNotFound as e:

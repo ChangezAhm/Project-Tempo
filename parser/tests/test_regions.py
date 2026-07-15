@@ -201,6 +201,100 @@ def test_digest_no_blank_or_validation_sections_when_absent():
     assert "BLANK-BUT-FORMATTED" not in d and "DATA VALIDATIONS" not in d
 
 
+# --- Roll-up (spanning-subtotal) adjustment blocks --------------------------------
+
+def _bridge_sheet():
+    """An EBITDA bridge: five OCCUPIED adjustment labels (no dropdown, not blank)
+    summed by 'Adjusted EBITDA' — the shape the LLM misses because the SUM range
+    is invisible in text."""
+    return {"name": "Monthly_Flash", "cells": [
+        _cell("C10", 10, 3, "2024-01-31"), _cell("D10", 10, 4, "2024-02-29"),
+        _cell("B24", 24, 2, "EBITDA BRIDGE"),
+        _cell("B25", 25, 2, "Reported EBITDA"),
+        _cell("C25", 25, 3, "=C22", cached=0.0),
+        _cell("B26", 26, 2, "Restructuring"),
+        _cell("B27", 27, 2, "Transaction & Deal Costs"),
+        _cell("B28", 28, 2, "Share-based Compensation"),
+        _cell("B29", 29, 2, "Management Fees"),
+        _cell("B30", 30, 2, "Other One-off Items"),
+        _cell("B31", 31, 2, "Adjusted EBITDA"),
+        _cell("C31", 31, 3, "=C25+SUM(C26:C30)", cached=0.0),
+        _cell("D31", 31, 4, "=D25+SUM(D26:D30)", cached=0.0),
+    ]}
+
+
+def _pnl_sheet():
+    """A FIXED statement subtotal (Total Revenue = SUM of two revenue lines) —
+    a roll-up, but NOT an adjustment list; the safety net must leave it alone."""
+    return {"name": "P&L", "cells": [
+        _cell("B14", 14, 2, "Product Revenue"), _cell("C14", 14, 3, 100.0),
+        _cell("B15", 15, 2, "Services Revenue"), _cell("C15", 15, 3, 50.0),
+        _cell("B16", 16, 2, "Total Revenue"), _cell("C16", 16, 3, "=SUM(C14:C15)", cached=150.0),
+    ]}
+
+
+def test_subtotal_blocks_detects_labelled_rollup_and_ignores_blank_runs():
+    from app.authoring.regions import _subtotal_blocks
+    blocks = _subtotal_blocks(_bridge_sheet())
+    assert len(blocks) == 1
+    b = blocks[0]
+    assert (b["lo"], b["hi"], b["subtotal_row"], b["label_col"]) == (26, 30, 31, 2)
+    assert b["value_cols"] == [3, 4]                       # both C and D summed
+    assert b["subtotal_label"] == "Adjusted EBITDA"
+    assert b["labelled_rows"] == [26, 27, 28, 29, 30]
+    # the KPI sheet's blank add-slot run (rows 31-38, only 2 labelled of 14) is NOT
+    # a labelled list -> not a roll-up block
+    assert _subtotal_blocks(_sheet()) == []
+
+
+def test_is_adjustment_block_discriminates_bridge_from_fixed_subtotal():
+    from app.authoring.regions import _is_adjustment_block, _subtotal_blocks
+    bridge = _subtotal_blocks(_bridge_sheet())[0]
+    assert _is_adjustment_block(bridge, _bridge_sheet()) is True
+    pnl = _subtotal_blocks(_pnl_sheet())[0]
+    assert _is_adjustment_block(pnl, _pnl_sheet()) is False
+
+
+def test_label_signals_and_digest_expose_the_rollup():
+    from app.authoring.regions import _digest, _label_signals
+    sig = _label_signals(_bridge_sheet())
+    assert "summed_member" in sig[(26, 2)] and "summed_member" in sig[(30, 2)]
+    d = _digest(_bridge_sheet())
+    assert "ROLL-UP sums rows 26-30" in d                  # subtotal row annotated
+    assert "B26='Restructuring' [summed_member]" in d      # member rows annotated
+
+
+def test_safety_net_regions_adjustment_block_the_llm_missed(monkeypatch):
+    # the LLM returns NOTHING; the deterministic net still yields the bridge region
+    monkeypatch.setattr(R, "guarded_stream", _reply(json.dumps({"regions": []})))
+    rows, skipped = R.detect_sheet_regions(_bridge_sheet())
+    assert len(rows) == 1
+    reg = rows[0]
+    assert reg["kind"] == "adjustment_rows"
+    assert reg["detection_source"] == "deterministic_subtotal"
+    assert reg["total_row"] == 31 and reg["row_start"] == 26 and reg["row_end"] == 30
+    assert {s["row"] for s in reg["slots"]} == {26, 27, 28, 29, 30}
+    assert all(s["mode"] == "editable_label" for s in reg["slots"])
+    assert [vc["col"] for vc in reg["value_cols"]] == [3, 4]      # headers C10/D10 resolved
+
+
+def test_safety_net_leaves_fixed_statement_subtotals_alone(monkeypatch):
+    monkeypatch.setattr(R, "guarded_stream", _reply(json.dumps({"regions": []})))
+    rows, skipped = R.detect_sheet_regions(_pnl_sheet())
+    assert rows == []                                    # Total Revenue is not an adjustment list
+
+
+def test_safety_net_defers_to_llm_when_block_already_covered(monkeypatch):
+    # LLM already claims the bridge as a kpi_list -> the net must NOT double-add
+    claim = {"kind": "kpi_list", "label_col_cell": "B26", "row_start": 26, "row_end": 30,
+             "total_row": 31, "value_header_cells": ["C10", "D10"],
+             "slots": [{"row": r, "mode": "editable_label"} for r in range(26, 31)],
+             "confidence": 0.9, "evidence": ["B31"]}
+    monkeypatch.setattr(R, "guarded_stream", _reply(json.dumps({"regions": [claim]})))
+    rows, skipped = R.detect_sheet_regions(_bridge_sheet())
+    assert len(rows) == 1 and rows[0]["kind"] == "kpi_list"   # one region, the LLM's
+
+
 # --- Stubbed-LLM sheet flow -------------------------------------------------------
 
 def _reply(payload: str):

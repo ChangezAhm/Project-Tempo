@@ -36,7 +36,7 @@ from app.llm import MODEL_MAP, guarded_stream
 from app.population.catalogue import effective_value
 from app.population.cost import SpendCapExceeded, SpendGuard, default_cap_usd, set_guard
 from app.population.periods import parse_any_date
-from app.raw_extraction.column_utils import column_index
+from app.raw_extraction.column_utils import column_index, column_letter
 
 logger = logging.getLogger(__name__)
 
@@ -112,11 +112,133 @@ def _validation_cols_rows(sheet: dict) -> set[tuple[int, int]]:
     return out
 
 
+# --- Roll-up (spanning-subtotal) blocks: deterministic adjustment detection ----
+#
+# The single fact that proves a block of occupied labels is an EXTENSIBLE LIST is
+# a subtotal that SUMs a contiguous range of those rows (an EBITDA bridge is
+# exactly this: Restructuring / Transaction Costs / … -> Adjusted EBITDA). The
+# snapshot keeps that formula but the text digest renders only its cached number,
+# so the LLM never sees the roll-up and treats the lines as fixed. We recover the
+# fact deterministically — to annotate the digest, to corroborate an editable
+# claim (summed_member signal), and to guarantee a region the LLM misses.
+
+_SUM_RANGE = re.compile(
+    r"(?:SUM|SUBTOTAL)\s*\(\s*(?:\d+\s*,\s*)?\$?([A-Z]+)\$?(\d+)\s*:\s*\$?([A-Z]+)\$?(\d+)\s*\)",
+    re.I)
+# a subtotal LABEL that announces a normalisation / adjustment roll-up
+_ADJ_SUBTOTAL = re.compile(r"(?i)\b(adjust|normali[sz]|pro[- ]?forma|underlying|bridge)\b")
+# a MEMBER label from the EBITDA-adjustment / one-off lexicon
+_ADJ_MEMBER = re.compile(
+    r"(?i)(add-?back|one-?off|exceptional|non-?recurring|restructur|redundanc|"
+    r"deal cost|transaction cost|share-?based|management fee|monitoring fee|"
+    r"impair|write-?off|write-?down|run-?rate|normalis|integration cost|"
+    r"separation cost|provision|litigation|earn-?out|\bM&A\b)")
+
+
+def _formula(cell: dict | None) -> str | None:
+    """A cell's formula text — from `formula` (real Aspose parse) or, failing that,
+    from `value` when it is an '=…' string (older/test cells keep it there)."""
+    if not cell:
+        return None
+    f = cell.get("formula")
+    if f:
+        return str(f)
+    v = cell.get("value")
+    return v if isinstance(v, str) and v.startswith("=") else None
+
+
+def _text_label(cell: dict | None) -> str | None:
+    """The cell's business label: a non-formula, non-numeric string, stripped."""
+    if cell is None or _formula(cell):
+        return None
+    v = effective_value(cell)
+    if isinstance(v, str):
+        t = v.strip()
+        if t and not t.startswith("="):
+            return t
+    return None
+
+
+def _subtotal_blocks(sheet: dict) -> list[dict]:
+    """Deterministic roll-up blocks: a subtotal cell whose formula SUMs a
+    CONTIGUOUS vertical range of LABELLED rows just above it. One entry per
+    (range, label_col): {lo, hi, subtotal_row, label_col, value_cols,
+    member_rows, labelled_rows, subtotal_label, member_labels}. Requires a real
+    labelled list (>=2 rows named, majority named) so blank add-slot runs — which
+    the blank-run detection already handles — don't qualify here."""
+    cmap = _cell_map(sheet)
+    by_key: dict[tuple[int, int, int], dict] = {}
+    for (row, col), cell in cmap.items():
+        f = _formula(cell)
+        if not f:
+            continue
+        for m in _SUM_RANGE.finditer(f):
+            c1, r1, c2, r2 = m.group(1), int(m.group(2)), m.group(3), int(m.group(4))
+            vcol = column_index(c1)
+            if vcol != column_index(c2):
+                continue                          # single-column vertical sums only
+            lo, hi = min(r1, r2), max(r1, r2)
+            if hi - lo + 1 < 2 or not (hi < row <= hi + 3):
+                continue                          # >=2 rows, subtotal sits just below
+            # the label column: the leftmost text-label column across member rows
+            label_cols: dict[int, int] = {}
+            for rr in range(lo, hi + 1):
+                for cc in range(1, vcol):         # labels sit left of the value column
+                    if _text_label(cmap.get((rr, cc))):
+                        label_cols[cc] = label_cols.get(cc, 0) + 1
+                        break
+            if not label_cols:
+                continue
+            label_col = min(label_cols, key=lambda k: (-label_cols[k], k))
+            key = (lo, hi, label_col)
+            blk = by_key.get(key)
+            if blk is None:
+                labelled = [rr for rr in range(lo, hi + 1)
+                            if _text_label(cmap.get((rr, label_col)))]
+                blk = by_key[key] = {
+                    "lo": lo, "hi": hi, "subtotal_row": row, "label_col": label_col,
+                    "value_cols": [], "member_rows": list(range(lo, hi + 1)),
+                    "labelled_rows": labelled,
+                    "subtotal_label": _text_label(cmap.get((row, label_col))),
+                    "member_labels": [_text_label(cmap.get((rr, label_col))) for rr in labelled],
+                }
+            if vcol not in blk["value_cols"]:
+                blk["value_cols"].append(vcol)
+    out: list[dict] = []
+    for blk in by_key.values():
+        n, nl = len(blk["member_rows"]), len(blk["labelled_rows"])
+        if nl >= 2 and nl >= 0.5 * n:
+            blk["value_cols"].sort()
+            out.append(blk)
+    return out
+
+
+def _is_adjustment_block(block: dict, sheet: dict) -> bool:
+    """Does a roll-up block read as an EARNINGS-ADJUSTMENT list (an EBITDA bridge,
+    a normalisation / one-off block) rather than a fixed-statement subtotal (Gross
+    Profit, Total Assets)? Deterministic lexicon over the subtotal label, the
+    member labels, and the section header just above — so the safety net fires on
+    adjustment blocks and stays off ordinary statement subtotals."""
+    if _ADJ_SUBTOTAL.search(block.get("subtotal_label") or ""):
+        return True
+    if any(lab and _ADJ_MEMBER.search(lab) for lab in block.get("member_labels") or []):
+        return True
+    cmap = _cell_map(sheet)
+    lc = block["label_col"]
+    for rr in (block["lo"] - 1, block["lo"] - 2):
+        hdr = _text_label(cmap.get((rr, lc)))
+        if hdr and (_ADJ_SUBTOTAL.search(hdr) or re.search(r"(?i)\b(bridge|adjustment)", hdr)):
+            return True
+    return False
+
+
 def _label_signals(sheet: dict) -> dict[tuple[int, int], list[str]]:
     """Structural editability signals per cell: unlocked (on a protected sheet —
     the author explicitly freed it), input-style fill, validated (a dropdown on a
-    label cell is an author invitation), placeholder-text. These are the
-    deterministic corroboration for occupied-row slot claims."""
+    label cell is an author invitation), placeholder-text, and summed_member (the
+    row is summed by a spanning subtotal — structurally part of an aggregated
+    list). These are the deterministic corroboration for occupied-row slot
+    claims."""
     from app.raw_extraction.cell_analyzer import is_input_fill
     protected = bool(sheet.get("is_protected"))
     validated = _validation_cols_rows(sheet)
@@ -135,6 +257,12 @@ def _label_signals(sheet: dict) -> dict[tuple[int, int], list[str]]:
             sigs.append("placeholder_text")
         if sigs:
             out[(c["row"], c["col"])] = sigs
+    # roll-up membership: an occupied label the filler may rename/extend because a
+    # spanning subtotal already sums its row.
+    for blk in _subtotal_blocks(sheet):
+        lc = blk["label_col"]
+        for rr in blk["labelled_rows"]:
+            out.setdefault((rr, lc), []).append("summed_member")
     return out
 
 
@@ -157,6 +285,13 @@ _SYSTEM = (
     "dropdown/unlock signal — the section is configurable BY DESIGN. This is a SEMANTIC "
     "judgment: a KPI/scorecard/operational area is configurable; the standard lines of a "
     "P&L, Balance Sheet or Cash Flow (Revenue, COGS, Cash, Debt, EBITDA) are FIXED.\n"
+    "- an ADJUSTMENT / BRIDGE block: rows summed by a subtotal into an 'Adjusted / "
+    "Normalised / Pro-forma' figure — an EBITDA bridge (Restructuring, One-off items, "
+    "Share-based comp … -> Adjusted EBITDA). A subtotal tagged [ROLL-UP sums rows a-b] "
+    "and rows tagged [summed_member] MARK exactly this shape: the member rows are an "
+    "extensible list the filler adds to, so flag them as editable_label slots "
+    "(kind=adjustment_rows). The [ROLL-UP]/[summed_member] tags are authoritative "
+    "structural facts — trust them over a row looking pre-printed.\n"
     "You report STRUCTURE only — never values. Every address and row number MUST come "
     "from the TEXT DIGEST (it is authoritative). For each region give:\n"
     "- kind: kpi_list | custom_rows | adjustment_rows | editable_labels | "
@@ -241,6 +376,12 @@ def _digest(sheet: dict, *, understanding: dict | None = None) -> str:
     see it). Addresses are authoritative; sizes capped."""
     cells = sheet.get("cells", [])
     signals = _label_signals(sheet)
+    # roll-up notes: the SUM range that proves a subtotal aggregates a list — the
+    # signal the digest used to strip (formula -> cached number). Member rows
+    # already carry [summed_member] via `signals`; here we tag the subtotal row.
+    subtotal_note = {b["subtotal_row"]:
+                     f"[ROLL-UP sums rows {b['lo']}-{b['hi']} — these are an aggregated LIST]"
+                     for b in _subtotal_blocks(sheet)}
     by_row: dict[int, list[dict]] = {}
     for c in cells:
         by_row.setdefault(c["row"], []).append(c)
@@ -280,7 +421,9 @@ def _digest(sheet: dict, *, understanding: dict | None = None) -> str:
         if label is not None:
             sig = signals.get((label["row"], label["col"]))
             if sig:
-                line += f" [{'/'.join(sig)}]"    # unlocked/validated/placeholder_text/input_fill
+                line += f" [{'/'.join(sig)}]"    # unlocked/validated/placeholder_text/input_fill/summed_member
+        if r in subtotal_note:
+            line += f" {subtotal_note[r]}"
         others = [c for c in filled if c is not label]
         if others:
             line += " | filled: " + " ".join(c.get("address", "") for c in others[:8])
@@ -404,7 +547,7 @@ def _cell_map(sheet: dict) -> dict[tuple[int, int], dict]:
     return {(c["row"], c["col"]): c for c in sheet.get("cells", [])}
 
 
-_STRUCTURAL = {"unlocked", "validated", "input_fill"}   # author-marked editability
+_STRUCTURAL = {"unlocked", "validated", "input_fill", "summed_member"}   # author-marked editability
 # kinds a filler configures BY DESIGN — the LLM's section judgment substitutes for a
 # per-cell structural signal when accepting an occupied editable_label row.
 _CONFIGURABLE_KINDS = {"kpi_list", "custom_rows"}
@@ -551,7 +694,73 @@ def detect_sheet_regions(sheet: dict, *, model: str = MODEL_MAP,
         if row is not None:
             rows.append(row)
         skipped.extend(reasons)
+    rows.extend(_adjustment_safety_net(sheet, name, cmap, signals, rows, skipped))
     return rows, skipped
+
+
+def _covered_rows(rows: list[dict]) -> set[tuple[str, int]]:
+    """(sheet, row) pairs already inside a detected region — so the safety net
+    never double-claims a block the LLM already handled."""
+    cov: set[tuple[str, int]] = set()
+    for r in rows:
+        for rr in range(int(r["row_start"]), int(r["row_end"]) + 1):
+            cov.add((r["sheet_name"], rr))
+    return cov
+
+
+def _header_cell_addr(cmap: dict, col: int, above_row: int) -> str | None:
+    """Best-effort period header for a value column: the nearest date-like cell
+    scanning up from the block (else the first non-blank text cell)."""
+    best = None
+    for rr in range(above_row - 1, 0, -1):
+        cell = cmap.get((rr, col))
+        if cell is None:
+            continue
+        v = effective_value(cell)
+        if parse_any_date(v) is not None:
+            return cell.get("address") or f"{column_letter(col)}{rr}"
+        if best is None and isinstance(v, str) and v.strip():
+            best = cell.get("address") or f"{column_letter(col)}{rr}"
+    return best
+
+
+def _adjustment_safety_net(sheet: dict, name: str, cmap: dict,
+                           signals: dict, existing_rows: list[dict],
+                           skipped: list[str]) -> list[dict]:
+    """Guarantee an adjustment_rows region for every roll-up block that reads as
+    an earnings-adjustment list and that the LLM left uncovered — the EBITDA-
+    bridge class it misses because the SUM range is invisible in text. The
+    summed_member signals make the occupied member labels pass _convert, so this
+    routes through the SAME verifier as every other region."""
+    covered = _covered_rows(existing_rows)
+    added: list[dict] = []
+    for blk in _subtotal_blocks(sheet):
+        if not _is_adjustment_block(blk, sheet):
+            continue
+        if any((name, rr) in covered for rr in blk["labelled_rows"]):
+            continue                              # the LLM already regioned this block
+        headers = [h for c in blk["value_cols"]
+                   if (h := _header_cell_addr(cmap, c, blk["lo"]))]
+        synth = RegionOut(
+            kind="adjustment_rows",
+            label_col_cell=f"{column_letter(blk['label_col'])}{blk['lo']}",
+            row_start=blk["lo"], row_end=blk["hi"], total_row=blk["subtotal_row"],
+            value_header_cells=headers,
+            slots=[SlotOut(row=rr, mode="editable_label",
+                           evidence=[f"summed by row {blk['subtotal_row']}"])
+                   for rr in blk["member_rows"]],
+            rules="Earnings-adjustment lines (an EBITDA bridge / normalisation block): "
+                  "the filler may add or rename adjustment items; the subtotal sums them.",
+            confidence=0.9,
+            evidence=[f"{column_letter(blk['label_col'])}{blk['subtotal_row']}"])
+        row, reasons = _convert(synth, name, cmap, signals)
+        if row is not None:
+            row["detection_source"] = "deterministic_subtotal"
+            added.append(row)
+            covered |= {(name, rr) for rr in range(blk["lo"], blk["hi"] + 1)}
+        else:
+            skipped.extend(reasons)
+    return added
 
 
 # --- Entry points -------------------------------------------------------------
@@ -636,7 +845,7 @@ def detect_and_persist(template_id: str) -> dict:
             rows.extend(srows)
             skipped.extend(sskip)
 
-        payload = [{**r, "detection_source": "standalone",
+        payload = [{**r, "detection_source": r.get("detection_source", "standalone"),
                     "template_version_id": version_id} for r in rows]
         sb.replace_extensible_regions(version_id, payload)
         logger.info("extensible regions: %d persisted, %d skipped for version %s",

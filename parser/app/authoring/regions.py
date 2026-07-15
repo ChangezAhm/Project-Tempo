@@ -149,7 +149,14 @@ _SYSTEM = (
     "cells — see LABEL-CELL SIGNALS): named EBITDA adjustment lines, like-for-like "
     "adjustment labels, renamable titles, an own chart of accounts,\n"
     "- dropdown data validations on label cells,\n"
-    "- a subtotal row whose SUM range already spans the rows.\n"
+    "- a subtotal row whose SUM range already spans the rows,\n"
+    "- a CONFIGURABLE METRIC LIST: a KPI dashboard, scorecard, operational-metrics, or "
+    "custom-metrics section where the ROW LABELS name metrics the filler CHOOSES or "
+    "DEFINES (not the fixed line items of a financial statement). Flag EVERY metric row "
+    "of such a section as an editable_label slot (kind=kpi_list) EVEN WITHOUT a per-cell "
+    "dropdown/unlock signal — the section is configurable BY DESIGN. This is a SEMANTIC "
+    "judgment: a KPI/scorecard/operational area is configurable; the standard lines of a "
+    "P&L, Balance Sheet or Cash Flow (Revenue, COGS, Cash, Debt, EBITDA) are FIXED.\n"
     "You report STRUCTURE only — never values. Every address and row number MUST come "
     "from the TEXT DIGEST (it is authoritative). For each region give:\n"
     "- kind: kpi_list | custom_rows | adjustment_rows | editable_labels | "
@@ -170,8 +177,13 @@ _SYSTEM = (
     "- confidence in [0,1] and evidence: the cell refs that convinced you.\n"
     "Be conservative: only clear invitations. A merely-empty area with no repeating "
     "shape, no inviting label, no validation and no spanning subtotal is NOT a region — "
-    'return {"regions":[]} when nothing qualifies. A real business label with NO '
-    "structural signal is NOT editable — never claim it.\n"
+    'return {"regions":[]} when nothing qualifies. On a FIXED financial statement '
+    "(P&L, Balance Sheet, Cash Flow) a real line-item label with NO structural signal "
+    "is NOT editable — never claim it. The ONLY exception is a CONFIGURABLE METRIC LIST "
+    "(KPI dashboard / scorecard / custom-metrics section, kind=kpi_list): there the "
+    "metric rows ARE editable labels by design, so claim them even without a per-cell "
+    "signal — but you must be confident the section is configurable, not a fixed "
+    "statement.\n"
     'Return ONLY JSON: {"regions":[{"kind":"...","label_col_cell":"B31","row_start":31,'
     '"row_end":38,"total_row":39,"value_header_cells":["E10","F10"],'
     '"slots":[{"row":31,"mode":"blank","current_label":null}],"rules":"...",'
@@ -393,6 +405,9 @@ def _cell_map(sheet: dict) -> dict[tuple[int, int], dict]:
 
 
 _STRUCTURAL = {"unlocked", "validated", "input_fill"}   # author-marked editability
+# kinds a filler configures BY DESIGN — the LLM's section judgment substitutes for a
+# per-cell structural signal when accepting an occupied editable_label row.
+_CONFIGURABLE_KINDS = {"kpi_list", "custom_rows"}
 
 
 def _convert(r: RegionOut, sheet_name: str, cmap: dict[tuple[int, int], dict],
@@ -421,6 +436,16 @@ def _convert(r: RegionOut, sheet_name: str, cmap: dict[tuple[int, int], dict],
     if row_end - row_start + 1 < 1:
         return None, [f"{where}: capacity < 1 (rows {row_start}..{row_end})"]
     total_row = int(r.total_row) if r.total_row is not None else None
+
+    kind = (r.kind or "other").strip().lower()
+    kind = _KIND_NORMALIZE.get(kind, kind)
+    kind = kind if kind in _KINDS else "other"
+    # A CONFIGURABLE METRIC LIST (KPI dashboard / scorecard / custom-metrics) is
+    # editable BY DESIGN — its row labels are metrics the filler chooses. Here the
+    # LLM's section-level judgment stands in for a per-cell structural signal, so an
+    # occupied editable_label row is accepted without unlocked/validated. Fixed
+    # statements keep the strict signal requirement (see the editable_label branch).
+    configurable = kind in _CONFIGURABLE_KINDS
 
     # claimed slots; an empty list means "the whole range is blank slots"
     claimed = {int(s.row): s for s in (r.slots or [])}
@@ -466,6 +491,10 @@ def _convert(r: RegionOut, sheet_name: str, cmap: dict[tuple[int, int], dict],
             elif sigs & _STRUCTURAL:
                 slots.append({"row": row, "mode": "editable_label", "current_label": live_text,
                               "evidence": sorted(sigs)})
+            elif configurable:
+                # configurable metric list — the LLM judged the whole section user-defined
+                slots.append({"row": row, "mode": "editable_label", "current_label": live_text,
+                              "evidence": sorted(sigs) or [f"{kind}:configurable-section"]})
             else:
                 reasons.append(f"{where}: row {row} claimed editable but carries no structural "
                                "signal (unlocked/validated) — dropped")
@@ -491,11 +520,9 @@ def _convert(r: RegionOut, sheet_name: str, cmap: dict[tuple[int, int], dict],
     for i, vc in enumerate(value_cols):
         vc["position"] = i          # left-to-right ordinal — enables positional matching
 
-    kind = (r.kind or "other").strip().lower()
-    kind = _KIND_NORMALIZE.get(kind, kind)
     return {
         "sheet_name": sheet_name,
-        "kind": kind if kind in _KINDS else "other",
+        "kind": kind,
         "label_col": label_col,
         "value_cols": value_cols,
         "row_start": row_start,

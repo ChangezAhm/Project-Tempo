@@ -140,13 +140,20 @@ def test_convert_placeholder_and_editable_acceptance_is_layered():
     slots = {s["row"]: s for s in row["slots"]}
     assert slots[27]["mode"] == "placeholder" and slots[27]["current_label"] == "Custom KPI 1"
     assert 28 not in slots and any("real" in x for x in reasons)     # real label protected
-    # editable_label needs a STRUCTURAL signal
-    r2 = _region(label_col_cell="B28", row_start=28, row_end=28,
+    # editable_label on a FIXED-statement kind needs a STRUCTURAL signal
+    r2 = _region(kind="chart_of_accounts", label_col_cell="B28", row_start=28, row_end=28,
                  slots=[SlotOut(row=28, mode="editable_label")])
     row2, reasons2 = _convert(r2, "KPIs", cmap, signals={(28, 2): ["unlocked"]})
     assert row2 and row2["slots"][0]["mode"] == "editable_label"
     row3, reasons3 = _convert(r2, "KPIs", cmap, signals={})
     assert row3 is None and any("structural" in x for x in reasons3)
+    # but a CONFIGURABLE metric list (kpi_list) accepts the label WITHOUT a signal —
+    # the LLM's section-level judgment stands in for the per-cell structural signal
+    r4 = _region(kind="kpi_list", label_col_cell="B28", row_start=28, row_end=28,
+                 slots=[SlotOut(row=28, mode="editable_label")])
+    row4, _ = _convert(r4, "KPIs", cmap, signals={})
+    assert row4 and row4["slots"][0]["mode"] == "editable_label"
+    assert row4["slots"][0]["current_label"] == "Net Revenue"
 
 
 def test_convert_rejects_capacity_below_one():

@@ -603,6 +603,19 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 if fmt:
                     cell_fmt[(nm, rc[1], rc[0])] = fmt
 
+    # Defaulted-input detection: a front formula cell that merely DISPLAYS a single
+    # backend input point (a connector, or a blank in a connector-fed column) is the
+    # real input a human overwrites — the naive "formula = computed" rule discards
+    # it. Resolve over the understood sheets (targets may sit on hidden backend
+    # sheets, which the snapshot still carries); the backend cells these display are
+    # suppressed below so population writes the FRONT cell, not the backend (a
+    # back-write only surfaces on recalc, which breaks connector templates).
+    from app.datamodel.passthrough import find_passthrough_inputs
+    _und_sheets = [s.get("sheet_name") for s in und.get("sheets", [])]
+    passthrough_inputs, passthrough_backing = find_passthrough_inputs(
+        _und_sheets, cell_formula, cell_val)
+    passthrough_count = 0
+
     period_idx: dict[str, dict[int, dict]] = {}     # L2 parsed_date by (sheet, col)
     for p in structure.get("periods", []):
         period_idx.setdefault(p["sheet_name"], {})[p["col"]] = p
@@ -738,7 +751,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
             """Create one DataPoint for an input cell. ``llm_field`` carries the
             LLM's semantics when the cell came from understanding; None for a
             cell found purely by the deterministic metadata detector."""
-            nonlocal orphan_cells
+            nonlocal orphan_cells, passthrough_count
             cell = f"{column_letter(col)}{row}"
             if (sheet, cell) in seen:
                 return
@@ -786,6 +799,12 @@ def derive_data_model(template_id: str) -> DataModelResult:
             # Per-cell category (see _classify_category for the full cascade + rules).
             category, cfg_kind = _classify_category(
                 metric_label, formula, sec_cat, role, sheet, input_surface)
+            # A defaulted-input passthrough (a front formula displaying one backend
+            # input point) is a replaceable input, not the computed output its
+            # formula would otherwise imply.
+            if category == "computed" and (sheet, row, col) in passthrough_inputs:
+                category, cfg_kind = "sourced", None
+                passthrough_count += 1
             if cfg_kind:
                 config_by_kind[cfg_kind] = config_by_kind.get(cfg_kind, 0) + 1
             elif category == "staging":
@@ -848,6 +867,8 @@ def derive_data_model(template_id: str) -> DataModelResult:
         for (nm, r, c), fml in cell_formula.items():
             if nm != sheet or not _CONNECTOR.search(fml):
                 continue
+            if (nm, r, c) in passthrough_backing:
+                continue    # a front passthrough displays this — write the front, not here
             cv = cell_cached.get((sheet, r, c), cell_val.get((sheet, r, c)))
             if not _numeric(cv):
                 continue
@@ -857,6 +878,13 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 continue
             _emit(c, r, None)
             connector_inputs += 1
+
+        # 4) Defaulted-input passthroughs on this sheet (see passthrough.py): emit
+        #    the front cell; _emit's cascade upgrades it computed→sourced. Backing
+        #    cells were suppressed in pass 3, so no double-count.
+        for (pnm, pr, pc) in passthrough_inputs:
+            if pnm == sheet and (sheet, f"{column_letter(pc)}{pr}") not in seen:
+                _emit(pc, pr, None)
 
     if orphan_cells:
         flags.append(f"{orphan_cells} input cells got no period (no header row above them) — review period detection.")
@@ -886,6 +914,12 @@ def derive_data_model(template_id: str) -> DataModelResult:
             f"{connector_inputs} connector-fed financial cells enumerated as replaceable inputs "
             "('sourced') — a new data upload overwrites the fetched value. Mapping them to a "
             "source still needs period/scenario resolution on the connected sheets."
+        )
+    if passthrough_count:
+        flags.append(
+            f"{passthrough_count} defaulted-input cells (a front formula displaying a single "
+            "backend input point) enumerated as replaceable inputs ('sourced') — population "
+            "writes the front cell directly; the backend cell it displays is suppressed."
         )
     if config_by_kind:
         detail = ", ".join(f"{k}: {n}" for k, n in sorted(config_by_kind.items()))

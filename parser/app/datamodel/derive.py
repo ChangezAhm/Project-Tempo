@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 9
+DERIVATION_VERSION = 10   # v10: defaulted-input passthroughs + scaffolding-label filter
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -187,6 +187,32 @@ def _is_control_label(label: str | None) -> bool:
 def _is_placeholder_label(label: str | None) -> bool:
     t = (label or "").strip()
     return bool(t) and any(rx.search(t) for rx in _PLACEHOLDER_RES)
+
+
+# SCAFFOLDING labels are not financial metrics at ALL — a helper/flag column
+# ('L', 'F'), a dropdown instruction ('Please select or type in…'), a data-TYPE
+# word ('Integer', 'Currency'), a settings label ('Metric Attribute', 'Show
+# Unprotected Cell'), a comment cell, or a raw cell/range reference ('$L$1:$BS$52').
+# They only pollute populate demand as unmappable metrics. Unlike control/
+# placeholder labels this OVERRIDES a connector/formula: a connector feeding a
+# scaffolding row is still not data.
+_JUNK_TYPE_WORDS = {"integer", "decimal", "boolean", "currency", "date",
+                    "percentage", "true", "false", "string", "double", "float"}
+_JUNK_RES = [
+    re.compile(r"(?i)please\s+(?:select|type)|leave\s+as\s+blank|type\s+in\s+or"),
+    re.compile(r"(?i)\battributes?\b|\bunprotected\b"),
+    re.compile(r"(?i)\bcomments?\b"),
+    re.compile(r"^\$?[A-Z]{1,3}\$?\d+(?:\s*:\s*\$?[A-Z]{1,3}\$?\d+)?$"),
+]
+
+
+def _is_junk_label(label: str | None) -> bool:
+    t = (label or "").strip()
+    if len(t) <= 1:
+        return True
+    if t.lower() in _JUNK_TYPE_WORDS:
+        return True
+    return any(rx.search(t) for rx in _JUNK_RES)
 
 
 def _numeric(v) -> bool:
@@ -340,6 +366,11 @@ def _classify_category(metric_label: str | None, formula: str, sec_cat: str | No
       - other formula → computed (a calculated output — never overwritten);
       - blank/literal on a non-input sheet (role gate) → staging;
       - blank/literal → data."""
+    # Scaffolding (helper/flag columns, dropdown instructions, type words, settings,
+    # comments, raw refs) is never a data input — drop it before anything else, even
+    # a connector, so it can't pollute populate demand as an unmappable metric.
+    if _is_junk_label(metric_label):
+        return "config", "scaffolding"
     is_connector = bool(_CONNECTOR.search(formula or ""))
     cfg_kind = ("control" if _is_control_label(metric_label)
                 else "placeholder" if _is_placeholder_label(metric_label) else None)

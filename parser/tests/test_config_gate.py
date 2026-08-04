@@ -5,7 +5,9 @@ financial metric is never misclassified."""
 
 from app.datamodel.derive import (
     DERIVATION_VERSION,
+    _classify_category,
     _is_control_label,
+    _is_junk_label,
     _is_placeholder_label,
 )
 from app.datamodel.merge import apply_corrections
@@ -27,6 +29,23 @@ def test_placeholder_labels_detected():
         assert _is_placeholder_label(lbl), lbl
 
 
+# --- scaffolding / junk labels (never a data input, even on a connector) -----
+def test_junk_labels_detected():
+    for lbl in ["L", "F", "Metric Attribute", "Show Unprotected Cell",
+                "Please select or type in or leave as blank (3)",
+                "Attributes & Data Actions", "Integer", "Date", "Currency", "Decimal",
+                "Leverage analysis comment", "Covenant block comments", "$L$1:$BS$52",
+                "AD20", "$AD$20"]:
+        assert _is_junk_label(lbl), lbl
+
+
+def test_junk_overrides_connector():
+    # a connector feeding a scaffolding row is still not a fillable input
+    cat, kind = _classify_category("Metric Attribute", "=_xldudf_CX_GET(a,b,c)",
+                                   None, "input", "PL", set())
+    assert cat == "config" and kind == "scaffolding"
+
+
 # --- HIGH PRECISION: real financial metrics are never caught -----------------
 def test_real_metrics_are_never_classified_config():
     real = [
@@ -39,6 +58,7 @@ def test_real_metrics_are_never_classified_config():
     for lbl in real:
         assert not _is_control_label(lbl), f"control FP: {lbl}"
         assert not _is_placeholder_label(lbl), f"placeholder FP: {lbl}"
+        assert not _is_junk_label(lbl), f"junk FP: {lbl}"
 
 
 def test_empty_label_is_neither():

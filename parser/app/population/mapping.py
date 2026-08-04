@@ -92,7 +92,9 @@ _SYSTEM = (
     '"assumption":"...|null","sign_flip":false,"confidence":0.0,"note":"..."}]}'
 )
 
-_BATCH = 80  # template metrics per call; the full series catalogue rides along each time
+_BATCH = 25  # template metrics per call; the full series catalogue rides along each
+             # time, so a large batch overflows the output cap (max_tokens) and the
+             # whole chunk fails — keep it small enough that the mapping JSON fits.
 
 
 def _series_lines(catalogue: dict[str, Series]) -> str:

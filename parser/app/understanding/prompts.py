@@ -32,8 +32,10 @@ values, and formulas. Format:
    - GAPS in row numbers are blank rows. Authors use blank rows as section \
 separators — treat a gap of 2+ rows as a likely section boundary.
    - Markers: `*` bold · `›N` indent depth N · `[in]` input cell (input-style fill, \
-or governed by a data validation) · `[unlocked]` cell the author marked editable \
-(unlocked) — a strong input signal, even when sheet protection is off
+or governed by a data validation) · `[fill]` cell with a visible solid fill that is \
+NOT an input colour (section shading, status/hardcode colour schemes — author \
+intent, but not by itself an input signal) · `[unlocked]` cell the author marked \
+editable (unlocked) — a strong input signal, even when sheet protection is off
    - `[mrg:A5:F5]` value sits in a merged range anchored at this cell; merged \
 titles and period headers visually span the whole range
    - `r{row}[grp:N]` BEFORE the colon is the row's Excel outline/grouping level N — \

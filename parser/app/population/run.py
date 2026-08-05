@@ -20,7 +20,8 @@ from app.datamodel.persist import derive_and_persist, get_data_model
 from app.population import source_cache
 from app.population.apply import apply_links
 from app.population.catalogue import build_catalogue, catalogue_from_understanding, effective_value
-from app.population.periods import parse_any_date
+from app.population.periods import parse_any_date, sheet_grains
+from app.population.schema import metric_key
 from app.population.cost import SpendCapExceeded, SpendGuard, default_cap_usd, set_guard
 from app.population.context import load_context
 from app.population.mapping import estimate_mapping_usd, map_metrics
@@ -70,7 +71,7 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
     gated_cells = sum(1 for f in dm["facts"] if f.get("category") == "staging")
     metrics: dict[str, dict] = {}
     for f in inputs:
-        key = f.get("canonical_metric") or f.get("metric_label")
+        key = metric_key(f)
         # A pure positional fallback label ('row 25') carries no meaning for the
         # mapper — it can never match a source series by name, so it would only
         # waste a mapping slot and pollute the report. The cell stays a fact (it's
@@ -100,7 +101,7 @@ def build_demand(template_id: str, as_of_date: str | None) -> tuple[dict, list[d
     scenarios = sorted({f["scenario"] for f in inputs if f.get("scenario") and f["scenario"] != "unknown"})
     # DOMINANT grain, not alphabetical: a single YTD/annual column used to make
     # sorted()[0] say 'annual' for a monthly template, sending the dateless
-    # binding fallback hunting for year columns.
+    # positional-alignment fallback hunting for year columns.
     grain_votes = Counter(f.get("period_type") for f in inputs if f.get("period_type"))
     stored = (dm["model"] or {}).get("period_grains") or ["monthly"]
     period_grain = grain_votes.most_common(1)[0][0] if grain_votes else stored[0]
@@ -274,14 +275,14 @@ def _load_template_snap(version_id: str) -> dict | None:
 
 
 def _template_context(snap: dict | None) -> tuple[dict, dict, dict]:
-    """From the template snapshot, the maps binding needs:
+    """From the template snapshot, the maps verify/execute need:
       - numfmt[(sheet, A1)]      -> number format (kind/currency for scale)
       - mags[(sheet, row)]       -> numeric magnitudes already in the row (scale by
                                     what the cell holds, not by its unit label)
       - dates_by_col[(sheet,col)]-> the column's real period date, read from the
                                     sheet's timeline header row, so periods align
                                     by actual date.
-    Best-effort — empty on any failure (binding then uses label scale + positional)."""
+    Best-effort — empty on any failure (execute then uses label scale + positional)."""
     numfmt: dict[tuple[str, str], str] = {}
     mags: dict[tuple[str, int], list[float]] = defaultdict(list)
     dates_by_col: dict[tuple[str, int], object] = {}
@@ -312,16 +313,15 @@ def _attach_slot_facts(metrics: list[dict], facts: list[dict],
     """Attach per-metric SLOT FACTS for the planner: which sheets demand this
     metric, at what grain, over what date range, and whether the rows already
     hold numbers (scale evidence). Facts only — the planner judges from them."""
-    from app.population.periods import infer_grain
-
-    _numfmt, mags_by_row, dates_by_col = (template_context + ({}, {}, {}))[:3]
+    _numfmt, mags_by_row, dates_by_col = template_context or ({}, {}, {})
     sheet_dates: dict[str, list] = {}
     for (sh, _c), d in dates_by_col.items():
         sheet_dates.setdefault(sh, []).append(d)
+    grains = sheet_grains(dates_by_col)
     per_metric: dict[str, dict[str, int]] = {}
     has_values: dict[str, bool] = {}
     for f in facts:
-        k = f.get("canonical_metric") or f.get("metric_label")
+        k = metric_key(f)
         if not k:
             continue
         sh = f.get("sheet_name")
@@ -336,7 +336,7 @@ def _attach_slot_facts(metrics: list[dict], facts: list[dict],
         for sh, n in sheets.items():
             ds = sorted(sheet_dates.get(sh, []))
             if ds:
-                g = infer_grain(ds) or "?"
+                g = grains.get(sh) or "?"
                 parts.append(f"{sh}: {g}ly {ds[0]:%Y-%m}..{ds[-1]:%Y-%m} ({n} slots)")
             else:
                 parts.append(f"{sh}: undated ({n} slots)")
@@ -352,7 +352,7 @@ def _build_source_catalogue(snapshot: dict, source_periods: dict, content_hash: 
     falling back to deterministic detection if understanding yields nothing. A spend
     cap breach is never swallowed. ``source_path`` (the uploaded workbook on disk)
     lets understanding render sheet images for layout context. Every source column
-    is kept — scenario is enforced later, in binding, and a budget column can only
+    is kept — scenario is enforced later, in execute, and a budget column can only
     fill a slot that explicitly asks for budget; nothing is dropped by tag here.
 
     Returns (catalogue, source_kind)."""
@@ -410,7 +410,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                     deep_rescue: bool = True) -> dict:
     """Core: understand the SOURCE with AI (period columns + data series + units,
     cached by file), build the catalogue from that, ask the LLM to map template
-    metrics → source series, then bind periods/scale(by magnitude)/sign and read
+    metrics → source series, then verify+execute the plan (periods/scale-by-magnitude/sign) and read
     the real (cached) values from the snapshot. The template is NOT re-read; we only
     need its workbook to write the values into. Everything is under the spend cap."""
     # Arm the spend firewall for this run (TEMPO_MAX_RUN_USD): source-understanding
@@ -535,7 +535,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         # DEEP RESCUE: give each metric the fast batched pass could NOT place its own
         # focused agent (one metric + the whole catalogue), run in parallel. Their
         # deeper opinions overlay the main map for those metrics and then flow through
-        # the same bind -> single-use guard -> reconcile/review machinery. Best-effort,
+        # the same verify -> execute -> reconcile/review machinery. Best-effort,
         # spend-capped; a metric that isn't rescued stays exactly as the main pass had it.
         if deep_rescue and catalogue:
             mapped_ok = {m.metric for m in metric_maps if m.series_id}
@@ -557,7 +557,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         # each metric feeds. Reuse of a source series is blocked only when two
         # metrics share a total (would inflate it); a KPI mirrored across sheets
         # feeds no shared total and fills freely. None (no formula graph) => the
-        # guard falls back to the conservative global block inside bind().
+        # guard falls back to the conservative global block in verify_plan.
         from app.population.aggregation import metric_totals
         try:
             agg_membership = metric_totals(target_inputs, t_snap)
@@ -569,13 +569,15 @@ def _run_population(target_template_id: str, source_snapshot: dict,
 
         # ---- FILL-PLAN PATH (docs/Fill-Plan-Architecture.md — the only path) ----
         # plan -> contract overlay -> verify -> one repair round -> execute.
-        from app.population.contract import apply_decisions, load_decisions
+        from app.population.contract import (
+            apply_decisions, load_decisions, source_fingerprint)
         from app.population.execute import execute_plan
         from app.population.mapping import repair_plan
         from app.population.verify import blocked_metrics, verify_plan
 
         plan_issues: list = []
-        decisions = load_decisions(t_vid)
+        src_fp = source_fingerprint(source_snapshot)
+        decisions = load_decisions(t_vid, fingerprint=src_fp)
         n_dec = apply_decisions(metric_maps, decisions)
         if n_dec:
             routing["contract_decisions_applied"] = n_dec
@@ -657,7 +659,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
                 logger.warning("could not file sign-violation review items: %s", e)
 
-        # Upgrade apply_links' generic "no source match" to binding's precise reason
+        # Upgrade apply_links' generic "no source match" to the executor's precise reason
         # (low confidence / no source period / unit unresolved / currency mismatch).
         reasons = {(u.get("template_sheet"), (u.get("template_cell") or "").upper()): u.get("reason")
                    for u in bind_unmatched}
@@ -684,12 +686,12 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         # feeds every future run via the mapping context channel (load_context).
         reconciled_metrics = [{"metric": label_by_key.get(m.metric, m.metric),
                                "assumption": m.assumption or ""}
-                              for m in metric_maps if getattr(m, "status", "direct") == "reconcile"]
+                              for m in metric_maps if m.status == "reconcile"]
         # needs_decision: the source has related data but assigning it needs a human
         # choice we must not guess — asked (never filled), so the user decides once.
         open_questions = [{"metric": label_by_key.get(m.metric, m.metric),
                            "question": m.assumption or m.note or ""}
-                          for m in metric_maps if getattr(m, "status", "direct") == "needs_decision"]
+                          for m in metric_maps if m.status == "needs_decision"]
         if reconciled_metrics or open_questions:
             try:
                 from app.review.items import make_item
@@ -727,7 +729,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                          and i.severity == "question"]
             if scen_gaps:
                 metrics = sorted({label_by_key.get(i.metric, i.metric) for i in scen_gaps})
-                scens = sorted({i.detail.split(" slots", 1)[0].rsplit(" ", 1)[-1] for i in scen_gaps})
+                scens = sorted({i.scenario for i in scen_gaps if i.scenario})
                 plan_q_items.append(make_item(
                     source="populate-plan", kind="judgment",
                     question=(f"The template has {'/'.join(scens)} columns for "
@@ -748,11 +750,21 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 if i.severity != "question":
                     continue
                 field = _DEC_FIELD.get(i.code)
-                spec = decision_spec(i.metric, field, i.suggested_resolution) if field else None
+                # unit answers belong to the SOURCE FAMILY ("this pack is in
+                # '000s"), not the template — scoped so an unrelated file never
+                # inherits them; everything else is template-scoped.
+                scope = "source_format" if field == "source_unit" else "template"
+                spec = (decision_spec(i.metric, field, i.suggested_resolution,
+                                      scope=scope, fingerprint=src_fp) if field else None)
                 why = f"[{i.code}] " + (f"Affects {len(i.cells)} cell(s), e.g. "
                                         f"{', '.join(i.cells[:4])}." if i.cells else "")
+                # source_format questions carry the family fingerprint in their
+                # item_key source — answering source A's unit question must not
+                # suppress the SAME question for source family B.
+                item_src = (f"populate-plan:{src_fp[:8]}" if scope == "source_format"
+                            else "populate-plan")
                 plan_q_items.append(make_item(
-                    source="populate-plan", kind="judgment",
+                    source=item_src, kind="judgment",
                     question=f"'{label}' — {i.detail}. How should this fill?",
                     why=why, affected={"metrics": [i.metric], "cells": i.cells[:12]},
                     suggested_answer=i.suggested_resolution, check_spec=spec))
@@ -934,7 +946,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
 
 def _detect_source_periods(parsed) -> dict[str, list[dict]]:
     """Per-sheet period columns from deterministic detection — real dates the
-    binder aligns template slots against. {sheet: [{col, parsed_date, period_type}]}."""
+    executor aligns template slots against. {sheet: [{col, parsed_date, period_type}]}."""
     out: dict[str, list[dict]] = {}
     for p in detect_structure(parsed).periods:
         out.setdefault(p.sheet_name, []).append(

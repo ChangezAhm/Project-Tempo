@@ -136,7 +136,7 @@ def test_bind_uses_template_magnitudes_to_scale_with_no_labels():
     cat = build_catalogue(_source(), _periods())
     maps = [MetricMap(metric="revenue", series_id="P&L!r5", confidence=0.9)]
     # template row 10 already holds ~12 (a prior actual) -> scale 1e-6 with NO unit labels
-    ctx = ({("Model", "B10"): "#,##0.0"}, {("Model", 10): [11.9, 12.0]})
+    ctx = ({("Model", "B10"): "#,##0.0"}, {("Model", 10): [11.9, 12.0]}, {})
     links, unmatched = bind([_fact()], cat, maps, _demand(), template_context=ctx)
     assert not unmatched and links[0].unit_scale == 1e-6
     # magnitude-confirmed -> no SCALE review flag

@@ -27,13 +27,11 @@ Pure except the two Supabase helpers (lazy imports, best-effort)."""
 from __future__ import annotations
 
 import logging
-import re
+
+from app.priors import ADJUSTMENT_LEXICON
 
 logger = logging.getLogger(__name__)
 
-_ADJUSTMENT_LEXICON = re.compile(
-    r"(?i)add.?back|one.?off|one.?time|exceptional|non.?recurring|normali[sz]|pro.?forma|"
-    r"run.?rate|restructur|transaction|integration|management fee|stock comp|adjust")
 _RATE_UNIT_KINDS = {"percent", "ratio"}
 
 
@@ -77,7 +75,7 @@ def rank_candidates(region: dict, series_list) -> list:
         label = s.label or ""
         unit_kind = getattr(s.unit, "kind", None)
         if kind == "adjustment_rows":
-            fit = 0 if _ADJUSTMENT_LEXICON.search(label) else 1
+            fit = 0 if ADJUSTMENT_LEXICON.search(label) else 1
         elif kind == "kpi_list":
             fit = 0 if unit_kind in _RATE_UNIT_KINDS else 1
         elif kind == "chart_of_accounts":
@@ -100,7 +98,7 @@ def route_additions(catalogue: dict, metric_maps, regions: list[dict],
 
     used = used_series(metric_maps)
     unavailable_keys = {m.metric for m in metric_maps
-                        if getattr(m, "status", "direct") in ("unavailable", "needs_decision")
+                        if m.status in ("unavailable", "needs_decision")
                         and not m.series_id}
     hosted = region_hosted_metrics(target_inputs, regions)
 

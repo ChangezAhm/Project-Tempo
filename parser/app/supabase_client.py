@@ -229,6 +229,36 @@ def replace_rows(table: str, version_id: str, rows: list[dict], chunk: int = 500
         sb.table(table).insert(rows[i:i + chunk]).execute()
 
 
+def replace_data_points(version_id: str, rows: list[dict], chunk: int = 500) -> None:
+    """replace_rows for template_data_points, with a pre-migration-0011 fallback.
+    Databases lacking the category_source column reject the insert (PostgREST
+    PGRST204) AFTER the delete has already run — which would wipe the version's
+    facts — so the insert is retried once with the new field stripped (logged
+    loudly), same pattern as replace_extensible_regions' pre-0010 fallback."""
+    sb = get_client()
+    sb.table("template_data_points").delete().eq("template_version_id", version_id).execute()
+    strip = False
+    for i in range(0, len(rows), chunk):
+        batch = rows[i:i + chunk]
+        if strip:
+            batch = [{k: v for k, v in r.items() if k != "category_source"} for r in batch]
+        try:
+            sb.table("template_data_points").insert(batch).execute()
+        except Exception as e:  # noqa: BLE001 — likely the missing 0011 column
+            msg = str(e)
+            if strip or ("category_source" not in msg and "PGRST204" not in msg):
+                raise
+            logger.warning(
+                "data-point insert failed (%s) — retrying WITHOUT the migration-0011 "
+                "column (category_source). Apply supabase/migrations/"
+                "0011_category_source.sql to persist category provenance.", e)
+            strip = True
+            sb.table("template_data_points").insert(
+                [{k: v for k, v in r.items() if k != "category_source"} for r in batch]
+            ).execute()
+
+
+
 # --- Layer 3 understanding: snippet images + persistence -------------------
 
 SNIPPET_BUCKET = "template-snippets"

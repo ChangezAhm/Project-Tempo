@@ -15,10 +15,12 @@ the planner (intent) or to SCALE_CONFLICT/SIGN_CONFLICT evidence handling.
 
 from __future__ import annotations
 
+from collections import Counter
+
 from app.population.catalogue import Series
 from app.population.numfmt import parse_number_format
-from app.population.periods import align_slot, infer_grain, parse_iso_period
-from app.population.schema import CellLink, MetricMap, PlanIssue
+from app.population.periods import align_slot, parse_iso_period, sheet_grains
+from app.population.schema import CellLink, MetricMap, PlanIssue, metric_key
 from app.population.units import reconcile_scale, resolve_unit
 
 
@@ -31,10 +33,6 @@ def _col_letters(col: int) -> str:
         col, rem = divmod(col - 1, 26)
         s = chr(65 + rem) + s
     return s
-
-
-def _metric_key(fact: dict) -> str | None:
-    return fact.get("canonical_metric") or fact.get("metric_label")
 
 
 def _sum_samples(samples: list[list[float]]) -> list[float]:
@@ -93,7 +91,7 @@ def _unmatched(fact: dict, reason: str) -> dict:
     return {
         "template_sheet": fact.get("sheet_name"),
         "template_cell": fact.get("cell"),
-        "metric": _metric_key(fact),
+        "metric": metric_key(fact),
         "period_index": fact.get("period_index"),
         "scenario": fact.get("scenario"),
         "reason": reason,
@@ -187,14 +185,9 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
                  ) -> tuple[list[CellLink], list[dict], list[PlanIssue]]:
     """Returns (links, unmatched, issues). ``blocked`` maps metrics with
     unresolved blocking issues to a reason — their cells stay blank, explained."""
-    tc = template_context or ({}, {}, {})
-    numfmt_by_cell, mags_by_row, dates_by_col = (tc + ({}, {}, {}))[:3]
+    numfmt_by_cell, mags_by_row, dates_by_col = template_context or ({}, {}, {})
     blocked = blocked or {}
-
-    sheet_dates: dict[str, list] = {}
-    for (sh, _c), d in dates_by_col.items():
-        sheet_dates.setdefault(sh, []).append(d)
-    sheet_grain = {sh: infer_grain(ds) for sh, ds in sheet_dates.items()}
+    sheet_grain = sheet_grains(dates_by_col)
 
     # one entry per metric (or per metric+scenario when the plan splits them)
     by_metric: dict[str, list[MetricMap]] = {}
@@ -216,13 +209,17 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
     # already hold numbers (target_base = source_base / verified_scale — invariant
     # across source sheets whose own bases differ). Used only to cross-check
     # declarations on EMPTY rows — a conflict asks, it never decides silently.
-    from collections import Counter as _Counter
-    _base_votes: _Counter = _Counter()
+    _base_votes: Counter = Counter()
+    _rows_voted: set[tuple] = set()   # one vote per template ROW, not per cell
     for f in facts:
-        mags = mags_by_row.get((f.get("sheet_name"), f.get("row")))
+        rk = (f.get("sheet_name"), f.get("row"))
+        if rk in _rows_voted:
+            continue
+        mags = mags_by_row.get(rk)
         if not mags:
             continue
-        fl = fill_for(_metric_key(f), (f.get("scenario") or "").strip().lower())
+        _rows_voted.add(rk)
+        fl = fill_for(metric_key(f), (f.get("scenario") or "").strip().lower())
         if fl is None or not fl.series_id:
             continue
         ser = catalogue.get(fl.series_id)
@@ -257,7 +254,7 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
             unmatched.append(_unmatched(
                 f, f"template {f.get('value_role')} row — computed by the template, never written"))
             continue
-        key = _metric_key(f)
+        key = metric_key(f)
         cell_ref = f"{f.get('sheet_name')}!{f.get('cell')}"
         dem_scen = (f.get("scenario") or "").strip().lower()
         fill = fill_for(key, dem_scen)
@@ -283,7 +280,7 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
                 components.append(s2)
         agg = len(components) > 1
         recon_sample = _sum_samples([c.sample for c in components]) if agg else series.sample
-        reconciled = getattr(fill, "status", "direct") == "reconcile"
+        reconciled = fill.status == "reconcile"
 
         # SCENARIO: factual column/variant selection (tags from the source's own
         # understanding); the demanded scenario comes from the template fact.
@@ -292,7 +289,7 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
             components = [series]
             recon_sample = series.sample
             cand_cols = sorted(series.period_cols, key=lambda pc: pc[0])
-        elif dem_scen in ("budget", "forecast") and getattr(series, "scenario", None) == dem_scen:
+        elif dem_scen in ("budget", "forecast") and series.scenario == dem_scen:
             cand_cols = sorted(series.period_cols, key=lambda pc: pc[0])
         else:
             cand_cols = _scenario_columns(series, dem_scen)

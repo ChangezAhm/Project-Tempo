@@ -14,7 +14,8 @@ from __future__ import annotations
 import re
 
 # When these dimensions are patched, mark their provenance.
-_SOURCE_FIELD = {"scenario": "scenario_source", "basis": "basis_source"}
+_SOURCE_FIELD = {"scenario": "scenario_source", "basis": "basis_source",
+                 "category": "category_source"}
 _LLM = "llm-enrichment"           # created_by marker for the LLM-enrichment pass
 _EMPTY = {None, "", "unknown"}    # values an LLM fill is allowed to overwrite
 _WS = re.compile(r"\s+")
@@ -36,8 +37,17 @@ def _matches(fact: dict, match: dict) -> bool:
     return all(_norm(fact.get(k)) == _norm(v) for k, v in match.items())
 
 
-def _is_empty(field: str, value) -> bool:
-    return value in _EMPTY or (field == "category" and value == "data")
+def _llm_may_write(field: str, fact: dict) -> bool:
+    """Where an LLM-enrichment patch may land (Fill-Plan authority model):
+    empty/default values always; and a category decided by a label LEXICON —
+    that is a PRIOR, not a fact, so the model's judgment may override it
+    (a user correction still beats both)."""
+    value = fact.get(field)
+    if value in _EMPTY or (field == "category" and value == "data"):
+        return True
+    if field == "category" and str(fact.get("category_source") or "").startswith("lexicon"):
+        return True
+    return False
 
 
 def apply_corrections(facts: list[dict], corrections: list[dict]) -> tuple[list[dict], set[str], list[dict]]:
@@ -64,8 +74,8 @@ def apply_corrections(facts: list[dict], corrections: list[dict]) -> tuple[list[
                 continue
             hit = True
             for k, v in patch.items():
-                if fill_only and not _is_empty(k, f.get(k)):
-                    continue   # don't let an LLM guess override a deterministic/user value
+                if fill_only and not _llm_may_write(k, f):
+                    continue   # an LLM judgment never overrides a FACT or a user value
                 f[k] = v
                 if k in _SOURCE_FIELD:
                     f[_SOURCE_FIELD[k]] = src

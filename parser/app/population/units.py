@@ -21,6 +21,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 
 # THE currency lexicon — ordered, distinctive tokens first. Single source of
 # truth (catalogue and derive import it; numfmt keeps its format-symbol map).
@@ -29,7 +30,6 @@ CCY_TOKENS = [
     ("eur", "EUR"), ("€", "EUR"),
     ("gbp", "GBP"), ("£", "GBP"),
 ]
-_CCY_TOKENS = CCY_TOKENS   # internal alias
 
 # scale patterns, checked biggest-first; values are "ones per displayed unit"
 _SCALE_PATTERNS: list[tuple[re.Pattern, float]] = [
@@ -53,10 +53,16 @@ class Unit:
 def resolve_unit(text: str | None) -> Unit:
     """Parse a unit label ('$m', "EUR'000", 'EUR millions', '%', 'x', None) into a
     Unit. Money with no explicit scale word is treated as plain ones (base=1),
-    which is the common 'raw values' case."""
+    which is the common 'raw values' case. Hot path (called per fact/cell), so
+    the parse is cached; input is coerced to str for hashability."""
     if text is None:
         return Unit(None, None, "unknown")
-    raw = str(text).strip()
+    return _resolve_unit(str(text))
+
+
+@lru_cache(maxsize=512)
+def _resolve_unit(raw: str) -> Unit:
+    raw = raw.strip()
     if not raw:
         return Unit(None, None, "unknown")
     s = raw.lower()
@@ -68,7 +74,7 @@ def resolve_unit(text: str | None) -> Unit:
         return Unit(1.0, None, "ratio")
 
     currency = None
-    for tok, code in _CCY_TOKENS:
+    for tok, code in CCY_TOKENS:
         if tok in s:
             currency = code
             break

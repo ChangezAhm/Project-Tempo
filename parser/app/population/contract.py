@@ -1,24 +1,41 @@
 """Template Contract — learned decisions that replay deterministically
-(docs/Fill-Plan-Architecture.md §2.6, v1: metric/template scope).
+(docs/Fill-Plan-Architecture.md §2.6).
 
 A question the verifier files carries a structured ``check_spec.decision``
-({metric, field, proposal}). When the user answers it (one tap on the suggested
-answer, or a short text), the answer is parsed back into a concrete field value
-here and OVERLAID onto every future plan before verification — the plan cannot
-contradict a confirmed decision, and the same question is never asked twice
-(the content-addressed item_key already suppresses re-filing).
+({metric, field, proposal, scope, source_fingerprint}). When the user answers
+it (one tap on the suggested answer, or a short text), the answer is parsed
+back into a concrete field value here and OVERLAID onto every future plan
+before verification — the plan cannot contradict a confirmed decision, and the
+same question is never asked twice (the content-addressed item_key already
+suppresses re-filing).
+
+SCOPES (§2.6): ``template`` decisions (rollup, mapping confirmations) apply on
+every run of this template; ``source_format`` decisions (units — "this pack is
+in USD'000") apply only when the incoming source belongs to the same FAMILY,
+fingerprinted by its sheet-name set — stable across a pack's monthly editions,
+different for an unrelated workbook. GLOBAL promotion is deliberately not a
+code path: it happens by adding a prior (with multi-template evidence) via the
+rule ledger.
 
 This is the deterministic layer the product wants: built from confirmed user
-intent, scoped to the template — never promoted to a global rule by code.
+intent — never promoted to a global rule by code.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 
 from app.population.schema import MetricMap
 
 logger = logging.getLogger(__name__)
+
+
+def source_fingerprint(snapshot: dict) -> str:
+    """Source FAMILY identity: hash of the sorted sheet names. A reporting
+    pack's monthly editions share it; a different system's export won't."""
+    names = sorted((s.get("name") or "") for s in (snapshot or {}).get("sheets", []))
+    return hashlib.sha1("|".join(names).encode("utf-8")).hexdigest()[:16]
 
 _CONFIRM = ("yes", "approve", "approved", "confirm", "confirmed", "ok", "keep", "correct")
 
@@ -26,9 +43,14 @@ _CONFIRM = ("yes", "approve", "approved", "confirm", "confirmed", "ok", "keep", 
 _FIELDS = {"rollup", "source_unit", "target_unit", "sign_flip", "confirmed", "scenario"}
 
 
-def decision_spec(metric: str, field: str, proposal=None) -> dict:
-    """check_spec payload for a filed question, so the answer parses back."""
-    return {"decision": {"metric": metric, "field": field, "proposal": proposal}}
+def decision_spec(metric: str, field: str, proposal=None, *, scope: str = "template",
+                  fingerprint: str | None = None) -> dict:
+    """check_spec payload for a filed question, so the answer parses back.
+    scope='source_format' pins the decision to the filing run's source family."""
+    dec: dict = {"metric": metric, "field": field, "proposal": proposal, "scope": scope}
+    if scope == "source_format" and fingerprint:
+        dec["source_fingerprint"] = fingerprint
+    return {"decision": dec}
 
 
 def parse_answer(field: str, answer: str, proposal=None):
@@ -64,9 +86,12 @@ def parse_answer(field: str, answer: str, proposal=None):
     return None
 
 
-def load_decisions(version_id: str) -> dict[str, dict]:
+def load_decisions(version_id: str, fingerprint: str | None = None) -> dict[str, dict]:
     """metric -> {field: value} from ANSWERED review items carrying a decision
-    spec. Best-effort — no decisions is a normal state, never an error."""
+    spec. ``fingerprint`` = the CURRENT source's family fingerprint; a
+    source_format-scoped decision applies only when it matches (a unit answer
+    for last month's pack must not silently rescale an unrelated file).
+    Best-effort — no decisions is a normal state, never an error."""
     try:
         from app import supabase_client as sb
         items = sb.list_review_items(version_id)
@@ -80,6 +105,8 @@ def load_decisions(version_id: str) -> dict[str, dict]:
         dec = ((it.get("check_spec") or {}).get("decision") or {})
         metric, field = dec.get("metric"), dec.get("field")
         if not metric or field not in _FIELDS:
+            continue
+        if dec.get("scope") == "source_format" and dec.get("source_fingerprint") != fingerprint:
             continue
         answer = ((it.get("resolution") or {}).get("answer") or "")
         val = parse_answer(field, answer, dec.get("proposal"))
@@ -101,16 +128,18 @@ def apply_decisions(fills: list[MetricMap], decisions: dict[str, dict]) -> int:
         dec = decisions.get(m.metric)
         if not dec:
             continue
+        changed = 0   # per fill — the note marks only fills a decision touched
         for field, val in dec.items():
             if field == "confirmed":
                 if val and m.confidence < 0.9:
                     m.confidence = 0.9   # user confirmed the mapping — floor cleared
-                    applied += 1
+                    changed += 1
                 continue
             if getattr(m, field, None) != val:
                 setattr(m, field, val)
-                applied += 1
+                changed += 1
         note = "[contract: confirmed decision applied]"
-        if applied and (m.note or "") .find(note) < 0:
+        if changed and note not in (m.note or ""):
             m.note = f"{m.note} {note}".strip() if m.note else note
+        applied += changed
     return applied

@@ -7,10 +7,10 @@ free, end to end (with the single LLM 'meaning' step stubbed as a fixed mapping)
 from datetime import date
 
 from app.population.apply import apply_links
-from planpath import _col_letters, bind
+from planpath import _col_letters, bind, pick_column, pick_columns
 from app.population.catalogue import build_catalogue
 from app.population.mapping import _parse
-from app.population.periods import parse_iso_period, pick_column, pick_columns
+from app.population.periods import parse_iso_period
 from app.population.schema import CellLink, MetricMap
 
 

@@ -2,7 +2,7 @@
 
 The LLM never reads or writes numbers: its only output is a meaning mapping
 (MetricMap) from a template metric to a source SERIES. Deterministic code
-(catalogue → binding → apply) reads the real value from the source snapshot at the
+(catalogue → verify/execute → apply) reads the real value from the source snapshot at the
 bound address, scales/signs it, and writes it into the template cell
 with full attribution.
 """
@@ -61,8 +61,8 @@ class PopulationResult(_M):
 
 class MetricMap(_M):
     """One template metric mapped to one source SERIES (a labelled row across the
-    source's period columns). The LLM decides MEANING only; deterministic binding
-    reads the values, scales, and aligns periods."""
+    source's period columns). The LLM decides MEANING only; deterministic
+    verify/execute reads the values, scales, and aligns periods."""
     metric: str                   # template metric key (canonical_metric or metric_label)
     series_id: str | None = None  # source series id from the catalogue, or null if none fits
     # AGGREGATION: extra source series ids to SUM with series_id, used ONLY when the
@@ -80,7 +80,7 @@ class MetricMap(_M):
     # ROLLUP semantics: how a coarser template period is built from finer source
     # periods (months -> quarter/year) when grains differ. 'sum' = period flow,
     # 'end' = point-in-time stock (period-end value), 'avg' = rate/ratio. None =
-    # unknown; binding then falls back to basis/unit heuristics or leaves blank.
+    # unknown; verify raises GRAIN_UNBRIDGEABLE when grains differ.
     rollup: str | None = None
     # --- FILL-PLAN fields (docs/Fill-Plan-Architecture.md §2.2): the COMPLETE
     # semantic decision, series-level. The executor computes from these; it never
@@ -101,8 +101,10 @@ class MappingOut(_M):
     mappings: list[MetricMap] = []
 
 
-# Fill-Plan name for the same record: one COMPLETE series-level decision.
-SeriesFill = MetricMap
+def metric_key(fact: dict) -> str | None:
+    """The demand key a template fact maps under: canonical metric first, the
+    written label as fallback — ONE definition for demand, verify and execute."""
+    return fact.get("canonical_metric") or fact.get("metric_label")
 
 
 class PlanIssue(_M):
@@ -116,6 +118,7 @@ class PlanIssue(_M):
                                   # SIGN_CONFLICT | DOUBLE_COUNT | LOW_CONFIDENCE | SOURCE_GAP
     detail: str
     severity: str = "question"    # repair | default | question | block
+    scenario: str | None = None    # the demanded scenario at issue (SCENARIO_NO_SOURCE)
     suggested_resolution: str | None = None
     resolution: str | None = None  # set when tier-2 auto-resolved (visible, never silent)
     cells: list[str] = []          # affected template cells ("Sheet!A1"), for batching

@@ -39,11 +39,14 @@ def test_junk_labels_detected():
         assert _is_junk_label(lbl), lbl
 
 
-def test_junk_overrides_connector():
-    # a connector feeding a scaffolding row is still not a fillable input
+def test_connector_beats_junk_label_and_is_flagged():
+    # Authority model (Fill-Plan Phase 3): the connector formula is a FACT — it
+    # self-describes a system-fed input — and a junk-looking label is only a
+    # PRIOR. The fact wins; the mismatch is kept visible via the cfg_kind marker
+    # (and enrichment/user corrections can still reclassify it).
     cat, kind = _classify_category("Metric Attribute", "=_xldudf_CX_GET(a,b,c)",
                                    None, "input", "PL", set())
-    assert cat == "config" and kind == "scaffolding"
+    assert cat == "sourced" and kind == "junk_label_connector"
 
 
 # --- HIGH PRECISION: real financial metrics are never caught -----------------
@@ -54,6 +57,9 @@ def test_real_metrics_are_never_classified_config():
         "Headcount (FTE)", "Annual Recurring Revenue", "Net Revenue Retention %",
         "Sales & Marketing", "Depreciation & Amortisation", "Restructuring add-back",
         "Cash & Equivalents", "Senior Debt", "Monthly Churn %", "Revenue per FTE",
+        # bare 'Other' lines are real P&L rows — the strict placeholder bank
+        # must not silently drop them from populate demand
+        "Other", "Others", "Other income",
     ]
     for lbl in real:
         assert not _is_control_label(lbl), f"control FP: {lbl}"

@@ -11,7 +11,7 @@ the source inventory deterministically here:
 Each series records its sheet, row, label, the period columns (col index + real
 date + grain), and a resolved Unit (scale + currency) inferred from the label and
 sheet — never from the LLM. The LLM's only job downstream is to say which series
-*means* which template metric; binding reads the actual values from the snapshot.
+*means* which template metric; execute reads the actual values from the snapshot.
 """
 
 from __future__ import annotations
@@ -53,12 +53,12 @@ class Series:
     sample: list[float] = field(default_factory=list)
     # per-column scenario, keyed by col_index: 'actual' | 'budget' | 'forecast'.
     # Scenario comes from the source's OWN labelling — never from the as-of date.
-    # Binding uses it only to honour a template slot that explicitly asks for a
+    # Execute uses it only to honour a template slot that explicitly asks for a
     # non-actual scenario; unset columns default to 'actual'.
     col_scenario: dict[int, str] = field(default_factory=dict)
     # scenario-by-ROW sources (a bare 'Budget' row under each metric row): the
     # variant rows, keyed by scenario. Attached to the METRIC row's series and
-    # hidden from the mapper — binding resolves the variant for budget/forecast slots.
+    # hidden from the mapper — execute resolves the variant for budget/forecast slots.
     variants: dict[str, "Series"] = field(default_factory=dict)
     # the whole ROW's scenario when tagged (by the AI's per-row judgment or an
     # explicit label); None = untagged/actual-ish.
@@ -104,7 +104,7 @@ def _norm_label(s: str | None) -> str:
 def _attach_scenario_variant_rows(out: dict[str, "Series"],
                                   ai_tags: dict[str, tuple[str | None, str | None]] | None = None) -> None:
     """Scenario-by-ROW layout: a row that carries another metric's budget/forecast
-    figures is attached to that parent series (parent.variants); binding picks the
+    figures is attached to that parent series (parent.variants); execute picks the
     right variant per template slot.
 
     WHO decides is layered (layouts vary too much for rules alone):
@@ -323,7 +323,7 @@ def _unit_from_llm(unit_str, currency, number_format, sheet_ccy, samples=None) -
     a percent-looking format, then blocked by the never-mix-% safety rule.)
 
     The AI's declared SCALE ("USD'000" -> base=1000) is kept: magnitude
-    reconciliation in binding still overrides it whenever the template row holds
+    reconciliation in execute still overrides it whenever the template row holds
     real numbers, but on an EMPTY template row the label math is all there is —
     flattening the base to 1 there wrote thousands-denominated sources in ~1000x
     too small (the 0.01 balance-sheet fills)."""
@@ -357,9 +357,9 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
 
     Every source column is kept and tagged with its own scenario (actual / budget /
     forecast), taken from the source's declared ``kind`` — NOT from the as-of date.
-    Scenario is enforced later, in binding, and only when a template slot explicitly
+    Scenario is enforced later, in execute, and only when a template slot explicitly
     asks for a non-actual scenario; a budget column can never leak into an actual
-    slot because binding matches scenario-to-scenario. ``as_of`` is retained for
+    slot because execute matches scenario-to-scenario. ``as_of`` is retained for
     call compatibility (timeline/vintage) but no longer classifies actual vs
     forecast — a time series carries data before and after the as-of alike."""
     _ = as_of  # no longer used to classify scenario (see docstring)
@@ -394,7 +394,7 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
                 # columns are formula-driven still aligns by date instead of blanking.
                 d = parse_any_date(val_by_rc.get((name, rc[0], rc[1])))
             col = rc[1]
-            # Keep the column whatever its scenario; record the scenario so binding
+            # Keep the column whatever its scenario; record the scenario so execute
             # can honour an explicit budget/forecast demand and keep budget out of
             # actual slots. No column is ever dropped here.
             period_cols.append((col, d, p.get("grain") or "month"))

@@ -76,6 +76,11 @@ class DataPoint(_Model):
     # data point, or a 'staging' cell the sheet-role gate blocked that IS a real
     # input: patch category='data').
     category: str = "data"
+    # WHO decided the category: None = factual (formula/connector/role/blank);
+    # "lexicon:<kind>" = a label-lexicon PRIOR (overridable by LLM enrichment and
+    # by user corrections — the Fill-Plan authority model); "llm" / "user" after
+    # an override.
+    category_source: str | None = None
     # --- provenance / audit ---
     scenario_source: Provenance
     basis_source: Provenance

@@ -30,6 +30,7 @@ from app.datamodel.schema import Basis, DataModelResult, DataPoint, DetectedDime
 from app.pipeline import get_structure
 from app.population.periods import parse_any_date
 from app.population.units import CCY_TOKENS
+from app.priors import is_placeholder_label as _is_placeholder_label
 from app.raw_extraction.column_utils import column_index, column_letter
 from app.raw_extraction.workbook_parser import parse_workbook
 from app.snapshot import workbook_to_snapshot
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 11   # v11: unified date parser (periods.parse_any_date) + shared currency lexicon
+DERIVATION_VERSION = 13   # v13: strict placeholder bank (bare 'Other' is data); junk_label_connector stamped + counted apart
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -163,24 +164,11 @@ _CONTROL_RES = [
     re.compile(r"(?i)\boverride\b|\bflags?\b"),          # …override flags
     re.compile(r"(?i)\btoggle\b|\bsettings?\b|\bconfig\b|\bselector\b"),
 ]
-_PLACEHOLDER_RES = [
-    re.compile(r"(?i)^(?:custom\s+)?(?:kpi|metric|line\s*item|item)(?:\s+(?:label|amount|name))?\s*#?\d+(?:\s*\[[^\]]*\])?\s*$"),
-    re.compile(r"(?i)^(?:kpi|metric|line|item|label)\s+label\s*#?\d+\s*$"),   # 'KPI Label 1'
-    re.compile(r"(?i)\blabel\s*#?\d+\s*$"),                                   # '… - Label 2'
-    re.compile(r"(?i)^\[[^\]]*\]\s*$"),                                       # [Specify]
-    re.compile(r"(?i)^(?:specify|tbd|placeholder|n/?a)\s*:?\s*$"),
-    re.compile(r"…\s*$"),                                                # trailing ellipsis
-]
 
 
 def _is_control_label(label: str | None) -> bool:
     t = (label or "").strip()
     return bool(t) and any(rx.search(t) for rx in _CONTROL_RES)
-
-
-def _is_placeholder_label(label: str | None) -> bool:
-    t = (label or "").strip()
-    return bool(t) and any(rx.search(t) for rx in _PLACEHOLDER_RES)
 
 
 # SCAFFOLDING labels are not financial metrics at ALL — a helper/flag column
@@ -360,12 +348,15 @@ def _classify_category(metric_label: str | None, formula: str, sec_cat: str | No
       - other formula → computed (a calculated output — never overwritten);
       - blank/literal on a non-input sheet (role gate) → staging;
       - blank/literal → data."""
-    # Scaffolding (helper/flag columns, dropdown instructions, type words, settings,
-    # comments, raw refs) is never a data input — drop it before anything else, even
-    # a connector, so it can't pollute populate demand as an unmappable metric.
-    if _is_junk_label(metric_label):
-        return "config", "scaffolding"
+    # Label lexicons are PRIORS, not facts. A connector formula is a FACT — it
+    # self-describes a system-fed input — so it beats a junk-looking label
+    # (previously the junk lexicon silently deleted real connector data);
+    # the mismatch is flagged for review instead.
     is_connector = bool(_CONNECTOR.search(formula or ""))
+    if _is_junk_label(metric_label):
+        if is_connector:
+            return "sourced", "junk_label_connector"
+        return "config", "scaffolding"
     cfg_kind = ("control" if _is_control_label(metric_label)
                 else "placeholder" if _is_placeholder_label(metric_label) else None)
     if cfg_kind and not (formula and not is_connector):
@@ -665,6 +656,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
     gated_by_role: dict[str, int] = {}
     config_by_kind: dict[str, int] = {}    # {'control': n, 'placeholder': n, 'selector': n}
     connector_inputs = 0                   # connector-fed financial cells enumerated as sourced
+    junk_connector_kept = 0                # connector beat a junk-looking label — kept as sourced
 
     for srow in und.get("sheets", []):
         sheet = srow["sheet_name"]
@@ -776,7 +768,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
             """Create one DataPoint for an input cell. ``llm_field`` carries the
             LLM's semantics when the cell came from understanding; None for a
             cell found purely by the deterministic metadata detector."""
-            nonlocal orphan_cells, passthrough_count
+            nonlocal orphan_cells, passthrough_count, junk_connector_kept
             cell = f"{column_letter(col)}{row}"
             if (sheet, cell) in seen:
                 return
@@ -830,13 +822,17 @@ def derive_data_model(template_id: str) -> DataModelResult:
             if category == "computed" and (sheet, row, col) in passthrough_inputs:
                 category, cfg_kind = "sourced", None
                 passthrough_count += 1
-            if cfg_kind:
+            if cfg_kind == "junk_label_connector":
+                junk_connector_kept += 1   # 'sourced', not config — its own counter/flag
+            elif cfg_kind:
                 config_by_kind[cfg_kind] = config_by_kind.get(cfg_kind, 0) + 1
             elif category == "staging":
                 gated_by_role[(role or "?").lower()] = gated_by_role.get((role or "?").lower(), 0) + 1
 
+            # ONE emptiness rule everywhere (matches the L3 prompt): a literal 0
+            # is an entered value, not a gap.
             needs = (bool(llm_field.get("needs_value", True)) if llm_field
-                     else cell_val.get((sheet, row, col)) in (None, "", 0))
+                     else cell_val.get((sheet, row, col)) in (None, ""))
 
             facts.append(DataPoint(
                 fact_key=fact_key(
@@ -853,6 +849,10 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 period_label=(period or {}).get("label"), parsed_date=(period or {}).get("parsed_date"),
                 period_type=(period or {}).get("period_type"),
                 scenario=scenario, basis=basis, category=category,
+                # every cfg_kind is a label-lexicon PRIOR (config kinds AND the
+                # junk_label_connector 'sourced' keep) — stamped so enrichment /
+                # user corrections can reclassify it.
+                category_source=(f"lexicon:{cfg_kind}" if cfg_kind else None),
                 entity=None, unit=unit, currency=_currency(unit, l2mr.get("number_format")),
                 value_role=l3m.get("value_role"), sign_convention=l3m.get("sign_convention"),
                 qualification_criteria=l3m.get("qualification_criteria"),
@@ -939,6 +939,12 @@ def derive_data_model(template_id: str) -> DataModelResult:
             f"{connector_inputs} connector-fed financial cells enumerated as replaceable inputs "
             "('sourced') — a new data upload overwrites the fetched value. Mapping them to a "
             "source still needs period/scenario resolution on the connected sheets."
+        )
+    if junk_connector_kept:
+        flags.append(
+            f"{junk_connector_kept} connector-fed cells with scaffolding-looking labels kept "
+            "as sourced — verify (the connector formula, a fact, beat the junk-label prior; "
+            "a correction or enrichment can reclassify via category_source)."
         )
     if passthrough_count:
         flags.append(

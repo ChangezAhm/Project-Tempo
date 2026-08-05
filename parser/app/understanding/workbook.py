@@ -22,7 +22,7 @@ from pathlib import Path
 from langsmith import traceable
 
 from app import supabase_client as sb
-from app.llm import MODEL, MODEL_MAP, bind_worker, get_llm_context, guarded_stream
+from app.llm import MODEL_MAP, MODEL_SMART, bind_worker, get_llm_context, guarded_stream
 from app.population import source_cache
 from app.population.cost import (
     SpendCapExceeded, SpendGuard, default_onboarding_cap_usd,
@@ -60,7 +60,7 @@ _SYNTH_SCHEMA = to_strict_schema(WorkbookUnderstanding)
 # key includes the template version, so a re-uploaded template never reuses old
 # results. Bump this constant whenever prompts.SYSTEM or the SheetUnderstanding
 # schema changes shape — that invalidates every cached result built under them.
-_SHEET_CACHE_VERSION = 7   # v7: extensible_regions carry per-row SLOTS (blank/placeholder/editable)
+_SHEET_CACHE_VERSION = 8   # v8: grid gains [fill] marker (non-input solid fills visible)
 
 # Light sheets are cheap (Sonnet, text-only, no tiles) and don't consume the
 # deep max_sheets cap — but bound them anyway so a pathological workbook can't
@@ -284,7 +284,7 @@ def _compact(u) -> dict:
 
 def _call_synth(user_text: str, max_tokens: int) -> tuple[object, str]:
     # Routed through the choke point — spend guard + tracing, no hand-rolled copy.
-    return guarded_stream(model=MODEL, system=SYNTHESIZE_SYSTEM, content=user_text,
+    return guarded_stream(model=MODEL_SMART, system=SYNTHESIZE_SYSTEM, content=user_text,
                           max_tokens=max_tokens, site="synthesize_workbook")
 
 

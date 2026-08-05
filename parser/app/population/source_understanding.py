@@ -206,7 +206,7 @@ def _build_content(digest: str, tiles: list[tuple[str, bytes]]) -> tuple[list[di
 def _render_tiles(source_path: str | Path | None, sheet_name: str | None) -> list[tuple[str, bytes]]:
     """Best-effort PNG tiles of one source sheet (Aspose). Empty when vision is
     off, there's no workbook path (snapshot-only callers), or the render fails —
-    the digest alone still carries everything binding needs."""
+    the digest alone still carries everything the executor needs."""
     if source_path is None or not sheet_name or not vision_enabled():
         return []
     try:

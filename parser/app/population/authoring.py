@@ -26,7 +26,7 @@ from app.population.units import Unit
 
 
 def _col_letters(col: int) -> str:
-    """1-based column index -> Excel letters (1->A, 27->AA). (Same as binding's.)"""
+    """1-based column index -> Excel letters (1->A, 27->AA). (Same as execute's.)"""
     s = ""
     while col > 0:
         col, rem = divmod(col - 1, 26)
@@ -51,7 +51,7 @@ def _matched_values(series: Series, value_col_dates: list[tuple[int, date | None
     """The region value-columns this series can feed, with the exact source cell
     for each. Three tiers, most trustworthy first:
       1. DATE match — region column and series column in the same calendar MONTH
-         bucket (31-Jan matches 1-Jan, pick_column's rule).
+         bucket (31-Jan matches 1-Jan, align_slot's rule).
       2. POSITIONAL — when NO region column carries a date at all, align
          newest-anchored (rightmost region column ↔ rightmost dated-or-not source
          column), each value tagged match='positional' so the run flags it for

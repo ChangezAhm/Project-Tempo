@@ -2,7 +2,7 @@
 
 The bad run had the LLM eyeballing which source column was which month — and
 interleaving monthly columns with FY/annual columns ('skip the FY col'). Here a
-template period slot binds to a source column deterministically (pick_column): by
+template period slot binds to a source column deterministically (align_slot): by
 real date when the template has one, else by newest-anchored position — and only
 within the same grain, so a monthly slot can never bind an FY column.
 """
@@ -60,6 +60,15 @@ def infer_grain(dates) -> str | None:
         return None
     m = Counter(gaps).most_common(1)[0][0]
     return "month" if m <= 1 else "quarter" if m <= 3 else "year"
+
+
+def sheet_grains(dates_by_col: dict[tuple[str, int], date]) -> dict[str, str | None]:
+    """Per-sheet timeline grain from a {(sheet, col): date} map (the template
+    context's own column dates) — the shared shape verify/execute consume."""
+    by_sheet: dict[str, list[date]] = {}
+    for (sh, _c), d in dates_by_col.items():
+        by_sheet.setdefault(sh, []).append(d)
+    return {sh: infer_grain(ds) for sh, ds in by_sheet.items()}
 
 
 def _grain(s: str | None) -> str:
@@ -126,28 +135,6 @@ def _bucket_end(d: date, grain: str) -> tuple[int, int]:
     if grain == "year":
         return (d.year, 12)
     return (d.year, d.month)
-
-
-def pick_column(period_index: int | None, period_count: int, parsed_date: date | None,
-                period_cols: list[tuple[int, date | None, str]], grain: str,
-                template_grain: str | None = None, point_in_time: bool = False) -> int | None:
-    """Single-column form of align_slot (kept for callers that can only cite one
-    cell). With no rollup semantics only 'single' picks arise, so behaviour is
-    identical to the historical function."""
-    res = pick_columns(period_index, period_count, parsed_date, period_cols, grain,
-                       template_grain=template_grain, point_in_time=point_in_time)
-    return res[0][0] if res else None
-
-
-def pick_columns(period_index: int | None, period_count: int, parsed_date: date | None,
-                 period_cols: list[tuple[int, date | None, str]], grain: str,
-                 template_grain: str | None = None, point_in_time: bool = False,
-                 rollup: str | None = None) -> tuple[list[int], str] | None:
-    """align_slot without the failure reason (legacy shape)."""
-    res, _why = align_slot(period_index, period_count, parsed_date, period_cols, grain,
-                           template_grain=template_grain,
-                           rollup=("end" if point_in_time and rollup is None else rollup))
-    return res
 
 
 def align_slot(period_index: int | None, period_count: int, parsed_date: date | None,

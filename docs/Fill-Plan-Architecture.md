@@ -1,7 +1,7 @@
 # Fill-Plan Architecture — Migration Plan
 
 **Date:** 5 August 2026
-**Status:** Phases 0, 1 AND 2 DELIVERED (2026-08-05, 330 tests green, live gates passed — see §11/§12). The Fill-Plan path is now the ONLY populate path. Phase 3 (onboarding/derive) is next. This document is the canonical plan; the Word rendering (`Tempo Fill-Plan Plan.docx`) is a reading copy.
+**Status:** ALL PHASES (0–4) DELIVERED (2026-08-05, 340 tests green, live gates passed — see §11–§13). The Fill-Plan path is the only populate path; lexicon categories are overridable priors; contract decisions carry scope. **User action pending: apply `supabase/migrations/0011_category_source.sql`** (a safety fallback keeps derivation working until then). This document is the canonical plan; the Word rendering (`Tempo Fill-Plan Plan.docx`) is a reading copy.
 **Prerequisite reading:** `Tempo System Diagnosis.docx` (the audit this plan answers) and `docs/SYSTEM_AUDIT.md`.
 
 ---
@@ -320,3 +320,17 @@ Phase 2 (full migration + deletions) is next. Nothing else until its gate passes
 **Gate:** Meridian 113 fills / 9-of-9 verified correct / 0 wrong / 0 bad fills through the single path (incl. a v11 re-derivation). PE-flash: 72 fills; the only drift vs legacy is the correct refusal of the wrong revenue-per-employee row; unverifiable P&L scales fill flagged+reconcile-questioned (no ground truth exists — expected cells to be hand-verified). 330 offline tests.
 
 **Phase 3 next:** derive category-cascade lexicons → LLM input-identification grounded on facts; color palette and placeholder/adjustment lexicons demoted to priors; one "is 0 empty" rule; gate on the owner's 1/2 ground-truth labels.
+
+---
+
+## 13. Phase 3 + 4 delivery record (2026-08-05, same day)
+
+**Phase 3 — lexicon categories became overridable PRIORS.** `DataPoint.category_source` records WHO decided a category (`lexicon:<kind>` / `llm` / `user` / None=factual); `merge._llm_may_write` lets LLM enrichment override lexicon-sourced categories only (facts and user values stay untouchable; user beats all); enrichment may now answer `category=data` to REVERSE a wrong lexicon call (persisted only when it reverses one), and its items show the lexicon's opinion. A connector formula (a fact) now beats a junk-looking label (a prior) — the mismatch is flagged and stamped overridable, instead of silently deleting connector data. One "is 0 empty" rule everywhere (0 is a value). Shared prior lexicons live in `app/priors.py` — with a STRICT placeholder tier for the data model (bare "Other"/"New" are real P&L lines) and a loose tier for region-slot corroboration; adjustment banks likewise split broad (ranking-only) vs strict (region conversion). The understanding grid gained a `[fill]` marker (non-input, non-near-white solid fills visible to the model; sheet cache v8). DERIVATION_VERSION=13. Requires migration **0011** (`category_source` column); until applied, a loud fallback strips the field rather than crashing — proven live at the gate.
+
+**Phase 4 — scoped contract.** `contract.source_fingerprint` (sheet-name-set hash = source FAMILY identity, stable across monthly editions); `decision_spec` carries `scope` (+fingerprint); unit answers file as `source_format`-scoped with a per-family item_key (so a second source family gets its own question instead of a deadlock — an adversarial-review catch); `load_decisions` filters by the incoming source's fingerprint; pre-scope answered items keep applying (backwards compatible). Global promotion is deliberately NOT a code path — it goes through the rule ledger with multi-template evidence.
+
+**Multi-agent review (owner-directed):** an adversarial correctness agent (7 findings: 1 critical — the missing DB column that would have crashed-and-wiped on the next real derive; the source-family question deadlock; 3 union-regression cases incl. bare-"Other"→config; the near-white `[fill]` flood) and a simplify/efficiency agent (15 items: stale binder narrative, triplicated sheet-grain computation → `periods.sheet_grains`, per-cell→per-row evidence voting, `pick_column` wrappers moved to tests, PlanIssue.scenario instead of prose-parsing, `resolve_unit` memoized, MODEL alias retired, etc.) — all 22 verified findings applied by a fix agent. `docs/RULE_LEDGER.md` created: 57 surviving rules, 30 constraints / 27 priors, deleted-rules history included.
+
+**Gate:** 340 offline tests; live Meridian 113 fills / 9-of-9 verified correct / 0 wrong / 0 bad fills through a v13 re-derivation, with the pre-migration fallback exercised live. PE-flash stable at 72 fills.
+
+**Still open (needs the owner):** apply migration 0011; onboard the "Templates for testing/" ground-truth files and run the 1/2-label accuracy eval (the full Phase-3 gate — LLM input-identification quality can only be measured against those labels); exercise the one-tap answer flow in the UI end-to-end.

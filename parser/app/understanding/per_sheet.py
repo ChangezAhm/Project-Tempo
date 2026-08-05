@@ -17,7 +17,7 @@ import re
 
 from langsmith import traceable
 
-from app.llm import MODEL, get_client
+from app.llm import MODEL_SMART, get_client
 from app.understanding.prompts import SYSTEM, build_user_text
 from app.understanding.schema import SheetUnderstanding
 
@@ -143,7 +143,7 @@ def _extract_json(text: str) -> str:
     return t[start : end + 1] if start != -1 and end != -1 else t
 
 
-def _call(client, messages, max_tokens: int, sheet_name: str, model: str = MODEL):
+def _call(client, messages, max_tokens: int, sheet_name: str, model: str = MODEL_SMART):
     # Schema enforced by prompt + Pydantic validation (not output_config) — the
     # strict-grammar compiler rejects schemas this large. Routed through
     # guarded_stream so the spend firewall and LangSmith tracing have no gaps
@@ -163,7 +163,7 @@ def understand_sheet(
     hints: str,
     *,
     max_tokens: int = 32000,
-    model: str = MODEL,
+    model: str = MODEL_SMART,
 ) -> dict:
     """Run the per-sheet agent. Returns {understanding, grounding, usage}.
 
@@ -171,7 +171,7 @@ def understand_sheet(
     column-band slices for a wide one, or empty when the sheet couldn't be
     rendered legibly. With no images the agent works from the text grid alone,
     which still carries the exact cell addresses. ``model`` selects the tier:
-    the routing light pass sends images=[] + MODEL_MAP; deep stays on MODEL.
+    the routing light pass sends images=[] + MODEL_MAP; deep stays on MODEL_SMART.
     """
     from app.understanding.sheet_view import build_text_grid
 

@@ -16,9 +16,12 @@ def test_valid_values_pass_through():
     assert patch == {"canonical_metric": "revenue", "basis": "flow", "category": "config"}
 
 
-def test_defaults_produce_no_patch():
-    # 'unknown' basis / 'data' category are the no-op defaults, not corrections.
-    assert _validated_patch(_a()) == {}
+def test_defaults_produce_no_patch_except_data_override():
+    # 'unknown' basis is a no-op. category 'data' survives validation since
+    # Phase 3 (it can reverse a lexicon-guessed config); the enrich() loop drops
+    # it again for metrics with no lexicon call, so plain metrics still produce
+    # no correction row.
+    assert _validated_patch(_a()) == {"category": "data"}
 
 
 def test_invalid_basis_and_category_are_dropped():

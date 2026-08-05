@@ -30,7 +30,7 @@ def derive_and_persist(template_id: str) -> dict:
         fact_dicts, applied, unmatched = apply_corrections(fact_dicts, corrections)
 
         rows = [{**d, "template_version_id": version_id} for d in fact_dicts]
-        sb.replace_rows("template_data_points", version_id, rows)
+        sb.replace_data_points(version_id, rows)
 
         dims = result.dimensions
         flags = list(dims.review_flags)

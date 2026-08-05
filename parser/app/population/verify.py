@@ -14,10 +14,9 @@ Severity drives the resolution ladder (§2.4):
 
 from __future__ import annotations
 
-from app.population.execute import _metric_key
 from app.population.catalogue import Series
-from app.population.periods import _grain, infer_grain
-from app.population.schema import MetricMap, PlanIssue
+from app.population.periods import _grain, sheet_grains
+from app.population.schema import MetricMap, PlanIssue, metric_key
 
 # Issue codes that block a metric's cells from being written until resolved.
 # SCENARIO_NO_SOURCE is deliberately NOT here: it is a per-slot data gap (the
@@ -54,7 +53,7 @@ def verify_plan(fills: list[MetricMap], catalogue: dict[str, Series], facts: lis
     sheets_of: dict[str, set] = {}
     scen_of: dict[str, set] = {}
     for f in facts:
-        k = _metric_key(f)
+        k = metric_key(f)
         if k is None:
             continue
         sheets_of.setdefault(k, set()).add(f.get("sheet_name"))
@@ -63,11 +62,8 @@ def verify_plan(fills: list[MetricMap], catalogue: dict[str, Series], facts: lis
             scen_of.setdefault(k, set()).add(s)
 
     # template sheet grains, from the template's own column dates (facts)
-    dates_by_col = template_context[2] if len(template_context) > 2 else {}
-    sheet_dates: dict[str, list] = {}
-    for (sh, _c), d in dates_by_col.items():
-        sheet_dates.setdefault(sh, []).append(d)
-    sheet_grain = {sh: infer_grain(ds) for sh, ds in sheet_dates.items()}
+    _numfmt, _mags, dates_by_col = template_context or ({}, {}, {})
+    sheet_grain = sheet_grains(dates_by_col)
 
     # PLAN_INCOMPLETE: a demanded metric with no plan entry at all
     demanded = {m.get("metric") for m in (demand.get("metrics") or [])}
@@ -95,7 +91,7 @@ def verify_plan(fills: list[MetricMap], catalogue: dict[str, Series], facts: lis
                             f"'{series.sheet}' — a cross-sheet sum can't share period columns")))
 
         # LOW_CONFIDENCE: not a silent blank — a question carrying the plan's own proposal
-        if m.confidence < confidence_floor and getattr(m, "status", "direct") in ("direct", "aggregate"):
+        if m.confidence < confidence_floor and m.status in ("direct", "aggregate"):
             issues.append(PlanIssue(
                 metric=key, code="LOW_CONFIDENCE", severity="question",
                 detail=f"mapping confidence {m.confidence:.2f} < {confidence_floor:.2f}",
@@ -105,7 +101,7 @@ def verify_plan(fills: list[MetricMap], catalogue: dict[str, Series], facts: lis
         # series can't serve (no variant row, no tagged column) — factual check
         for scen in sorted(scen_of.get(key, ())):
             has = (scen in (series.variants or {})
-                   or getattr(series, "scenario", None) == scen
+                   or series.scenario == scen
                    or any((series.col_scenario.get(c) or "actual") == scen
                           for (c, _d, _pt) in series.period_cols))
             if not has:
@@ -114,6 +110,7 @@ def verify_plan(fills: list[MetricMap], catalogue: dict[str, Series], facts: lis
                 # issue only surfaces the gap for one batched question.
                 issues.append(PlanIssue(
                     metric=key, code="SCENARIO_NO_SOURCE", severity="question",
+                    scenario=scen,
                     detail=f"template demands {scen} slots but the source series has no {scen} "
                            f"column or row-variant",
                     suggested_resolution=f"leave the {scen} slots blank"))
@@ -124,7 +121,7 @@ def verify_plan(fills: list[MetricMap], catalogue: dict[str, Series], facts: lis
         if src_g and not m.rollup:
             for sh in sorted(sheets_of.get(key, ())):
                 tgt_g = sheet_grain.get(sh)
-                if tgt_g in _COARSER and _COARSER.get(tgt_g, 0) > _COARSER.get(src_g, 0):
+                if tgt_g in _COARSER and _COARSER[tgt_g] > _COARSER[src_g]:
                     issues.append(PlanIssue(
                         metric=key, code="GRAIN_UNBRIDGEABLE", severity="repair",
                         detail=(f"source is {src_g}ly but template sheet '{sh}' is {tgt_g}ly and "
@@ -137,16 +134,17 @@ def verify_plan(fills: list[MetricMap], catalogue: dict[str, Series], facts: lis
     # template totals intersect (formula-graph scoped); no graph -> global block.
     _RANK = {"direct": 0, "aggregate": 1, "reconcile": 2}
     graph = agg_membership is not None
+    member = agg_membership or {}
     claimed: dict[str, list[str]] = {}
     for m in sorted(by_metric.values(),
-                    key=lambda mm: (_RANK.get(getattr(mm, "status", "direct"), 1), -mm.confidence)):
+                    key=lambda mm: (_RANK.get(mm.status, 1), -mm.confidence)):
         wants = [sid for sid in ([m.series_id] + list(m.also_series_ids or []))
                  if sid and sid in catalogue]
         owner = None
         for sid in wants:
             for prior in claimed.get(sid, ()):
-                shares = (bool((agg_membership or {}).get(m.metric, frozenset())
-                               & (agg_membership or {}).get(prior, frozenset())) if graph else True)
+                shares = (bool(member.get(m.metric, frozenset())
+                               & member.get(prior, frozenset())) if graph else True)
                 if shares:
                     owner = prior
                     break

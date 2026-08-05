@@ -29,10 +29,6 @@ logger = logging.getLogger(__name__)
 MODEL_SMART = os.environ.get("TEMPO_MODEL_SMART", "claude-opus-4-8")
 MODEL_MAP = os.environ.get("TEMPO_MODEL_MAP", "claude-sonnet-4-6")
 
-# Back-compat: existing call sites import MODEL. Keep it pointing at the smart
-# tier so nothing silently changes behaviour until each site is migrated.
-MODEL = MODEL_SMART
-
 # Run-scoped metadata attached to every traced call (template_id, run kind …).
 # ContextVar does NOT cross threads — worker pools must re-bind it (they already
 # re-bind the spend guard; use ``bind_worker`` as the pool initializer).

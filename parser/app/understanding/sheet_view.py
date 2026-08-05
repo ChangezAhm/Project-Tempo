@@ -7,7 +7,8 @@ prompt describes. Format per occupied row:
 
 Marker placement (must match prompts.SYSTEM):
   - prefix `*` (bold) and `›N ` (indent depth) BEFORE the value
-  - suffix `[in]` / `[unlocked]` / `[mrg:RANGE]` AFTER the value (space-separated)
+  - suffix `[in]` / `[fill]` / `[unlocked]` / `[mrg:RANGE]` AFTER the value
+    (space-separated); `[fill]` = a visible solid fill outside the input palette
   - leading `=` is a formula; trailing `…` means the formula was truncated
   - a token with no value (e.g. `E=[in]`) is an EMPTY cell that sits in a
     data-validation range — a prime input-field candidate
@@ -90,14 +91,46 @@ def _body(c: dict) -> str:
     return _fmt(val)
 
 
+# theme background slots / the 'automatic' indexed colours — render as the sheet
+# background, not as author signal (they used to flood [fill] markers).
+_BACKGROUND_FILLS = {"theme:0", "theme:1", "indexed:64", "indexed:65"}
+
+
+def _has_visible_fill(fill: str | None) -> bool:
+    """A fill colour that actually shows: set, and not white/near-white ARGB
+    (whole-sheet white washes are background, not signal — all channels >= 0xF0
+    reads as a wash). Other indexed/theme fills count — they render as real
+    colours even though the hex is unresolved."""
+    if not fill:
+        return False
+    if fill in _BACKGROUND_FILLS:
+        return False
+    if fill.startswith(("indexed:", "theme:")):
+        return True
+    rgb = fill.lower()
+    if len(rgb) == 8:
+        rgb = rgb[2:]
+    try:
+        r, g, b = (int(rgb[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return rgb != "ffffff"
+    return not (r >= 0xF0 and g >= 0xF0 and b >= 0xF0)
+
+
 def _cell_token(c: dict, anchor: dict) -> str:
     st = c.get("style") or {}
     lvl = st.get("indent_level") or 0
     prefix = ("*" if st.get("bold") else "") + (f"›{lvl} " if lvl else "")
     core = f"{prefix}{_body(c)}"
     markers: list[str] = []
-    if is_input_fill(st.get("fill_color")):
+    fill = st.get("fill_color")
+    if is_input_fill(fill):
         markers.append("[in]")
+    elif _has_visible_fill(fill):
+        # A solid fill OUTSIDE the input palette still encodes author intent
+        # (section shading, hardcode-vs-formula colour schemes) — surface it as a
+        # bare [fill] (no hex: token budget) so it isn't invisible to the model.
+        markers.append("[fill]")
     if st.get("is_locked") is False:
         markers.append("[unlocked]")
     key = (c["row"], c["col"])

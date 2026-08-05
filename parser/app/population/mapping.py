@@ -4,7 +4,7 @@ Given the template's distinct metrics and the deterministic source catalogue
 (labels only — no values, no images), ask the model which source series *means*
 which template metric, and whether the sign convention differs. That's it. No
 addresses, no numbers, no scale, no periods — those are all decided deterministically
-in binding.py from facts Aspose already knows.
+in verify/execute from facts Aspose already knows.
 
 This is what makes runaway cost structurally impossible for the populate path:
 one cheap (Sonnet) text call (chunked if huge), under the run's spend cap, with a

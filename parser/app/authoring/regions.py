@@ -36,6 +36,7 @@ from app.llm import MODEL_MAP, guarded_stream
 from app.population.catalogue import effective_value
 from app.population.cost import SpendCapExceeded, SpendGuard, default_onboarding_cap_usd, set_guard
 from app.population.periods import parse_any_date
+from app.priors import ADJUSTMENT_MEMBER_STRICT, ADJUSTMENT_SUBTOTAL, is_placeholder_slot_label
 from app.raw_extraction.column_utils import column_index, column_letter
 
 logger = logging.getLogger(__name__)
@@ -74,26 +75,9 @@ class RegionsOut(_M):
 
 
 # --- placeholder / signal detection (deterministic) ---------------------------
-
-_PLACEHOLDER_RES = [
-    re.compile(r"^\[.*\]$"),                                             # [Specify]
-    re.compile(r"(?i)^(custom|other|new|additional)\s*(kpi|metric|item|line|row|adjustment)?s?\s*#?\d*[:.\s]*$"),
-    re.compile(r"(?i)^(please\s+)?specify\b"),
-    re.compile(r"(?i)^add\s+(a\s+)?(kpi|line|metric|item|row)\b"),
-    re.compile(r"(?i)^(adjustment|add-?back|item|line|metric|kpi)\s*#?\d+[:.\s]*$"),  # Adjustment 3
-    re.compile(r"(?i)^(tbd|n/?a|xxx+|-+)$"),
-    re.compile(r"…\s*$"),                                                # trailing ellipsis ("Other…")
-]
-
-
-def is_placeholder_label(text: str | None) -> bool:
-    """Deterministic: does this label read as a THROWAWAY slot name rather than a
-    real business line? Used to corroborate a model 'placeholder' claim — text
-    judgment alone never makes a real label overwritable."""
-    t = (text or "").strip()
-    if not t:
-        return False
-    return any(rx.search(t) for rx in _PLACEHOLDER_RES)
+# is_placeholder_slot_label (imported from app.priors — the loose tier, bare
+# "Other"/"New" included) corroborates a model 'placeholder' claim — text
+# judgment alone never makes a real label overwritable.
 
 
 def _validation_cols_rows(sheet: dict) -> set[tuple[int, int]]:
@@ -125,14 +109,9 @@ def _validation_cols_rows(sheet: dict) -> set[tuple[int, int]]:
 _SUM_RANGE = re.compile(
     r"(?:SUM|SUBTOTAL)\s*\(\s*(?:\d+\s*,\s*)?\$?([A-Z]+)\$?(\d+)\s*:\s*\$?([A-Z]+)\$?(\d+)\s*\)",
     re.I)
-# a subtotal LABEL that announces a normalisation / adjustment roll-up
-_ADJ_SUBTOTAL = re.compile(r"(?i)\b(adjust|normali[sz]|pro[- ]?forma|underlying|bridge)\b")
-# a MEMBER label from the EBITDA-adjustment / one-off lexicon
-_ADJ_MEMBER = re.compile(
-    r"(?i)(add-?back|one-?off|exceptional|non-?recurring|restructur|redundanc|"
-    r"deal cost|transaction cost|share-?based|management fee|monitoring fee|"
-    r"impair|write-?off|write-?down|run-?rate|normalis|integration cost|"
-    r"separation cost|provision|litigation|earn-?out|\bM&A\b)")
+# subtotal-label (ADJUSTMENT_SUBTOTAL) and member-label (ADJUSTMENT_MEMBER_STRICT)
+# detection comes from app.priors — the shared adjustment lexicon (strict tier:
+# member matching can make rows editable, so bare 'transaction' must not fire).
 
 
 def _formula(cell: dict | None) -> str | None:
@@ -219,15 +198,15 @@ def _is_adjustment_block(block: dict, sheet: dict) -> bool:
     Profit, Total Assets)? Deterministic lexicon over the subtotal label, the
     member labels, and the section header just above — so the safety net fires on
     adjustment blocks and stays off ordinary statement subtotals."""
-    if _ADJ_SUBTOTAL.search(block.get("subtotal_label") or ""):
+    if ADJUSTMENT_SUBTOTAL.search(block.get("subtotal_label") or ""):
         return True
-    if any(lab and _ADJ_MEMBER.search(lab) for lab in block.get("member_labels") or []):
+    if any(lab and ADJUSTMENT_MEMBER_STRICT.search(lab) for lab in block.get("member_labels") or []):
         return True
     cmap = _cell_map(sheet)
     lc = block["label_col"]
     for rr in (block["lo"] - 1, block["lo"] - 2):
         hdr = _text_label(cmap.get((rr, lc)))
-        if hdr and (_ADJ_SUBTOTAL.search(hdr) or re.search(r"(?i)\b(bridge|adjustment)", hdr)):
+        if hdr and (ADJUSTMENT_SUBTOTAL.search(hdr) or re.search(r"(?i)\b(bridge|adjustment)", hdr)):
             return True
     return False
 
@@ -253,7 +232,7 @@ def _label_signals(sheet: dict) -> dict[tuple[int, int], list[str]]:
         if (c.get("row"), c.get("col")) in validated:
             sigs.append("validated")
         v = effective_value(c)
-        if isinstance(v, str) and is_placeholder_label(v):
+        if isinstance(v, str) and is_placeholder_slot_label(v):
             sigs.append("placeholder_text")
         if sigs:
             out[(c["row"], c["col"])] = sigs
@@ -621,7 +600,7 @@ def _convert(r: RegionOut, sheet_name: str, cmap: dict[tuple[int, int], dict],
             if not occupied:
                 slots.append({"row": row, "mode": "blank", "current_label": None,
                               "evidence": list(s.evidence)[:5]})   # empty placeholder = blank slot
-            elif is_placeholder_label(live_text) or (sigs & _STRUCTURAL):
+            elif is_placeholder_slot_label(live_text) or (sigs & _STRUCTURAL):
                 slots.append({"row": row, "mode": "placeholder", "current_label": live_text,
                               "evidence": sorted(sigs) or list(s.evidence)[:5]})
             else:

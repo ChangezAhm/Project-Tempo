@@ -22,11 +22,14 @@ import math
 import re
 from dataclasses import dataclass
 
-_CCY_TOKENS = [
+# THE currency lexicon — ordered, distinctive tokens first. Single source of
+# truth (catalogue and derive import it; numfmt keeps its format-symbol map).
+CCY_TOKENS = [
     ("usd", "USD"), ("us$", "USD"), ("$", "USD"),
     ("eur", "EUR"), ("€", "EUR"),
     ("gbp", "GBP"), ("£", "GBP"),
 ]
+_CCY_TOKENS = CCY_TOKENS   # internal alias
 
 # scale patterns, checked biggest-first; values are "ones per displayed unit"
 _SCALE_PATTERNS: list[tuple[re.Pattern, float]] = [
@@ -46,14 +49,6 @@ class Unit:
 # Count-type series (headcount, FTEs): dimensionless — never magnitude-rescaled.
 # The money words ('Employee costs', 'Revenue per FTE')
 # must NOT match: a count word next to cost/expense/per means money.
-_COUNT = re.compile(r"(?i)\b(headcount|head\s*count|fte|ftes|employees|staff)\b")
-_NOT_COUNT = re.compile(r"(?i)cost|expense|salar|compensation|\bper\b")
-
-
-def is_count_like(text: str | None) -> bool:
-    """True when a label names a people/unit COUNT (not a money amount)."""
-    return bool(text) and bool(_COUNT.search(text)) and not _NOT_COUNT.search(text)
-
 
 def resolve_unit(text: str | None) -> Unit:
     """Parse a unit label ('$m', "EUR'000", 'EUR millions', '%', 'x', None) into a
@@ -93,20 +88,6 @@ def resolve_unit(text: str | None) -> Unit:
     return Unit(None, None, "unknown")
 
 
-def series_scale(source: Unit, template: Unit) -> tuple[float | None, str | None]:
-    """Multiplier to turn a source value into the template's display unit, plus an
-    optional flag when it can't be done safely. Returns (scale, flag)."""
-    # mixing money with percent/ratio is a category error — never silently scale
-    kinds = {source.kind, template.kind}
-    if {"percent"} & kinds or {"ratio"} & kinds:
-        if source.kind == template.kind:
-            return 1.0, None
-        return None, "unit_kind_mismatch"
-    if source.base is None or template.base is None:
-        return None, "scale_unknown"
-    return source.base / template.base, None
-
-
 def _median_abs(xs) -> float | None:
     vals = sorted(abs(float(x)) for x in (xs or [])
                   if isinstance(x, (int, float)) and not isinstance(x, bool) and x)
@@ -133,49 +114,3 @@ def reconcile_scale(source_samples, template_samples, tol: float = 0.5) -> float
     return best if abs(math.log10(ratio) - math.log10(best)) <= tol else None
 
 
-def resolve_scale(source_samples, template_samples, source: Unit, template: Unit,
-                  fallback_scale: float = 1.0) -> tuple[float | None, str | None]:
-    """The robust scale: reconcile the source value's MAGNITUDE against what the
-    template cell actually holds, instead of trusting unit labels (which are a mess
-    in real PE/PortCo files).
-
-    Priority:
-      1. kind guard — never scale a % into money.
-      2. magnitude reconciliation — if we have real numbers on both sides, pick the
-         ×10^(3n) that lines their magnitudes up. This OVERRIDES labels (it catches
-         a template that secretly holds pre-scaled values), and it is self-verifying.
-      3. label/format math (series_scale) — when there's no template magnitude yet
-         (e.g. a fresh template row). Flag it 'scale_unverified' so a human can
-         confirm rather than us silently 1000×-ing.
-      4. give up -> (None, reason); the binder leaves the cell blank for review.
-    """
-    if source.kind in ("percent", "ratio") or template.kind in ("percent", "ratio"):
-        if source.kind == template.kind:
-            return 1.0, None
-        return None, "unit_kind_mismatch"
-
-    s = _median_abs(source_samples)
-    t = _median_abs(template_samples)
-    mag_flag = None
-    if s and t:
-        ratio = t / s
-        best = min(_SCALE_CANDIDATES, key=lambda c: abs(math.log10(ratio) - math.log10(c)))
-        if abs(math.log10(ratio) - math.log10(best)) <= 0.5:   # within ~3x of a clean step
-            return best, None                                   # verified by magnitude
-        mag_flag = "scale_unverified:magnitude_mismatch"        # numbers don't line up cleanly
-
-    sc, f = series_scale(source, template)
-    if sc is not None:
-        if mag_flag:                          # magnitude existed but wouldn't reconcile
-            return sc, mag_flag
-        if t is None and sc != 1.0:           # scaling on labels alone, nothing to confirm it
-            return sc, "scale_unverified:no_template_magnitude"
-        return sc, None                       # same unit, or magnitude-confirmed earlier
-
-    # No magnitude, no usable labels. Use the scale the REST of this template
-    # reconciled to (fallback_scale — e.g. raw→millions = 1e-6), not a blind ×1, so
-    # an unanchored row doesn't end up 10^6 out of line with its neighbours. Flagged
-    # for review. (Never assumed when the source declares its own scale.)
-    if source.kind == "money" and template.kind in ("money", "unknown") and (source.base or 1.0) == 1.0:
-        return fallback_scale, "scale_unverified:assumed_default"
-    return None, mag_flag or f or "scale_unknown"

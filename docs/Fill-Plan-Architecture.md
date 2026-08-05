@@ -1,7 +1,7 @@
 # Fill-Plan Architecture — Migration Plan
 
 **Date:** 5 August 2026
-**Status:** Phases 0 and 1 DELIVERED (2026-08-05, 331 tests green, live gate passed — see §11). Phase 2 is next. This document is the canonical plan; the Word rendering (`Tempo Fill-Plan Plan.docx`) is a reading copy.
+**Status:** Phases 0, 1 AND 2 DELIVERED (2026-08-05, 330 tests green, live gates passed — see §11/§12). The Fill-Plan path is now the ONLY populate path. Phase 3 (onboarding/derive) is next. This document is the canonical plan; the Word rendering (`Tempo Fill-Plan Plan.docx`) is a reading copy.
 **Prerequisite reading:** `Tempo System Diagnosis.docx` (the audit this plan answers) and `docs/SYSTEM_AUDIT.md`.
 
 ---
@@ -306,3 +306,17 @@ Phase 2 (full migration + deletions) is next. Nothing else until its gate passes
 - Live corrections found at the gate (both design fixes, not new rules): `SCENARIO_NO_SOURCE` demoted to a per-slot, non-blocking data gap (blocking the whole metric held 91 actual cells hostage) and collapsed to ONE batched question per source.
 
 **Deferred to Phase 2:** per-scenario plan entries (executor still resolves budget/forecast slots factually per-fact); "sum the partial months" contract override for `BUCKET_INCOMPLETE`; the §4 Phase-2 deletions/consolidations; live one-tap answer flow exercised end-to-end in the UI.
+
+---
+
+## 12. Phase 2 delivery record (2026-08-05, same day)
+
+**The flag is gone and so is the legacy binder.** `TEMPO_FILL_PLAN` removed; `bind()`/`binding.py` deleted (shared fact/evidence helpers moved into `execute.py`); every populate runs plan → contract overlay → verify → repair → execute. The historical binder regression suite (scenario variants, double-count guard, sign conventions, budget columns, FTE protection) was ported to exercise the real verify/execute path via `tests/planpath.py`.
+
+**Deleted/demoted per §4:** `is_count_like` + count lexicons (planner declares counts); `resolve_scale`/`series_scale` + the modal `fallback_scale` guess (execute's declared-units + evidence model replaced them); the rollup cascade, scenario-gating judgment, sign silent-override and confidence-kill died with `bind()`. **Consolidated:** currency lexicons 4 → 2 (`units.CCY_TOKENS` canonical; numfmt keeps its format-symbol map); date parsing 3 → 2 (`derive` now delegates to `periods.parse_any_date` — DERIVATION_VERSION 11; `temporal_analyzer`'s status classifier remains its own pass, revisit in Phase 3). **Visibility:** source sheets skipped by the densest-N selection surface in `routing`; `unused_source_series` files one batched "did I miss something?" item; rescue emits full fill-plan fields.
+
+**New evidence model (from a live gate finding):** with no row magnitudes, the template's *anchored rows* imply its DISPLAY BASE (`target_base = source_base / verified_scale` — invariant across source sheets with different bases). A plan whose declared target unit contradicts it becomes a `SCALE_CONFLICT` question; corroboration fills clean. First version compared raw factors and broke Meridian's `'000→m` ARR against raw→m flash rows — the display-base invariant fixed it. This replaces the legacy modal-guess with ask-don't-guess.
+
+**Gate:** Meridian 113 fills / 9-of-9 verified correct / 0 wrong / 0 bad fills through the single path (incl. a v11 re-derivation). PE-flash: 72 fills; the only drift vs legacy is the correct refusal of the wrong revenue-per-employee row; unverifiable P&L scales fill flagged+reconcile-questioned (no ground truth exists — expected cells to be hand-verified). 330 offline tests.
+
+**Phase 3 next:** derive category-cascade lexicons → LLM input-identification grounded on facts; color palette and placeholder/adjustment lexicons demoted to priors; one "is 0 empty" rule; gate on the owner's 1/2 ground-truth labels.

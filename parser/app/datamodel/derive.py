@@ -28,6 +28,8 @@ from app import supabase_client as sb
 from app.datamodel.identity import fact_key
 from app.datamodel.schema import Basis, DataModelResult, DataPoint, DetectedDimensions, Provenance, Scenario
 from app.pipeline import get_structure
+from app.population.periods import parse_any_date
+from app.population.units import CCY_TOKENS
 from app.raw_extraction.column_utils import column_index, column_letter
 from app.raw_extraction.workbook_parser import parse_workbook
 from app.snapshot import workbook_to_snapshot
@@ -38,11 +40,10 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 10   # v10: defaulted-input passthroughs + scaffolding-label filter
+DERIVATION_VERSION = 11   # v11: unified date parser (periods.parse_any_date) + shared currency lexicon
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
-_CCY = [("£", "GBP"), ("GBP", "GBP"), ("$", "USD"), ("USD", "USD"), ("€", "EUR"), ("EUR", "EUR")]
 
 
 def _rc(addr: str) -> tuple[int, int] | None:
@@ -85,8 +86,9 @@ def _currency(*texts: str | None) -> str | None:
     for t in texts:
         if not t:
             continue
-        for sym, code in _CCY:
-            if sym in t or sym in t.upper():
+        low = t.lower()
+        for tok, code in CCY_TOKENS:
+            if tok in low:
                 return code
     return None
 
@@ -96,18 +98,10 @@ def _parse_header_date(val) -> str | None:
     string ('2025-01-31T00:00:00', what a formula date header caches), or an Excel
     serial. This is how a relative-timeline month header (a formula) yields a real
     date. None if it isn't a date."""
-    if val is None or isinstance(val, bool):
-        return None
-    if hasattr(val, "year") and hasattr(val, "month"):     # date / datetime
-        return f"{val.year:04d}-{val.month:02d}"
-    if isinstance(val, str):
-        m = re.match(r"\s*(\d{4})-(\d{1,2})", val)
-        return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}" if m else None
-    if isinstance(val, (int, float)) and 29000 <= val <= 60000:
-        from datetime import datetime, timedelta
-        d = datetime(1899, 12, 30) + timedelta(days=int(val))
-        return f"{d.year:04d}-{d.month:02d}"
-    return None
+    # ONE date parser for the whole system (population.periods) — this used to
+    # be the third independent implementation and missed 'Jan-25'-style labels.
+    d = parse_any_date(val)
+    return f"{d.year:04d}-{d.month:02d}" if d else None
 
 
 def _iso_label(iso: str | None) -> str | None:

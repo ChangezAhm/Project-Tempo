@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 
-from app.population.binding import _convention_sign
+from app.population.execute import _convention_sign
 
 logger = logging.getLogger(__name__)
 

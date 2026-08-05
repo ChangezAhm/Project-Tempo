@@ -4,11 +4,11 @@ across PE/PortCo files. Anything that can't be magnitude-verified is flagged, no
 silently written. No API calls.
 """
 
-from app.population.binding import bind
+from planpath import bind
 from app.population.catalogue import build_catalogue
 from app.population.numfmt import parse_number_format
 from app.population.schema import MetricMap
-from app.population.units import Unit, resolve_scale, resolve_unit
+from app.population.units import Unit, resolve_unit
 
 
 # --- number format -> kind/currency (deterministic truth) ------------------
@@ -51,46 +51,51 @@ def test_bare_locale_tag_on_date_format_is_not_money():
     assert parse_number_format("0.0%").kind == "percent"
 
 
-# --- resolve_scale: magnitude wins over labels ----------------------------
+# --- execute._resolve_scale: declared units compute, magnitudes cross-check --
 _RAW = Unit(1.0, "EUR", "money")   # source stores raw ones
 
 
-def test_magnitude_reconciliation_picks_scale():
-    # source ~12,000,000 ; template row holds ~12 -> scale 1e-6, verified (no flag)
-    scale, flag = resolve_scale([12_000_000, 11_000_000], [11.8, 12.1], _RAW, _RAW)
-    assert scale == 1e-6 and flag is None
+def _rs(tgt, mags=(), source_unit=None, sample=(12_000_000, 11_000_000)):
+    from types import SimpleNamespace
+    from app.population.execute import _resolve_scale
+    fill = MetricMap(metric="x", source_unit=source_unit)
+    return _resolve_scale(fill, SimpleNamespace(unit=_RAW), list(sample), list(mags), tgt)
 
 
-def test_magnitude_overrides_a_wrong_label():
-    # both labels say raw ones -> series_scale would give 1.0 and write 12,000,000
-    # into a cell whose row holds ~12. Magnitude overrides the label to 1e-6.
-    assert resolve_scale([12_000_000], [12.0], _RAW, _RAW) == (1e-6, None)
+def test_magnitude_evidence_beats_a_wrong_declaration_with_a_flag():
+    # both sides declare raw ones, but the template row holds ~12 against a
+    # 12,000,000 source: the template's own numbers win — VISIBLY (flag + issue),
+    # never silently as the old label-override did.
+    scale, flag, code = _rs(_RAW, mags=[11.8, 12.1])
+    assert scale == 1e-6 and code == "SCALE_CONFLICT" and "auto-resolved" in flag
 
 
 def test_magnitude_mismatch_is_flagged_not_guessed():
-    # 12,000,000 vs 500 doesn't line up to any clean 10^3 step -> flagged
-    scale, flag = resolve_scale([12_000_000], [500.0], _RAW, _RAW)
-    assert flag is not None and "unverified" in flag
+    # 12,000,000 vs 500 doesn't line up to any clean 10^3 step -> declared scale
+    # used, flagged unverified
+    scale, flag, code = _rs(_RAW, mags=[500.0])
+    assert scale == 1.0 and flag and "unverified" in flag
 
 
-def test_label_scale_without_template_magnitude_is_flagged():
-    # fresh template row (no magnitudes); scaling on labels alone -> written but flagged
+def test_declared_scale_without_template_magnitude_is_flagged():
+    # fresh template row (no magnitudes); scaling on declarations alone -> written
+    # but flagged for review
     millions = resolve_unit("EUR millions")
-    scale, flag = resolve_scale([12_000_000], [], _RAW, millions)
+    scale, flag, code = _rs(millions)
     assert scale == 1e-6 and flag == "scale_unverified:no_template_magnitude"
 
 
 def test_same_unit_no_magnitude_is_not_flagged():
     # raw->raw needs no scaling, so no review noise even without template magnitudes
-    scale, flag = resolve_scale([12_000_000], [], _RAW, _RAW)
-    assert scale == 1.0 and flag is None
+    scale, flag, code = _rs(_RAW)
+    assert scale == 1.0 and flag is None and code is None
 
 
 def test_percent_never_scaled_into_money():
     pct = Unit(1.0, None, "percent")
-    assert resolve_scale([0.45], [0.46], pct, pct) == (1.0, None)
-    scale, flag = resolve_scale([0.45], [12_000_000], pct, _RAW)
-    assert scale is None and flag == "unit_kind_mismatch"
+    assert _rs(pct, source_unit="%", sample=[0.45])[0] == 1.0
+    scale, flag, code = _rs(_RAW, source_unit="%", sample=[0.45])
+    assert scale is None and code == "UNIT_KIND_MISMATCH"
 
 
 # --- catalogue uses the number format for kind ----------------------------

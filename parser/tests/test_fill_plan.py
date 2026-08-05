@@ -191,3 +191,20 @@ def test_plan_issue_model_roundtrip():
                   resolution="used magnitude", cells=["KPI!D5"])
     d = i.model_dump()
     assert d["code"] == "SCALE_CONFLICT" and d["cells"] == ["KPI!D5"]
+
+
+def test_declared_scale_contradicting_template_evidence_asks():
+    # An EMPTY row whose plan declares raw->raw, in a template whose ANCHORED
+    # rows reconcile at x1e-3: the contradiction is a SCALE question, never a
+    # silent x1000-wrong fill (and corroboration passes clean).
+    from types import SimpleNamespace
+    from app.population.execute import _resolve_scale
+    from app.population.units import Unit, resolve_unit
+    fill = MetricMap(metric="x", source_unit="USD", target_unit="USD")
+    ser = SimpleNamespace(unit=Unit(1.0, "USD", "money"))
+    raw = resolve_unit("USD")
+    # anchored rows display x1000 (thousands template) but the plan reads it raw
+    scale, flag, code = _resolve_scale(fill, ser, [9_800_000], [], raw, tpl_target_base=1e3)
+    assert scale is None and code == "SCALE_CONFLICT" and "anchored" in flag
+    scale, flag, code = _resolve_scale(fill, ser, [9_800_000], [], raw, tpl_target_base=1.0)
+    assert scale == 1.0 and flag is None and code is None   # corroborated

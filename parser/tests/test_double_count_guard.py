@@ -10,7 +10,7 @@ from app.population.aggregation import (
     metric_totals,
     total_leaf_rows,
 )
-from app.population.binding import bind
+from planpath import bind
 from app.population.catalogue import build_catalogue
 from app.population.schema import MetricMap
 
@@ -113,8 +113,8 @@ def test_graph_allows_kpi_mirror_across_sheets():
     # share no total -> BOTH must fill (this is the bug we're fixing).
     cat = _cat_two_series()
     maps = [
-        MetricMap(metric="ARR", series_id="Src!r5", confidence=0.9),
-        MetricMap(metric="ARR (dashboard)", series_id="Src!r5", confidence=0.9),
+        MetricMap(metric="ARR", series_id="Src!r5", confidence=0.9, source_unit="EUR", target_unit="EUR"),
+        MetricMap(metric="ARR (dashboard)", series_id="Src!r5", confidence=0.9, source_unit="EUR", target_unit="EUR"),
     ]
     facts = [_tfact("ARR", "C25", "Flash", 25),
              _tfact("ARR (dashboard)", "C5", "Dashboard", 5)]
@@ -122,7 +122,7 @@ def test_graph_allows_kpi_mirror_across_sheets():
     links, unmatched = bind(facts, cat, maps, _demand1(), agg_membership=membership)
     filled = {lk.template_cell for lk in links}
     assert filled == {"C25", "C5"}                      # both KPI copies filled
-    assert not any("double counting" in u["reason"] for u in unmatched)
+    assert not any("double-count" in u["reason"] for u in unmatched)
 
 
 def test_graph_blocks_reuse_within_a_shared_total():
@@ -130,16 +130,16 @@ def test_graph_blocks_reuse_within_a_shared_total():
     # EBITDA -> writing it twice inflates the total -> the weaker one is blocked.
     cat = _cat_two_series()
     maps = [
-        MetricMap(metric="Adjustment A", series_id="Src!r6", confidence=0.95),
+        MetricMap(metric="Adjustment A", series_id="Src!r6", confidence=0.95, source_unit="EUR", target_unit="EUR"),
         MetricMap(metric="Adjustment B", series_id="Src!r6", status="reconcile",
-                  assumption="same add-back", confidence=0.9),
+                  assumption="same add-back", confidence=0.9, source_unit="EUR", target_unit="EUR"),
     ]
     facts = [_tfact("Adjustment A", "C16", "Flash", 16),
              _tfact("Adjustment B", "C17", "Flash", 17)]
     membership = metric_totals(_facts_bridge(), _bridge_snapshot())
     links, unmatched = bind(facts, cat, maps, _demand1(), agg_membership=membership)
     assert len(links) == 1 and links[0].template_cell == "C16"      # direct wins
-    assert any("double counting" in u["reason"] and "same template total" in u["reason"]
+    assert any("double-count" in u["reason"] and "same template total" in u["reason"]
                for u in unmatched)
 
 
@@ -148,11 +148,11 @@ def test_fallback_without_graph_keeps_global_block():
     # reuse is blocked, so the inflation bug can never silently return.
     cat = _cat_two_series()
     maps = [
-        MetricMap(metric="ARR", series_id="Src!r5", confidence=0.9),
-        MetricMap(metric="ARR (dashboard)", series_id="Src!r5", confidence=0.9),
+        MetricMap(metric="ARR", series_id="Src!r5", confidence=0.9, source_unit="EUR", target_unit="EUR"),
+        MetricMap(metric="ARR (dashboard)", series_id="Src!r5", confidence=0.9, source_unit="EUR", target_unit="EUR"),
     ]
     facts = [_tfact("ARR", "C25", "Flash", 25),
              _tfact("ARR (dashboard)", "C5", "Dashboard", 5)]
     links, unmatched = bind(facts, cat, maps, _demand1(), agg_membership=None)
     assert len(links) == 1                              # global block, as before
-    assert any("double counting" in u["reason"] for u in unmatched)
+    assert any("double-count" in u["reason"] for u in unmatched)

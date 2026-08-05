@@ -14,7 +14,7 @@ Severity drives the resolution ladder (§2.4):
 
 from __future__ import annotations
 
-from app.population.binding import _metric_key
+from app.population.execute import _metric_key
 from app.population.catalogue import Series
 from app.population.periods import _grain, infer_grain
 from app.population.schema import MetricMap, PlanIssue

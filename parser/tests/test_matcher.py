@@ -7,7 +7,7 @@ free, end to end (with the single LLM 'meaning' step stubbed as a fixed mapping)
 from datetime import date
 
 from app.population.apply import apply_links
-from app.population.binding import _col_letters, bind
+from planpath import _col_letters, bind
 from app.population.catalogue import build_catalogue
 from app.population.mapping import _parse
 from app.population.periods import parse_iso_period, pick_column, pick_columns
@@ -219,7 +219,7 @@ def test_sign_row_evidence_overrides_llm_no_flip():
     ctx = ({}, {("Template", 10): [-8.2, -8.5, -8.9]}, {})
     links, _ = bind([fact], cat, maps, _demand(), template_context=ctx)
     assert links and links[0].sign_flip is True
-    assert "sign:template-evidence" in (links[0].note or "")
+    assert "template-evidence" in (links[0].note or "")   # auto-resolved, flagged
 
 
 def test_sign_row_evidence_prevents_wrong_llm_flip():
@@ -264,16 +264,18 @@ def test_bind_writes_cross_currency_but_flags_it():
     assert "currency_unverified:EUR->USD" in (links[0].note or "")
 
 
-def test_bind_assumes_no_scaling_for_raw_source_when_unit_unknown():
-    # raw source + template with no unit signal and no history: fill at x1 but FLAG
-    # for review (better than blank), and never silently scale.
+def test_bind_unknown_units_ask_instead_of_guess():
+    # raw source + template with no unit signal, no magnitudes, no declaration:
+    # the old x1 "assumed_default" guess is deleted — the cell stays blank with a
+    # SCALE question (a guessed scale is a plausible-wrong-number factory).
+    from app.population.execute import execute_plan
     cat = build_catalogue(_source_snapshot(), _periods_by_sheet())
     maps = [MetricMap(metric="revenue", series_id="P&L!r5", confidence=0.9)]
     facts = [_fact("revenue", "B10", unit="reporting currency / display unit")]
-    links, _ = bind(facts, cat, maps, _demand())
-    assert links and links[0].unit_scale == 1.0
-    assert links[0].note and "assumed_default" in links[0].note
-    # an explicit display_unit still forces the real scale
+    links, unmatched, issues = execute_plan(facts, cat, maps, _demand())
+    assert not links and any("unit/scale unresolved" in u["reason"] for u in unmatched)
+    assert any(i.code == "SCALE_CONFLICT" and i.severity == "question" for i in issues)
+    # an explicit display_unit still resolves the real scale deterministically
     links2, _ = bind(facts, cat, maps, _demand(), display_unit="EUR millions")
     assert links2 and links2[0].unit_scale == 1e-6
 
@@ -311,7 +313,8 @@ def test_bind_budget_demand_fills_from_budget_column():
         {"header_cell": "C3", "date": "2023-12-31", "grain": "month", "kind": "budget"},
     ], "series": [{"label_cell": "A5", "label": "Cash at bank"}]}]
     cat = catalogue_from_understanding(_ccy_snap(), und)
-    maps = [MetricMap(metric="cash", series_id="Cash!r5", confidence=0.9)]
+    maps = [MetricMap(metric="cash", series_id="Cash!r5", confidence=0.9,
+                  source_unit="EUR", target_unit="EUR")]
     f = _fact("cash", "B10", unit=None, currency=None, pidx=2, scenario="budget")
     links, unmatched = bind([f], cat, maps, _demand())
     assert links and links[0].source_cell == "C5" and not unmatched
@@ -331,7 +334,8 @@ def test_bind_unknown_scenario_prefers_actual_on_tie():
         {"header_cell": "D3", "date": "2023-12-31", "grain": "month", "kind": "budget"},
     ], "series": [{"label_cell": "A5", "label": "Cash at bank"}]}]
     cat = catalogue_from_understanding(snap, und)
-    maps = [MetricMap(metric="cash", series_id="Cash!r5", confidence=0.9)]
+    maps = [MetricMap(metric="cash", series_id="Cash!r5", confidence=0.9,
+                  source_unit="EUR", target_unit="EUR")]
     f = _fact("cash", "B10", unit=None, currency=None, pidx=0, scenario="unknown")
     f["col"] = 2
     ctx = ({}, {}, {("Template", 2): date(2023, 12, 31)})
@@ -368,21 +372,13 @@ def test_bind_headcount_is_never_scaled_or_fxed():
     ]}]}
     periods = {"SaaS": [{"col": 3, "parsed_date": "2023-12", "period_type": "month"}]}
     cat = build_catalogue(snap, periods)
-    maps = [MetricMap(metric="headcount", series_id="SaaS!r7", confidence=0.95)]
+    maps = [MetricMap(metric="headcount", series_id="SaaS!r7", confidence=0.95,
+                  source_unit="FTE (count)", target_unit="FTE (count)")]
     fact = _fact("headcount", "D6", unit=None, currency=None)
     fact["metric_label"] = "Headcount (FTE)"
     links, unmatched = bind([fact], cat, maps, _demand())
     assert not unmatched and links[0].unit_scale == 1.0
     assert not links[0].note or "unverified" not in links[0].note   # no scale review noise
-
-
-def test_is_count_like_words():
-    from app.population.units import is_count_like
-    assert is_count_like("Headcount (FTE)")
-    assert is_count_like("Total employees (FTE)")
-    assert not is_count_like("Employee costs")          # money, not a count
-    assert not is_count_like("Revenue per FTE (€k)")    # ratio of money to count
-    assert not is_count_like("Net Revenue")
 
 
 def _ccy_snap():
@@ -534,7 +530,8 @@ def test_bind_budget_slot_fills_from_variant_row():
     # scenario-by-row counterpart of a budget column.
     from app.population.catalogue import catalogue_from_understanding
     cat = catalogue_from_understanding(_row_scenario_snap(), _row_scenario_und())
-    maps = [MetricMap(metric="cogs", series_id="P&L!r5", confidence=0.9)]
+    maps = [MetricMap(metric="cogs", series_id="P&L!r5", confidence=0.9,
+                  source_unit="EUR", target_unit="EUR")]
     bud = _fact("cogs", "B10", unit=None, currency=None, pidx=0, scenario="budget")
     act = _fact("cogs", "B11", unit=None, currency=None, pidx=0, scenario="unknown")
     d = {"period_count": 1, "period_grain": "monthly", "as_of_date": None,
@@ -692,7 +689,7 @@ def test_bind_prevents_double_use_of_a_source_series():
     facts = [_fact("revenue", "B10"), _fact("other", "B11")]
     links, unmatched = bind(facts, cat, maps, _demand())
     assert len(links) == 1 and links[0].template_cell == "B10"
-    assert any("double counting" in u["reason"] for u in unmatched)
+    assert any("double-count" in u["reason"] for u in unmatched)
 
 
 def test_bind_double_use_guard_covers_aggregated_components():
@@ -711,7 +708,7 @@ def test_bind_double_use_guard_covers_aggregated_components():
     facts = [_fact("Other Opex", "B10", pidx=2), _fact("Staff Costs", "B11", pidx=2)]
     links, unmatched = bind(facts, cat, maps, _demand())
     assert len(links) == 1 and links[0].template_cell == "B10"
-    assert any("double counting" in u["reason"] and "Other Opex" in u["reason"] for u in unmatched)
+    assert any("double-count" in u["reason"] and "Other Opex" in u["reason"] for u in unmatched)
 
 
 def test_bind_reconcile_can_aggregate_into_residual():
@@ -877,7 +874,7 @@ def test_bind_quarterly_kpi_rollup_end_to_end():
     # with no source months stays blank. All deterministic, all cited.
     cat = build_catalogue(_kpi_source(), _kpi_periods())
     maps = [MetricMap(metric="arr", series_id="SaaS!r5", confidence=0.9, rollup="end"),
-            MetricMap(metric="churn", series_id="SaaS!r6", confidence=0.9)]
+            MetricMap(metric="churn", series_id="SaaS!r6", confidence=0.9, rollup="avg")]
     facts = [_kpi_fact("arr", "D5", 4, 5, 0, "EUR millions", label="ARR (€m)"),
              _kpi_fact("churn", "D6", 4, 6, 0, "%", label="Monthly Churn %"),
              _kpi_fact("arr", "F5", 6, 5, 2, "EUR millions", label="ARR (€m)")]  # Q3: no data

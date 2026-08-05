@@ -11,7 +11,7 @@ import pytest
 from app.population.cost import (
     SpendCapExceeded, SpendGuard, estimate_call_usd, price_of,
 )
-from app.population.units import Unit, resolve_unit, series_scale
+from app.population.units import Unit, resolve_unit
 
 
 # --- units: parsing -------------------------------------------------------
@@ -38,20 +38,33 @@ def test_resolve_unit_non_money_and_unknown():
 
 
 # --- units: the scale that fixes the 1000x cliff --------------------------
-def test_series_scale_is_one_value_per_series():
-    millions = resolve_unit("EUR millions")
-    assert series_scale(resolve_unit("$"), millions) == (1e-06, None)          # raw -> m
-    assert series_scale(resolve_unit("$'000"), millions) == (1e-03, None)      # thousands -> m
-    assert series_scale(resolve_unit("$m"), millions) == (1.0, None)           # m -> m
+def _rs(source_unit, tgt, mags=()):
+    """execute._resolve_scale with a declared source unit — the living scale path."""
+    from types import SimpleNamespace
+    from app.population.execute import _resolve_scale
+    from app.population.schema import MetricMap
+    fill = MetricMap(metric="x", source_unit=source_unit)
+    ser = SimpleNamespace(unit=resolve_unit("$"))
+    return _resolve_scale(fill, ser, [], list(mags), tgt)
 
 
-def test_series_scale_flags_when_unsafe():
+def test_declared_units_compute_the_scale():
     millions = resolve_unit("EUR millions")
-    s, flag = series_scale(resolve_unit("reporting currency / display unit"), millions)
-    assert s is None and flag == "scale_unknown"
-    s, flag = series_scale(resolve_unit("%"), millions)
-    assert s is None and flag == "unit_kind_mismatch"
-    assert series_scale(resolve_unit("%"), resolve_unit("%")) == (1.0, None)
+    assert _rs("$", millions)[0] == 1e-06          # raw -> m
+    assert _rs("$'000", millions)[0] == 1e-03      # thousands -> m
+    assert _rs("$m", millions)[0] == 1.0           # m -> m
+
+
+def test_scale_refuses_mismatch_and_asks_when_unknown():
+    millions = resolve_unit("EUR millions")
+    # % into money is a category error — hard block
+    scale, flag, code = _rs("%", millions)
+    assert scale is None and code == "UNIT_KIND_MISMATCH"
+    # % into % passes at x1
+    assert _rs("%", resolve_unit("%"))[0] == 1.0
+    # no usable declaration + no magnitudes -> a SCALE question, never a guess
+    scale, flag, code = _rs("reporting currency / display unit", millions)
+    assert scale is None and code == "SCALE_CONFLICT"
 
 
 # --- cost: the firewall ---------------------------------------------------

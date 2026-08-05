@@ -50,13 +50,18 @@ _SYSTEM = (
     "residual line that legitimately owns them, but NEVER double-count (each source series "
     "belongs to at most one template line). The value always comes from a real series — "
     "never invent numbers.\n"
-    "rollup: how the metric aggregates months -> quarter/year when grains differ: 'sum' "
-    "(period flows), 'end' (point-in-time stocks: balances, headcount, ARR/run-rates), "
-    "'avg' (rates/percentages). Set it for every mapped metric.\n"
+    "You decide the COMPLETE fill semantics (deterministic code executes, it does not "
+    "re-decide): rollup — months -> quarter/year when grains differ: 'sum' (period "
+    "flows), 'end' (point-in-time stocks: balances, headcount, ARR/run-rates), 'avg' "
+    "(rates/percentages). source_unit/target_unit — the unit strings AS READ from each "
+    "side (\"USD'000\", 'EUR m', '%', 'FTE'); the executor computes the scale — never "
+    "state a factor. sign_flip + sign_basis (one line of evidence). period_map — "
+    "'calendar' unless a side is dateless.\n"
     'Return ONE JSON object: {"mappings":[{"metric":"<same key>","status":"direct|aggregate'
     '|reconcile|needs_decision|unavailable","series_id":"...|null","also_series_ids":[],'
-    '"assumption":"...|null","rollup":"sum|end|avg","sign_flip":false,"confidence":0.0,'
-    '"note":"..."}]}'
+    '"assumption":"...|null","rollup":"sum|end|avg","source_unit":"...|null",'
+    '"target_unit":"...|null","sign_flip":false,"sign_basis":"...|null",'
+    '"period_map":"calendar|positional","confidence":0.0,"note":"..."}]}'
 )
 
 

@@ -19,7 +19,6 @@ from app.datamodel.derive import DERIVATION_VERSION
 from app.datamodel.persist import derive_and_persist, get_data_model
 from app.population import source_cache
 from app.population.apply import apply_links
-from app.population.binding import bind
 from app.population.catalogue import build_catalogue, catalogue_from_understanding, effective_value
 from app.population.periods import parse_any_date
 from app.population.cost import SpendCapExceeded, SpendGuard, default_cap_usd, set_guard
@@ -568,60 +567,51 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         if agg_membership is not None:
             routing["totals_modelled"] = len({t for ts in agg_membership.values() for t in ts})
 
-        # ---- FILL-PLAN PATH (docs/Fill-Plan-Architecture.md, Phase 1 flag) ----
+        # ---- FILL-PLAN PATH (docs/Fill-Plan-Architecture.md — the only path) ----
         # plan -> contract overlay -> verify -> one repair round -> execute.
-        # The legacy bind() path remains the default until the Phase-1 gate passes.
-        fill_plan_mode = os.environ.get("TEMPO_FILL_PLAN") == "1"
-        plan_issues: list = []
-        if fill_plan_mode:
-            from app.population.contract import apply_decisions, load_decisions
-            from app.population.execute import execute_plan
-            from app.population.mapping import repair_plan
-            from app.population.verify import blocked_metrics, verify_plan
+        from app.population.contract import apply_decisions, load_decisions
+        from app.population.execute import execute_plan
+        from app.population.mapping import repair_plan
+        from app.population.verify import blocked_metrics, verify_plan
 
-            decisions = load_decisions(t_vid)
-            n_dec = apply_decisions(metric_maps, decisions)
-            if n_dec:
-                routing["contract_decisions_applied"] = n_dec
-            issues = verify_plan(metric_maps, catalogue, target_inputs, demand,
-                                 template_context, agg_membership)
-            repairable: dict[str, list] = {}
-            for i in issues:
-                if i.severity == "repair":
-                    repairable.setdefault(i.metric, []).append(i)
-            if repairable:
-                by_fill = {m.metric: m for m in metric_maps}
-                metric_by_key = {m["metric"]: m for m in demand["metrics"]}
-                from app.population.schema import MetricMap as _MM
-                failing = [(metric_by_key.get(mk) or {"metric": mk, "label": mk},
-                            by_fill.get(mk) or _MM(metric=mk), iss)
-                           for mk, iss in repairable.items()]
-                repaired = repair_plan(failing, catalogue, context=biz_context)
-                if repaired:
-                    for rm in repaired:
-                        if rm.metric in repairable:
-                            by_fill[rm.metric] = rm
-                    metric_maps = list(by_fill.values())
-                    routing["plan_repaired"] = len(repaired)
-                    issues = verify_plan(metric_maps, catalogue, target_inputs, demand,
-                                         template_context, agg_membership)
-            for i in issues:            # unrepaired -> the question tier, never a dead end
-                if i.severity == "repair":
-                    i.severity = "question"
-            blocked = blocked_metrics(issues)
-            links, bind_unmatched, exec_issues = execute_plan(
-                target_inputs, catalogue, metric_maps, demand,
-                display_unit=display_unit, template_context=template_context,
-                blocked=blocked)
-            plan_issues = issues + exec_issues
-            if plan_issues:
-                routing["plan_issues"] = dict(Counter(i.code for i in plan_issues))
-        else:
-            links, bind_unmatched = bind(
-                target_inputs, catalogue, metric_maps, demand,
-                display_unit=display_unit, template_context=template_context,
-                agg_membership=agg_membership,
-            )
+        plan_issues: list = []
+        decisions = load_decisions(t_vid)
+        n_dec = apply_decisions(metric_maps, decisions)
+        if n_dec:
+            routing["contract_decisions_applied"] = n_dec
+        issues = verify_plan(metric_maps, catalogue, target_inputs, demand,
+                             template_context, agg_membership)
+        repairable: dict[str, list] = {}
+        for i in issues:
+            if i.severity == "repair":
+                repairable.setdefault(i.metric, []).append(i)
+        if repairable:
+            by_fill = {m.metric: m for m in metric_maps}
+            metric_by_key = {m["metric"]: m for m in demand["metrics"]}
+            from app.population.schema import MetricMap as _MM
+            failing = [(metric_by_key.get(mk) or {"metric": mk, "label": mk},
+                        by_fill.get(mk) or _MM(metric=mk), iss)
+                       for mk, iss in repairable.items()]
+            repaired = repair_plan(failing, catalogue, context=biz_context)
+            if repaired:
+                for rm in repaired:
+                    if rm.metric in repairable:
+                        by_fill[rm.metric] = rm
+                metric_maps = list(by_fill.values())
+                routing["plan_repaired"] = len(repaired)
+                issues = verify_plan(metric_maps, catalogue, target_inputs, demand,
+                                     template_context, agg_membership)
+        for i in issues:            # unrepaired -> the question tier, never a dead end
+            if i.severity == "repair":
+                i.severity = "question"
+        blocked = blocked_metrics(issues)
+        links, bind_unmatched, exec_issues = execute_plan(
+            target_inputs, catalogue, metric_maps, demand,
+            display_unit=display_unit, template_context=template_context,
+            blocked=blocked)
+        plan_issues = issues + exec_issues
+        if plan_issues:
+            routing["plan_issues"] = dict(Counter(i.code for i in plan_issues))
         # Filled cells that need a human eye: scale that couldn't be magnitude-verified,
         # a reconciled fill, positional alignment, or a flagged auto-resolution.
         review = [{"template_sheet": lk.template_sheet, "template_cell": lk.template_cell, "note": lk.note}
@@ -639,6 +629,18 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         used_series = ({m.series_id for m in metric_maps if m.series_id}
                        | {sid for m in metric_maps for sid in (m.also_series_ids or [])})
         unused_source_series = sorted(s.label for sid, s in catalogue.items() if sid not in used_series)
+        # No silent narrowing of COVERAGE either: name the source sheets the
+        # densest-N selection never sent to understanding — a sparse but critical
+        # sheet must be visible, not invisibly dropped.
+        try:
+            from app.population.source_understanding import select_sheets
+            seen_sheets = {s.get("name") for s in select_sheets(source_snapshot)}
+            skipped_src = [s.get("name") for s in source_snapshot.get("sheets", [])
+                           if s.get("name") not in seen_sheets]
+            if skipped_src:
+                routing["source_sheets_skipped"] = skipped_src[:20]
+        except Exception:  # noqa: BLE001 — accounting only
+            pass
         result = apply_links(target_inputs, source_snapshot, links, skipped=[])
 
         # Rule enforcement: check every written value against the template's own
@@ -713,7 +715,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         # ONE batched review item per (metric, issue) with the plan's proposal as
         # the one-tap answer; the answer persists as a contract decision and
         # replays on every future run. Flagged auto-resolutions land in `review`.
-        if fill_plan_mode and plan_issues:
+        if plan_issues:
             from app.population.contract import decision_spec
             from app.review.items import make_item
             _DEC_FIELD = {"LOW_CONFIDENCE": "confirmed", "GRAIN_UNBRIDGEABLE": "rollup",
@@ -761,6 +763,23 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 except Exception as e:  # noqa: BLE001 — but a LOST question is surfaced, not swallowed
                     logger.warning("could not file plan questions: %s", e)
                     routing["plan_questions_lost"] = len(plan_q_items)
+
+        # UNDER-COUNTING check as a question, not a dead list: source series no
+        # mapping touched. One batched informational item (content-addressed, so
+        # answering once suppresses it for good).
+        if unused_source_series:
+            try:
+                from app.review.items import make_item
+                names = ", ".join(unused_source_series[:15]) + ("…" if len(unused_source_series) > 15 else "")
+                sb.insert_review_items(t_vid, [make_item(
+                    source="populate-plan", kind="judgment",
+                    question=(f"{len(unused_source_series)} source series were not used by any "
+                              f"template line ({names}) — should any of them feed the template?"),
+                    why="Unused source data can mean under-counting (a cost line left out of a reconciled total).",
+                    suggested_answer="no — they are not needed",
+                )])
+            except Exception as e:  # noqa: BLE001
+                logger.warning("could not file unused-series item: %s", e)
 
         # Add-line additions: source series that mapped to NO template metric are
         # routed into the template's extensible regions (the BRIDGE: a region whose
@@ -852,8 +871,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 "template_checks": template_checks,
                 "summary": result.summary,
                 "rule_violations": violations, "context_chars": len(biz_context),
-                "fill_plan": ([m.model_dump(exclude_none=True) for m in metric_maps]
-                              if fill_plan_mode else None),
+                "fill_plan": [m.model_dump(exclude_none=True) for m in metric_maps],
                 "plan_issues": [i.model_dump(exclude_none=True) for i in plan_issues],
                 "reset": reset, **clear_stats,
                 "proposed_additions": proposals, "addition_notes": add_notes,
@@ -907,8 +925,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         "additions_applied": additions_applied[:100],
         "additions_skipped": additions_skipped[:50],
         "notes": notes,
-        "fill_plan": ([m.model_dump(exclude_none=True) for m in metric_maps]
-                      if fill_plan_mode else None),
+        "fill_plan": [m.model_dump(exclude_none=True) for m in metric_maps],
         "plan_issues": [i.model_dump(exclude_none=True) for i in plan_issues][:100],
         "filled_url": filled_url,
         "audit_url": audit_url,

@@ -6,9 +6,8 @@ LLM spend is real — run at phase gates, not in CI. Source understanding is
 cached by file hash, so repeat runs mostly pay for planning/mapping only.
 
 Usage (from parser/):
-    python benchmarks/run_bench.py                    # all cases, legacy path
+    python benchmarks/run_bench.py                    # all cases
     python benchmarks/run_bench.py --case meridian    # one case
-    python benchmarks/run_bench.py --fill-plan        # TEMPO_FILL_PLAN=1 (new path)
     python benchmarks/run_bench.py --save-baseline    # overwrite baselines/<case>.json
     python benchmarks/run_bench.py --label phase1     # tag the results file
 
@@ -91,13 +90,10 @@ def score(resp: dict, expected: dict | None, baseline: dict | None) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--case", default=None)
-    ap.add_argument("--fill-plan", action="store_true", help="run with TEMPO_FILL_PLAN=1")
     ap.add_argument("--save-baseline", action="store_true")
     ap.add_argument("--label", default=None)
     args = ap.parse_args()
 
-    if args.fill_plan:
-        os.environ["TEMPO_FILL_PLAN"] = "1"
     os.environ.setdefault("TEMPO_MAX_RUN_USD", "15")
 
     from app.population.run import populate_from_bytes  # after sys.path setup
@@ -123,15 +119,14 @@ def main() -> int:
         base_path = BENCH / "baselines" / f"{name}.json"
         baseline = json.loads(base_path.read_text(encoding="utf-8")) if base_path.exists() else None
 
-        print(f"[{name}] populating {case['template_id']} "
-              f"({'fill-plan' if args.fill_plan else 'legacy'} path)…")
+        print(f"[{name}] populating {case['template_id']}…")
         resp = populate_from_bytes(case["template_id"], src.name, src.read_bytes(),
                                    as_of_date=case.get("as_of_date"),
                                    reset="full", add_lines="apply")
         s = score(resp, expected, baseline)
         results[name] = s
         # full response persisted per run — diagnosis must never require a re-run
-        resp_path = BENCH / "results" / f"{name}-last-{'fillplan' if args.fill_plan else 'legacy'}.json"
+        resp_path = BENCH / "results" / f"{name}-last.json"
         resp_path.write_text(json.dumps(resp, default=str, indent=1), encoding="utf-8")
         print(f"[{name}] filled={s['filled_total']} unmatched={s['unmatched_total']} "
               f"questions={s['questions']}")
@@ -153,7 +148,7 @@ def main() -> int:
             print(f"[{name}] baseline saved -> {base_path.name}")
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    label = (args.label + "-" if args.label else "") + ("fillplan" if args.fill_plan else "legacy")
+    label = args.label or "run"
     out = BENCH / "results" / f"{stamp}-{label}.json"
     out.write_text(json.dumps(results, indent=1), encoding="utf-8")
     print(f"\nresults -> {out}")

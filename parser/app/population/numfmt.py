@@ -8,7 +8,7 @@ code is right there in the cell. We use it for KIND and CURRENCY.
 We deliberately do NOT infer SCALE from the format. Excel always stores the true
 value; trailing commas ('#,##0,,') only change how it's *displayed*, not what's
 stored. So a cell showing "12" can hold 12 or 12,000,000 and the format can't tell
-you which — only magnitude can (see units.resolve_scale).
+you which — only magnitude can (see execute._resolve_scale).
 """
 
 from __future__ import annotations

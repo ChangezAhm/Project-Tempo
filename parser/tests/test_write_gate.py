@@ -89,7 +89,7 @@ def test_timeseries_excludes_staging(monkeypatch):
 
 # --- binding defense-in-depth + mapper feed ----------------------------------
 def test_bind_never_writes_total_rows():
-    from app.population.binding import bind
+    from planpath import bind
     from app.population.schema import MetricMap
     fact = {"sheet_name": "T", "cell": "B5", "canonical_metric": "revenue",
             "metric_label": "Total Revenue", "value_role": "subtotal",

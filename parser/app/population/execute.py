@@ -15,15 +15,89 @@ the planner (intent) or to SCALE_CONFLICT/SIGN_CONFLICT evidence handling.
 
 from __future__ import annotations
 
-from app.population.binding import (
-    _col_letters, _convention_sign, _dominant_sign, _metric_key, _scenario_columns,
-    _sum_samples, _unmatched,
-)
 from app.population.catalogue import Series
 from app.population.numfmt import parse_number_format
 from app.population.periods import align_slot, infer_grain, parse_iso_period
 from app.population.schema import CellLink, MetricMap, PlanIssue
 from app.population.units import reconcile_scale, resolve_unit
+
+
+# --- shared helpers (formerly binding.py, deleted in Phase 2) ---------------
+
+def _col_letters(col: int) -> str:
+    """1-based column index -> Excel letters (1->A, 27->AA)."""
+    s = ""
+    while col > 0:
+        col, rem = divmod(col - 1, 26)
+        s = chr(65 + rem) + s
+    return s
+
+
+def _metric_key(fact: dict) -> str | None:
+    return fact.get("canonical_metric") or fact.get("metric_label")
+
+
+def _sum_samples(samples: list[list[float]]) -> list[float]:
+    """Elementwise sum of aligned component samples (truncated to the shortest), so
+    an aggregated series' magnitude/sign reconciles against the TOTAL the template
+    holds rather than against one component."""
+    lists = [s for s in samples if s]
+    if not lists:
+        return []
+    n = min(len(s) for s in lists)
+    return [sum(s[i] for s in lists) for i in range(n)]
+
+
+def _scenario_columns(series: Series, dem_scen: str) -> list[tuple]:
+    """Candidate period columns for a demanded scenario — FACTS from the source's
+    own tags. Restrict to the demanded scenario only when the template explicitly
+    asks for budget/forecast; otherwise every column is a candidate, actuals first
+    so a same-period tie resolves to the actual."""
+    def scen_of(col: int) -> str:
+        return series.col_scenario.get(col) or "actual"
+    cols = series.period_cols
+    if dem_scen in ("budget", "forecast"):
+        return [pc for pc in cols if scen_of(pc[0]) == dem_scen]
+    return sorted(cols, key=lambda pc: 0 if scen_of(pc[0]) == "actual" else 1)
+
+
+def _dominant_sign(vals, min_n: int = 2) -> int:
+    """-1 / +1 when >=70% of the nonzero values share a sign (and there are at
+    least ``min_n``), else 0 (no verdict). Mixed rows (variances) stay 0.
+    EVIDENCE for sign cross-checks — never a silent decider."""
+    xs = [float(v) for v in (vals or [])
+          if isinstance(v, (int, float)) and not isinstance(v, bool) and v]
+    if len(xs) < min_n:
+        return 0
+    neg = sum(1 for v in xs if v < 0)
+    if neg >= 0.7 * len(xs):
+        return -1
+    if neg <= 0.3 * len(xs):
+        return 1
+    return 0
+
+
+def _convention_sign(text) -> int:
+    """The L3 sign_convention is prose derived from the template's own formulas
+    ('negative (entered as negative, added in Gross Profit formula E8+E9)').
+    Leading word wins — later clauses qualify exceptions, not the convention."""
+    t = (str(text or "")).strip().lower()
+    if t.startswith("negative"):
+        return -1
+    if t.startswith("positive"):
+        return 1
+    return 0
+
+
+def _unmatched(fact: dict, reason: str) -> dict:
+    return {
+        "template_sheet": fact.get("sheet_name"),
+        "template_cell": fact.get("cell"),
+        "metric": _metric_key(fact),
+        "period_index": fact.get("period_index"),
+        "scenario": fact.get("scenario"),
+        "reason": reason,
+    }
 
 # align_slot failure code -> (issue code or None, severity, suggested resolution)
 _ALIGN_ISSUES = {
@@ -57,10 +131,15 @@ def _target_unit(fill: MetricMap, f: dict, numfmt_by_cell: dict, display_unit: s
     return u
 
 
-def _resolve_scale(fill: MetricMap, series: Series, recon_sample, tpl_mags, tgt_u):
+def _resolve_scale(fill: MetricMap, series: Series, recon_sample, tpl_mags, tgt_u,
+                   tpl_target_base: float | None = None):
     """(scale, flag, issue_code). Declared units give the scale; template
-    magnitudes are cross-checking EVIDENCE. Disagreement resolves to the evidence
-    WITH a visible flag; no verdict from either side is a SCALE_CONFLICT."""
+    magnitudes are cross-checking EVIDENCE — the row's own first, then the
+    template's modal DISPLAY BASE (``tpl_target_base``: what unit the template's
+    anchored rows show — the template-level invariant; source bases vary by
+    sheet). Disagreement resolves to the strong evidence WITH a visible flag,
+    or becomes a SCALE_CONFLICT question — never a silent plausible-wrong
+    number (the legacy modal-guess wrote thousands-templates at x1)."""
     src_u = resolve_unit(fill.source_unit) if fill.source_unit else series.unit
     kinds = {src_u.kind, tgt_u.kind}
     if kinds & {"percent", "ratio"}:
@@ -78,10 +157,17 @@ def _resolve_scale(fill: MetricMap, series: Series, recon_sample, tpl_mags, tgt_
     mag = reconcile_scale(recon_sample, tpl_mags)
 
     if declared is not None and mag is None:
-        flag = None if tpl_mags else "scale_unverified:no_template_magnitude"
         if tpl_mags:  # magnitudes exist but wouldn't reconcile cleanly — say so
-            flag = "scale_unverified:magnitude_mismatch"
-        return declared, (flag if declared != 1.0 or tpl_mags else None), None
+            return declared, "scale_unverified:magnitude_mismatch", None
+        # the row is empty — the template's OTHER anchored rows imply its display
+        # base; a declaration that contradicts it is a question, not a fill
+        if tpl_target_base:
+            tgt_base = tgt_u.base or 1.0
+            if not (1 / 3 <= tgt_base / tpl_target_base <= 3):
+                return None, (f"plan reads the template as x{tgt_base:g} units but its anchored "
+                              f"rows display x{tpl_target_base:g}"), "SCALE_CONFLICT"
+            return declared, None, None   # corroborated by the template's anchored rows
+        return declared, ("scale_unverified:no_template_magnitude" if declared != 1.0 else None), None
     if declared is None and mag is not None:
         return mag, "scale:magnitude-only", None
     if declared is not None and mag is not None:
@@ -125,6 +211,30 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
     period_count = int(demand.get("period_count") or 0)
     pc_by_sheet: dict = demand.get("period_count_by_sheet") or {}
     grain = demand.get("period_grain") or "month"
+
+    # Template-level scale EVIDENCE: the modal DISPLAY BASE implied by rows that
+    # already hold numbers (target_base = source_base / verified_scale — invariant
+    # across source sheets whose own bases differ). Used only to cross-check
+    # declarations on EMPTY rows — a conflict asks, it never decides silently.
+    from collections import Counter as _Counter
+    _base_votes: _Counter = _Counter()
+    for f in facts:
+        mags = mags_by_row.get((f.get("sheet_name"), f.get("row")))
+        if not mags:
+            continue
+        fl = fill_for(_metric_key(f), (f.get("scenario") or "").strip().lower())
+        if fl is None or not fl.series_id:
+            continue
+        ser = catalogue.get(fl.series_id)
+        if ser is None:
+            continue
+        src_u = resolve_unit(fl.source_unit) if fl.source_unit else ser.unit
+        if src_u.kind in ("percent", "ratio") or ser.unit.kind in ("percent", "ratio"):
+            continue
+        mg = reconcile_scale(ser.sample, mags)
+        if mg:
+            _base_votes[(src_u.base or 1.0) / mg] += 1
+    tpl_target_base = _base_votes.most_common(1)[0][0] if _base_votes else None
 
     links: list[CellLink] = []
     unmatched: list[dict] = []
@@ -213,7 +323,8 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
         # SCALE: declared units compute it; template magnitudes cross-check it.
         tpl_mags = mags_by_row.get((sheet, f.get("row")), [])
         tgt_u = _target_unit(fill, f, numfmt_by_cell, display_unit)
-        scale, sflag, sc_code = _resolve_scale(fill, series, recon_sample, tpl_mags, tgt_u)
+        scale, sflag, sc_code = _resolve_scale(fill, series, recon_sample, tpl_mags, tgt_u,
+                                               tpl_target_base=tpl_target_base)
         if scale is None:
             unmatched.append(_unmatched(
                 f, f"unit/scale unresolved ({sflag}) — plan declared "

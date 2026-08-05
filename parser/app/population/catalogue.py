@@ -23,7 +23,7 @@ from datetime import date
 
 from app.population.numfmt import parse_number_format
 from app.population.periods import parse_any_date, parse_iso_period
-from app.population.units import Unit, resolve_unit
+from app.population.units import CCY_TOKENS, Unit, resolve_unit
 
 _A1 = re.compile(r"^([A-Za-z]{1,3})(\d+)$")
 
@@ -39,11 +39,7 @@ def a1_to_rowcol(addr: str) -> tuple[int, int] | None:
         col = col * 26 + (ord(ch) - 64)
     return row, col
 
-_CCY_TOKENS = {
-    "$": "USD", "usd": "USD", "us$": "USD",
-    "€": "EUR", "eur": "EUR",
-    "£": "GBP", "gbp": "GBP",
-}
+
 
 
 @dataclass
@@ -237,7 +233,7 @@ def _detect_sheet_currency(cells: list[dict]) -> str | None:
         if not isinstance(v, str):
             continue
         low = v.lower()
-        for tok, ccy in _CCY_TOKENS.items():
+        for tok, ccy in CCY_TOKENS:
             if tok in low:
                 tally[ccy] += 1
     return max(tally, key=tally.get) if tally else None

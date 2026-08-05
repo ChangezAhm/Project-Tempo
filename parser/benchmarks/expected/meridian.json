@@ -1,0 +1,19 @@
+{
+  "_comment": "Human-verified expected fills for Aurora -> Meridian (681f6d92). Values verified 2026-08-05 against the source workbook (SaaS metrics in USD'000; KPI Dashboard quarterly Q1-26..Q4-26). expected_blank = cells that MUST stay empty (no source data for Q3/Q4) — filling them is an error.",
+  "cells": {
+    "KPI Dashboard!D5": 149.5,
+    "KPI Dashboard!E5": 158.4,
+    "KPI Dashboard!D6": 498.0,
+    "KPI Dashboard!E6": 512.0,
+    "KPI Dashboard!D7": 0.016333333333333335,
+    "KPI Dashboard!E7": 0.014666666666666666,
+    "Monthly Flash!E8": 12.453799,
+    "Monthly Flash!J8": 13.75,
+    "Monthly Flash!E9": -4.35883
+  },
+  "expected_blank": [
+    "KPI Dashboard!F5", "KPI Dashboard!G5",
+    "KPI Dashboard!F6", "KPI Dashboard!G6",
+    "KPI Dashboard!F7", "KPI Dashboard!G7"
+  ]
+}

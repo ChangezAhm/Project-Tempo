@@ -183,10 +183,17 @@ def render_filled(template_workbook_path, filled, clear_facts=(), *, reset: str 
             ws.cells.clear_contents(cell.row, cell.column, cell.row, cell.column)
             cleared_formulas += 1
 
+    write_failures: list[dict] = []
     for fc in filled:
         ws = ws_by_name.get(fc.template_sheet)
         if ws is not None:
             ws.cells.get(fc.template_cell).put_value(fc.value)
+        else:
+            # a filled value whose sheet is missing from the workbook must never
+            # vanish silently — record it so the run report shows the loss.
+            write_failures.append({"template_sheet": fc.template_sheet,
+                                   "template_cell": fc.template_cell,
+                                   "reason": "sheet not found in workbook"})
 
     applied, skipped = [], []
     if additions:
@@ -200,6 +207,8 @@ def render_filled(template_workbook_path, filled, clear_facts=(), *, reset: str 
         wb.save(str(out))
         data = out.read_bytes()          # deliverable frozen BEFORE any recalc
         stats = {"cleared_values": cleared_values, "cleared_formulas": cleared_formulas}
+        if write_failures:
+            stats["write_failures"] = write_failures[:50]
 
         check_results: list = []
         if checks and _calc_enabled():
@@ -297,6 +306,45 @@ def _template_context(snap: dict | None) -> tuple[dict, dict, dict]:
             for col, d in _pick_timeline(row_dates).items():
                 dates_by_col[(name, col)] = d
     return numfmt, dict(mags), dates_by_col
+
+
+def _attach_slot_facts(metrics: list[dict], facts: list[dict],
+                       template_context: tuple[dict, dict, dict]) -> None:
+    """Attach per-metric SLOT FACTS for the planner: which sheets demand this
+    metric, at what grain, over what date range, and whether the rows already
+    hold numbers (scale evidence). Facts only — the planner judges from them."""
+    from app.population.periods import infer_grain
+
+    _numfmt, mags_by_row, dates_by_col = (template_context + ({}, {}, {}))[:3]
+    sheet_dates: dict[str, list] = {}
+    for (sh, _c), d in dates_by_col.items():
+        sheet_dates.setdefault(sh, []).append(d)
+    per_metric: dict[str, dict[str, int]] = {}
+    has_values: dict[str, bool] = {}
+    for f in facts:
+        k = f.get("canonical_metric") or f.get("metric_label")
+        if not k:
+            continue
+        sh = f.get("sheet_name")
+        per_metric.setdefault(k, {})[sh] = per_metric.get(k, {}).get(sh, 0) + 1
+        if mags_by_row.get((sh, f.get("row"))):
+            has_values[k] = True
+    for m in metrics:
+        sheets = per_metric.get(m.get("metric"), {})
+        if not sheets:
+            continue
+        parts = []
+        for sh, n in sheets.items():
+            ds = sorted(sheet_dates.get(sh, []))
+            if ds:
+                g = infer_grain(ds) or "?"
+                parts.append(f"{sh}: {g}ly {ds[0]:%Y-%m}..{ds[-1]:%Y-%m} ({n} slots)")
+            else:
+                parts.append(f"{sh}: undated ({n} slots)")
+        summary = "; ".join(parts)
+        if not has_values.get(m.get("metric")):
+            summary += " — rows currently empty"
+        m["slots"] = summary
 
 
 def _build_source_catalogue(snapshot: dict, source_periods: dict, content_hash: str | None,
@@ -465,6 +513,9 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     additions_applied: list = []
     additions_skipped: list = []
     try:
+        # the planner sees the SLOT FACTS (per-sheet grain, date range, emptiness)
+        # so grain/rollup/unit judgments rest on reality, not guesses.
+        _attach_slot_facts(demand["metrics"], target_inputs, template_context)
         metric_maps, mapping_failed = map_metrics(demand["metrics"], catalogue, context=biz_context)
         if mapping_failed:
             # LOUD: name the affected metrics and file a durable review item —
@@ -517,15 +568,65 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         if agg_membership is not None:
             routing["totals_modelled"] = len({t for ts in agg_membership.values() for t in ts})
 
-        links, bind_unmatched = bind(
-            target_inputs, catalogue, metric_maps, demand,
-            display_unit=display_unit, template_context=template_context,
-            agg_membership=agg_membership,
-        )
+        # ---- FILL-PLAN PATH (docs/Fill-Plan-Architecture.md, Phase 1 flag) ----
+        # plan -> contract overlay -> verify -> one repair round -> execute.
+        # The legacy bind() path remains the default until the Phase-1 gate passes.
+        fill_plan_mode = os.environ.get("TEMPO_FILL_PLAN") == "1"
+        plan_issues: list = []
+        if fill_plan_mode:
+            from app.population.contract import apply_decisions, load_decisions
+            from app.population.execute import execute_plan
+            from app.population.mapping import repair_plan
+            from app.population.verify import blocked_metrics, verify_plan
+
+            decisions = load_decisions(t_vid)
+            n_dec = apply_decisions(metric_maps, decisions)
+            if n_dec:
+                routing["contract_decisions_applied"] = n_dec
+            issues = verify_plan(metric_maps, catalogue, target_inputs, demand,
+                                 template_context, agg_membership)
+            repairable: dict[str, list] = {}
+            for i in issues:
+                if i.severity == "repair":
+                    repairable.setdefault(i.metric, []).append(i)
+            if repairable:
+                by_fill = {m.metric: m for m in metric_maps}
+                metric_by_key = {m["metric"]: m for m in demand["metrics"]}
+                from app.population.schema import MetricMap as _MM
+                failing = [(metric_by_key.get(mk) or {"metric": mk, "label": mk},
+                            by_fill.get(mk) or _MM(metric=mk), iss)
+                           for mk, iss in repairable.items()]
+                repaired = repair_plan(failing, catalogue, context=biz_context)
+                if repaired:
+                    for rm in repaired:
+                        if rm.metric in repairable:
+                            by_fill[rm.metric] = rm
+                    metric_maps = list(by_fill.values())
+                    routing["plan_repaired"] = len(repaired)
+                    issues = verify_plan(metric_maps, catalogue, target_inputs, demand,
+                                         template_context, agg_membership)
+            for i in issues:            # unrepaired -> the question tier, never a dead end
+                if i.severity == "repair":
+                    i.severity = "question"
+            blocked = blocked_metrics(issues)
+            links, bind_unmatched, exec_issues = execute_plan(
+                target_inputs, catalogue, metric_maps, demand,
+                display_unit=display_unit, template_context=template_context,
+                blocked=blocked)
+            plan_issues = issues + exec_issues
+            if plan_issues:
+                routing["plan_issues"] = dict(Counter(i.code for i in plan_issues))
+        else:
+            links, bind_unmatched = bind(
+                target_inputs, catalogue, metric_maps, demand,
+                display_unit=display_unit, template_context=template_context,
+                agg_membership=agg_membership,
+            )
         # Filled cells that need a human eye: scale that couldn't be magnitude-verified,
-        # OR a reconciled fill (source data cut differently — a provisional assumption).
+        # a reconciled fill, positional alignment, or a flagged auto-resolution.
         review = [{"template_sheet": lk.template_sheet, "template_cell": lk.template_cell, "note": lk.note}
-                  for lk in links if lk.note and any(t in lk.note for t in ("unverified", "reconciled", "positional"))]
+                  for lk in links if lk.note and any(t in lk.note for t in
+                                                     ("unverified", "reconciled", "positional", "auto-resolved"))]
         notes = [m.note for m in metric_maps if m.series_id and m.note][:200]
         # WHY the uncovered metrics are uncovered, in the mapper's own words: a null
         # mapping carries a reason ('source combines depreciation & amortisation',
@@ -607,6 +708,59 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 sb.insert_review_items(t_vid, items)
             except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
                 logger.warning("could not file reconciliation/decision review items: %s", e)
+
+        # FILL-PLAN questions: every question-tier verifier/executor issue becomes
+        # ONE batched review item per (metric, issue) with the plan's proposal as
+        # the one-tap answer; the answer persists as a contract decision and
+        # replays on every future run. Flagged auto-resolutions land in `review`.
+        if fill_plan_mode and plan_issues:
+            from app.population.contract import decision_spec
+            from app.review.items import make_item
+            _DEC_FIELD = {"LOW_CONFIDENCE": "confirmed", "GRAIN_UNBRIDGEABLE": "rollup",
+                          "SCALE_CONFLICT": "source_unit", "BUCKET_INCOMPLETE": "rollup"}
+            plan_q_items = []
+            # SCENARIO_NO_SOURCE is one underlying fact (this source has no
+            # budget/forecast data), not N per-metric decisions — ONE question.
+            scen_gaps = [i for i in plan_issues if i.code == "SCENARIO_NO_SOURCE"
+                         and i.severity == "question"]
+            if scen_gaps:
+                metrics = sorted({label_by_key.get(i.metric, i.metric) for i in scen_gaps})
+                scens = sorted({i.detail.split(" slots", 1)[0].rsplit(" ", 1)[-1] for i in scen_gaps})
+                plan_q_items.append(make_item(
+                    source="populate-plan", kind="judgment",
+                    question=(f"The template has {'/'.join(scens)} columns for "
+                              f"{len(metrics)} metric(s) but this source carries no "
+                              f"{'/'.join(scens)} data — those slots stay blank. OK?"),
+                    why="Affected: " + ", ".join(metrics[:12]) + ("…" if len(metrics) > 12 else ""),
+                    suggested_answer="yes — leave them blank",
+                ))
+            for i in plan_issues:
+                if i.code == "SCENARIO_NO_SOURCE":
+                    continue
+                label = label_by_key.get(i.metric, i.metric)
+                if i.severity == "default" and i.resolution:
+                    review.append({"template_sheet": (i.cells[0].split("!", 1)[0] if i.cells else None),
+                                   "template_cell": (i.cells[0].split("!", 1)[1] if i.cells else None),
+                                   "note": f"auto-resolved [{i.code}] '{label}': {i.resolution}"})
+                    continue
+                if i.severity != "question":
+                    continue
+                field = _DEC_FIELD.get(i.code)
+                spec = decision_spec(i.metric, field, i.suggested_resolution) if field else None
+                why = f"[{i.code}] " + (f"Affects {len(i.cells)} cell(s), e.g. "
+                                        f"{', '.join(i.cells[:4])}." if i.cells else "")
+                plan_q_items.append(make_item(
+                    source="populate-plan", kind="judgment",
+                    question=f"'{label}' — {i.detail}. How should this fill?",
+                    why=why, affected={"metrics": [i.metric], "cells": i.cells[:12]},
+                    suggested_answer=i.suggested_resolution, check_spec=spec))
+            if plan_q_items:
+                try:
+                    sb.insert_review_items(t_vid, plan_q_items)
+                    routing["plan_questions_filed"] = len(plan_q_items)
+                except Exception as e:  # noqa: BLE001 — but a LOST question is surfaced, not swallowed
+                    logger.warning("could not file plan questions: %s", e)
+                    routing["plan_questions_lost"] = len(plan_q_items)
 
         # Add-line additions: source series that mapped to NO template metric are
         # routed into the template's extensible regions (the BRIDGE: a region whose
@@ -698,6 +852,9 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 "template_checks": template_checks,
                 "summary": result.summary,
                 "rule_violations": violations, "context_chars": len(biz_context),
+                "fill_plan": ([m.model_dump(exclude_none=True) for m in metric_maps]
+                              if fill_plan_mode else None),
+                "plan_issues": [i.model_dump(exclude_none=True) for i in plan_issues],
                 "reset": reset, **clear_stats,
                 "proposed_additions": proposals, "addition_notes": add_notes,
                 "additions_applied": additions_applied, "additions_skipped": additions_skipped,
@@ -750,6 +907,9 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         "additions_applied": additions_applied[:100],
         "additions_skipped": additions_skipped[:50],
         "notes": notes,
+        "fill_plan": ([m.model_dump(exclude_none=True) for m in metric_maps]
+                      if fill_plan_mode else None),
+        "plan_issues": [i.model_dump(exclude_none=True) for i in plan_issues][:100],
         "filled_url": filled_url,
         "audit_url": audit_url,
     }

@@ -143,50 +143,15 @@ def _extract_json(text: str) -> str:
     return t[start : end + 1] if start != -1 and end != -1 else t
 
 
-def _est(messages, max_tokens: int) -> tuple[int, int]:
-    """(input_chars, n_images) across the message content for a spend estimate."""
-    chars = len(SYSTEM)
-    n_images = 0
-    for m in messages:
-        content = m.get("content")
-        if isinstance(content, str):
-            chars += len(content)
-            continue
-        for b in content or []:
-            if not isinstance(b, dict):
-                continue
-            if b.get("type") == "image":
-                n_images += 1
-            elif b.get("type") == "text":
-                chars += len(b.get("text", ""))
-    return chars, n_images
-
-
 def _call(client, messages, max_tokens: int, sheet_name: str, model: str = MODEL):
     # Schema enforced by prompt + Pydantic validation (not output_config) — the
-    # strict-grammar compiler rejects schemas this large. Adaptive thinking only
-    # on the smart tier (mirrors llm.guarded_stream's gating); a forced
-    # tool_choice would disable it anyway.
-    from app.population.cost import estimate_call_usd, get_guard
+    # strict-grammar compiler rejects schemas this large. Routed through
+    # guarded_stream so the spend firewall and LangSmith tracing have no gaps
+    # (``client`` is ignored — the choke point owns the client).
+    from app.llm import guarded_stream
 
-    guard = get_guard()
-    if guard is not None:
-        chars, n_images = _est(messages, max_tokens)
-        guard.check(estimate_call_usd(model, chars, max_tokens, n_images))
-    kwargs: dict = {"model": model, "max_tokens": max_tokens, "system": SYSTEM,
-                    "messages": messages}
-    if model == MODEL:
-        kwargs["thinking"] = {"type": "adaptive"}   # effort defaults to high on Opus 4.8
-    with client.messages.stream(**kwargs) as stream:
-        msg = stream.get_final_message()
-    if guard is not None and getattr(msg, "usage", None) is not None:
-        guard.record_actual(model, msg.usage.input_tokens, msg.usage.output_tokens)
-    if msg.stop_reason == "max_tokens":
-        raise RuntimeError(
-            f"Understanding truncated at max_tokens={max_tokens} for '{sheet_name}' — raise max_tokens."
-        )
-    text = next((b.text for b in msg.content if b.type == "text"), "")
-    return msg, text
+    return guarded_stream(model=model, system=SYSTEM, messages=messages,
+                          max_tokens=max_tokens, site=f"understand_sheet:{sheet_name}")
 
 
 @traceable(name="understand_sheet", run_type="chain")

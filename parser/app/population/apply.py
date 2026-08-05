@@ -66,6 +66,7 @@ def apply_links(facts: list[dict], source_snapshot: dict, links: list[CellLink],
     filled: list[FilledCell] = []
     unmatched: list[dict] = []
     linked_keys: set[tuple[str, str]] = set()
+    duplicate_links = 0
 
     def _ref(f: dict) -> dict:
         return {"template_sheet": f["sheet_name"], "template_cell": f.get("cell"),
@@ -83,7 +84,8 @@ def apply_links(facts: list[dict], source_snapshot: dict, links: list[CellLink],
                               "source_sheet": lk.source_sheet, "source_cell": lk.source_cell})
             continue
         if tkey in linked_keys:
-            continue  # first (highest-priority) link wins per cell
+            duplicate_links += 1   # first (highest-priority) link wins; counted, not silent
+            continue
         linked_keys.add(tkey)
 
         ssheet = sheet_by_lower.get(lk.source_sheet.lower(), lk.source_sheet)
@@ -129,7 +131,8 @@ def apply_links(facts: list[dict], source_snapshot: dict, links: list[CellLink],
                 unmatched.append({"reason": f"aggregation incomplete: component {missing} empty/non-numeric at this period",
                                   "source_sheet": ssheet, "source_cell": saddr, **_ref(f)})
                 continue
-            raw_out = sum(nums)
+            # 'avg' = a rate rolled up across months (never summed); default 'sum'
+            raw_out = sum(nums) / len(nums) if lk.agg_op == "avg" else sum(nums)
 
         try:
             value = float(raw_out) * lk.unit_scale * (-1.0 if lk.sign_flip else 1.0)
@@ -149,7 +152,8 @@ def apply_links(facts: list[dict], source_snapshot: dict, links: list[CellLink],
             continue
         unmatched.append({"reason": "no source match", **_ref(f)})
 
-    return PopulationResult(filled=filled, unmatched=unmatched, skipped=skipped, summary={
-        "facts": len(facts), "filled": len(filled),
-        "unmatched": len(unmatched), "skipped": len(skipped),
-    })
+    summary = {"facts": len(facts), "filled": len(filled),
+               "unmatched": len(unmatched), "skipped": len(skipped)}
+    if duplicate_links:
+        summary["duplicate_links_dropped"] = duplicate_links
+    return PopulationResult(filled=filled, unmatched=unmatched, skipped=skipped, summary=summary)

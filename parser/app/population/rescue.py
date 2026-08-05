@@ -50,9 +50,13 @@ _SYSTEM = (
     "residual line that legitimately owns them, but NEVER double-count (each source series "
     "belongs to at most one template line). The value always comes from a real series — "
     "never invent numbers.\n"
+    "rollup: how the metric aggregates months -> quarter/year when grains differ: 'sum' "
+    "(period flows), 'end' (point-in-time stocks: balances, headcount, ARR/run-rates), "
+    "'avg' (rates/percentages). Set it for every mapped metric.\n"
     'Return ONE JSON object: {"mappings":[{"metric":"<same key>","status":"direct|aggregate'
     '|reconcile|needs_decision|unavailable","series_id":"...|null","also_series_ids":[],'
-    '"assumption":"...|null","sign_flip":false,"confidence":0.0,"note":"..."}]}'
+    '"assumption":"...|null","rollup":"sum|end|avg","sign_flip":false,"confidence":0.0,'
+    '"note":"..."}]}'
 )
 
 
@@ -90,7 +94,8 @@ def rescue_metrics(metrics: list[dict], catalogue: dict[str, Series], *,
         try:
             _, text = guarded_stream(model=model, system=_SYSTEM,
                                      content=_user(metric, series_block, used_block, context),
-                                     max_tokens=1200)
+                                     max_tokens=1200, temperature=0,
+                                     site=f"metric_rescue:{metric.get('metric')}")
             maps = _parse(text)
         except SpendCapExceeded:
             logger.warning("rescue hit the spend cap — leaving '%s' as the main pass had it",

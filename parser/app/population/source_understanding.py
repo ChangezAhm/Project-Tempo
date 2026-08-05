@@ -224,7 +224,8 @@ def _understand_sheet(sheet: dict, model: str,
     _, text = guarded_stream(model=model, system=_SYSTEM, content=content,
                              max_tokens=_MAX_TOKENS,
                              est_input_chars=len(_SYSTEM) + len(digest),
-                             n_images=n_images)
+                             n_images=n_images,
+                             site=f"source_understanding:{sheet.get('name')}")
     out = _parse(text)
     return {"sheet": sheet.get("name"),
             "periods": [p.model_dump() for p in out.periods],

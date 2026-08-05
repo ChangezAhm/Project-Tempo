@@ -1,0 +1,4948 @@
+{
+ "target_template_id": "ca1db430-e6ca-4c3a-bfff-dac4d7c637c1",
+ "source_filename": "2026-07-08-aurora-softworks-management-ac.xlsx",
+ "as_of_date": "2026-08-04",
+ "demand_metrics": 59,
+ "summary": {
+  "facts": 1047,
+  "filled": 84,
+  "unmatched": 963,
+  "skipped": 0
+ },
+ "routing": {
+  "series": 21,
+  "catalogue_source": "ai_understanding",
+  "context_chars": 563,
+  "gated_cells": 81,
+  "rescue_attempted": 40,
+  "rescue_placed": 2,
+  "totals_modelled": 38
+ },
+ "links_count": 84,
+ "filled": [
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "C8",
+   "value": 405.0,
+   "raw_source_value": 405000.0,
+   "source_sheet": "P&L",
+   "source_cell": "B16",
+   "metric": "Depreciation & Amortisation",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.82
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "D8",
+   "value": 407.5,
+   "raw_source_value": 407500.0,
+   "source_sheet": "P&L",
+   "source_cell": "C16",
+   "metric": "Depreciation & Amortisation",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.82
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "E8",
+   "value": 410.0,
+   "raw_source_value": 410000.0,
+   "source_sheet": "P&L",
+   "source_cell": "D16",
+   "metric": "Depreciation & Amortisation",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.82
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "F8",
+   "value": 412.5,
+   "raw_source_value": 412500.0,
+   "source_sheet": "P&L",
+   "source_cell": "E16",
+   "metric": "Depreciation & Amortisation",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.82
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "G8",
+   "value": 415.0,
+   "raw_source_value": 415000.0,
+   "source_sheet": "P&L",
+   "source_cell": "F16",
+   "metric": "Depreciation & Amortisation",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.82
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "H8",
+   "value": 417.5,
+   "raw_source_value": 417500.0,
+   "source_sheet": "P&L",
+   "source_cell": "G16",
+   "metric": "Depreciation & Amortisation",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.82
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "I8",
+   "value": 420.0,
+   "raw_source_value": 420000.0,
+   "source_sheet": "P&L",
+   "source_cell": "H16",
+   "metric": "Depreciation & Amortisation",
+   "period_index": 6,
+   "scenario": "actual",
+   "confidence": 0.82
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "J8",
+   "value": 422.5,
+   "raw_source_value": 422500.0,
+   "source_sheet": "P&L",
+   "source_cell": "I16",
+   "metric": "Depreciation & Amortisation",
+   "period_index": 7,
+   "scenario": "actual",
+   "confidence": 0.82
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "K8",
+   "value": 425.0,
+   "raw_source_value": 425000.0,
+   "source_sheet": "P&L",
+   "source_cell": "J16",
+   "metric": "Depreciation & Amortisation",
+   "period_index": 8,
+   "scenario": "actual",
+   "confidence": 0.82
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "L8",
+   "value": 427.5,
+   "raw_source_value": 427500.0,
+   "source_sheet": "P&L",
+   "source_cell": "K16",
+   "metric": "Depreciation & Amortisation",
+   "period_index": 9,
+   "scenario": "actual",
+   "confidence": 0.82
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "M8",
+   "value": 430.0,
+   "raw_source_value": 430000.0,
+   "source_sheet": "P&L",
+   "source_cell": "L16",
+   "metric": "Depreciation & Amortisation",
+   "period_index": 10,
+   "scenario": "actual",
+   "confidence": 0.82
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "N8",
+   "value": 432.5,
+   "raw_source_value": 432500.0,
+   "source_sheet": "P&L",
+   "source_cell": "M16",
+   "metric": "Depreciation & Amortisation",
+   "period_index": 11,
+   "scenario": "actual",
+   "confidence": 0.82
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "C10",
+   "value": 9.819735,
+   "raw_source_value": 9819735.0,
+   "source_sheet": "P&L",
+   "source_cell": "B8",
+   "metric": "Revenue per Employee ($K)",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.6
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "D10",
+   "value": 10.01613,
+   "raw_source_value": 10016130.0,
+   "source_sheet": "P&L",
+   "source_cell": "C8",
+   "metric": "Revenue per Employee ($K)",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.6
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "E10",
+   "value": 10.216453,
+   "raw_source_value": 10216453.0,
+   "source_sheet": "P&L",
+   "source_cell": "D8",
+   "metric": "Revenue per Employee ($K)",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.6
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "F10",
+   "value": 10.420781999999999,
+   "raw_source_value": 10420782.0,
+   "source_sheet": "P&L",
+   "source_cell": "E8",
+   "metric": "Revenue per Employee ($K)",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.6
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "G10",
+   "value": 10.629197,
+   "raw_source_value": 10629197.0,
+   "source_sheet": "P&L",
+   "source_cell": "F8",
+   "metric": "Revenue per Employee ($K)",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.6
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "H10",
+   "value": 10.841781,
+   "raw_source_value": 10841781.0,
+   "source_sheet": "P&L",
+   "source_cell": "G8",
+   "metric": "Revenue per Employee ($K)",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.6
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "I10",
+   "value": 11.058617,
+   "raw_source_value": 11058617.0,
+   "source_sheet": "P&L",
+   "source_cell": "H8",
+   "metric": "Revenue per Employee ($K)",
+   "period_index": 6,
+   "scenario": "actual",
+   "confidence": 0.6
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "J10",
+   "value": 11.279789,
+   "raw_source_value": 11279789.0,
+   "source_sheet": "P&L",
+   "source_cell": "I8",
+   "metric": "Revenue per Employee ($K)",
+   "period_index": 7,
+   "scenario": "actual",
+   "confidence": 0.6
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "K10",
+   "value": 11.505384999999999,
+   "raw_source_value": 11505385.0,
+   "source_sheet": "P&L",
+   "source_cell": "J8",
+   "metric": "Revenue per Employee ($K)",
+   "period_index": 8,
+   "scenario": "actual",
+   "confidence": 0.6
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "L10",
+   "value": 11.735493,
+   "raw_source_value": 11735493.0,
+   "source_sheet": "P&L",
+   "source_cell": "K8",
+   "metric": "Revenue per Employee ($K)",
+   "period_index": 9,
+   "scenario": "actual",
+   "confidence": 0.6
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "M10",
+   "value": 11.970201999999999,
+   "raw_source_value": 11970202.0,
+   "source_sheet": "P&L",
+   "source_cell": "L8",
+   "metric": "Revenue per Employee ($K)",
+   "period_index": 10,
+   "scenario": "actual",
+   "confidence": 0.6
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "N10",
+   "value": 12.209607,
+   "raw_source_value": 12209607.0,
+   "source_sheet": "P&L",
+   "source_cell": "M8",
+   "metric": "Revenue per Employee ($K)",
+   "period_index": 11,
+   "scenario": "actual",
+   "confidence": 0.6
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "C5",
+   "value": 9819.735,
+   "raw_source_value": 9819735.0,
+   "source_sheet": "P&L",
+   "source_cell": "B8",
+   "metric": "Revenue",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "D5",
+   "value": 10016.130000000001,
+   "raw_source_value": 10016130.0,
+   "source_sheet": "P&L",
+   "source_cell": "C8",
+   "metric": "Revenue",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "E5",
+   "value": 10216.453,
+   "raw_source_value": 10216453.0,
+   "source_sheet": "P&L",
+   "source_cell": "D8",
+   "metric": "Revenue",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "F5",
+   "value": 10420.782000000001,
+   "raw_source_value": 10420782.0,
+   "source_sheet": "P&L",
+   "source_cell": "E8",
+   "metric": "Revenue",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "G5",
+   "value": 10629.197,
+   "raw_source_value": 10629197.0,
+   "source_sheet": "P&L",
+   "source_cell": "F8",
+   "metric": "Revenue",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "H5",
+   "value": 10841.781,
+   "raw_source_value": 10841781.0,
+   "source_sheet": "P&L",
+   "source_cell": "G8",
+   "metric": "Revenue",
+   "period_index": 6,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "I5",
+   "value": 11058.617,
+   "raw_source_value": 11058617.0,
+   "source_sheet": "P&L",
+   "source_cell": "H8",
+   "metric": "Revenue",
+   "period_index": 7,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "J5",
+   "value": 11279.789,
+   "raw_source_value": 11279789.0,
+   "source_sheet": "P&L",
+   "source_cell": "I8",
+   "metric": "Revenue",
+   "period_index": 8,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "K5",
+   "value": 11505.385,
+   "raw_source_value": 11505385.0,
+   "source_sheet": "P&L",
+   "source_cell": "J8",
+   "metric": "Revenue",
+   "period_index": 9,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "L5",
+   "value": 11735.493,
+   "raw_source_value": 11735493.0,
+   "source_sheet": "P&L",
+   "source_cell": "K8",
+   "metric": "Revenue",
+   "period_index": 10,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "M5",
+   "value": 11970.202000000001,
+   "raw_source_value": 11970202.0,
+   "source_sheet": "P&L",
+   "source_cell": "L8",
+   "metric": "Revenue",
+   "period_index": 11,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "N5",
+   "value": 12209.607,
+   "raw_source_value": 12209607.0,
+   "source_sheet": "P&L",
+   "source_cell": "M8",
+   "metric": "Revenue",
+   "period_index": 12,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "C7",
+   "value": 3436.907,
+   "raw_source_value": 3436907.0,
+   "source_sheet": "P&L",
+   "source_cell": "B9",
+   "metric": "Cost of Goods Sold",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "D7",
+   "value": 3505.645,
+   "raw_source_value": 3505645.0,
+   "source_sheet": "P&L",
+   "source_cell": "C9",
+   "metric": "Cost of Goods Sold",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "E7",
+   "value": 3575.7580000000003,
+   "raw_source_value": 3575758.0,
+   "source_sheet": "P&L",
+   "source_cell": "D9",
+   "metric": "Cost of Goods Sold",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "F7",
+   "value": 3647.274,
+   "raw_source_value": 3647274.0,
+   "source_sheet": "P&L",
+   "source_cell": "E9",
+   "metric": "Cost of Goods Sold",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "G7",
+   "value": 3720.219,
+   "raw_source_value": 3720219.0,
+   "source_sheet": "P&L",
+   "source_cell": "F9",
+   "metric": "Cost of Goods Sold",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "H7",
+   "value": 3794.623,
+   "raw_source_value": 3794623.0,
+   "source_sheet": "P&L",
+   "source_cell": "G9",
+   "metric": "Cost of Goods Sold",
+   "period_index": 6,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "I7",
+   "value": 3870.516,
+   "raw_source_value": 3870516.0,
+   "source_sheet": "P&L",
+   "source_cell": "H9",
+   "metric": "Cost of Goods Sold",
+   "period_index": 7,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "J7",
+   "value": 3947.926,
+   "raw_source_value": 3947926.0,
+   "source_sheet": "P&L",
+   "source_cell": "I9",
+   "metric": "Cost of Goods Sold",
+   "period_index": 8,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "K7",
+   "value": 4026.885,
+   "raw_source_value": 4026885.0,
+   "source_sheet": "P&L",
+   "source_cell": "J9",
+   "metric": "Cost of Goods Sold",
+   "period_index": 9,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "L7",
+   "value": 4107.4220000000005,
+   "raw_source_value": 4107422.0,
+   "source_sheet": "P&L",
+   "source_cell": "K9",
+   "metric": "Cost of Goods Sold",
+   "period_index": 10,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "M7",
+   "value": 4189.571,
+   "raw_source_value": 4189571.0,
+   "source_sheet": "P&L",
+   "source_cell": "L9",
+   "metric": "Cost of Goods Sold",
+   "period_index": 11,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "N7",
+   "value": 4273.362,
+   "raw_source_value": 4273362.0,
+   "source_sheet": "P&L",
+   "source_cell": "M9",
+   "metric": "Cost of Goods Sold",
+   "period_index": 12,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "C12",
+   "value": 3731.4990000000003,
+   "raw_source_value": 3731499.0,
+   "source_sheet": "P&L",
+   "source_cell": "B13",
+   "metric": "Operating Expenses",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "D12",
+   "value": 3806.129,
+   "raw_source_value": 3806129.0,
+   "source_sheet": "P&L",
+   "source_cell": "C13",
+   "metric": "Operating Expenses",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "E12",
+   "value": 3882.252,
+   "raw_source_value": 3882252.0,
+   "source_sheet": "P&L",
+   "source_cell": "D13",
+   "metric": "Operating Expenses",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "F12",
+   "value": 3959.897,
+   "raw_source_value": 3959897.0,
+   "source_sheet": "P&L",
+   "source_cell": "E13",
+   "metric": "Operating Expenses",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "G12",
+   "value": 4039.0950000000003,
+   "raw_source_value": 4039095.0,
+   "source_sheet": "P&L",
+   "source_cell": "F13",
+   "metric": "Operating Expenses",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "H12",
+   "value": 4119.877,
+   "raw_source_value": 4119877.0,
+   "source_sheet": "P&L",
+   "source_cell": "G13",
+   "metric": "Operating Expenses",
+   "period_index": 6,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "I12",
+   "value": 4202.274,
+   "raw_source_value": 4202274.0,
+   "source_sheet": "P&L",
+   "source_cell": "H13",
+   "metric": "Operating Expenses",
+   "period_index": 7,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "J12",
+   "value": 4286.32,
+   "raw_source_value": 4286320.0,
+   "source_sheet": "P&L",
+   "source_cell": "I13",
+   "metric": "Operating Expenses",
+   "period_index": 8,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "K12",
+   "value": 4372.046,
+   "raw_source_value": 4372046.0,
+   "source_sheet": "P&L",
+   "source_cell": "J13",
+   "metric": "Operating Expenses",
+   "period_index": 9,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "L12",
+   "value": 4459.487,
+   "raw_source_value": 4459487.0,
+   "source_sheet": "P&L",
+   "source_cell": "K13",
+   "metric": "Operating Expenses",
+   "period_index": 10,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "M12",
+   "value": 4548.677,
+   "raw_source_value": 4548677.0,
+   "source_sheet": "P&L",
+   "source_cell": "L13",
+   "metric": "Operating Expenses",
+   "period_index": 11,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "N12",
+   "value": 4639.650000000001,
+   "raw_source_value": 4639650.0,
+   "source_sheet": "P&L",
+   "source_cell": "M13",
+   "metric": "Operating Expenses",
+   "period_index": 12,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "C20",
+   "value": 0.0,
+   "raw_source_value": 0.0,
+   "source_sheet": "P&L",
+   "source_cell": "B15",
+   "metric": "One-Time Restructuring",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.62
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "D20",
+   "value": 250.0,
+   "raw_source_value": 250000.0,
+   "source_sheet": "P&L",
+   "source_cell": "C15",
+   "metric": "One-Time Restructuring",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.62
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "E20",
+   "value": 0.0,
+   "raw_source_value": 0.0,
+   "source_sheet": "P&L",
+   "source_cell": "D15",
+   "metric": "One-Time Restructuring",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.62
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "F20",
+   "value": 0.0,
+   "raw_source_value": 0.0,
+   "source_sheet": "P&L",
+   "source_cell": "E15",
+   "metric": "One-Time Restructuring",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.62
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "G20",
+   "value": 0.0,
+   "raw_source_value": 0.0,
+   "source_sheet": "P&L",
+   "source_cell": "F15",
+   "metric": "One-Time Restructuring",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.62
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "H20",
+   "value": 90.0,
+   "raw_source_value": 90000.0,
+   "source_sheet": "P&L",
+   "source_cell": "G15",
+   "metric": "One-Time Restructuring",
+   "period_index": 6,
+   "scenario": "actual",
+   "confidence": 0.62
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "I20",
+   "value": 0.0,
+   "raw_source_value": 0.0,
+   "source_sheet": "P&L",
+   "source_cell": "H15",
+   "metric": "One-Time Restructuring",
+   "period_index": 7,
+   "scenario": "actual",
+   "confidence": 0.62
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "J20",
+   "value": 0.0,
+   "raw_source_value": 0.0,
+   "source_sheet": "P&L",
+   "source_cell": "I15",
+   "metric": "One-Time Restructuring",
+   "period_index": 8,
+   "scenario": "actual",
+   "confidence": 0.62
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "K20",
+   "value": 0.0,
+   "raw_source_value": 0.0,
+   "source_sheet": "P&L",
+   "source_cell": "J15",
+   "metric": "One-Time Restructuring",
+   "period_index": 9,
+   "scenario": "actual",
+   "confidence": 0.62
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "L20",
+   "value": 175.0,
+   "raw_source_value": 175000.0,
+   "source_sheet": "P&L",
+   "source_cell": "K15",
+   "metric": "One-Time Restructuring",
+   "period_index": 10,
+   "scenario": "actual",
+   "confidence": 0.62
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "M20",
+   "value": 0.0,
+   "raw_source_value": 0.0,
+   "source_sheet": "P&L",
+   "source_cell": "L15",
+   "metric": "One-Time Restructuring",
+   "period_index": 11,
+   "scenario": "actual",
+   "confidence": 0.62
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "N20",
+   "value": 0.0,
+   "raw_source_value": 0.0,
+   "source_sheet": "P&L",
+   "source_cell": "M15",
+   "metric": "One-Time Restructuring",
+   "period_index": 12,
+   "scenario": "actual",
+   "confidence": 0.62
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "C31",
+   "value": 405.0,
+   "raw_source_value": 405000.0,
+   "source_sheet": "P&L",
+   "source_cell": "B16",
+   "metric": "Depreciation",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.65
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "D31",
+   "value": 407.5,
+   "raw_source_value": 407500.0,
+   "source_sheet": "P&L",
+   "source_cell": "C16",
+   "metric": "Depreciation",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.65
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "E31",
+   "value": 410.0,
+   "raw_source_value": 410000.0,
+   "source_sheet": "P&L",
+   "source_cell": "D16",
+   "metric": "Depreciation",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.65
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "F31",
+   "value": 412.5,
+   "raw_source_value": 412500.0,
+   "source_sheet": "P&L",
+   "source_cell": "E16",
+   "metric": "Depreciation",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.65
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "G31",
+   "value": 415.0,
+   "raw_source_value": 415000.0,
+   "source_sheet": "P&L",
+   "source_cell": "F16",
+   "metric": "Depreciation",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.65
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "H31",
+   "value": 417.5,
+   "raw_source_value": 417500.0,
+   "source_sheet": "P&L",
+   "source_cell": "G16",
+   "metric": "Depreciation",
+   "period_index": 6,
+   "scenario": "actual",
+   "confidence": 0.65
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "I31",
+   "value": 420.0,
+   "raw_source_value": 420000.0,
+   "source_sheet": "P&L",
+   "source_cell": "H16",
+   "metric": "Depreciation",
+   "period_index": 7,
+   "scenario": "actual",
+   "confidence": 0.65
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "J31",
+   "value": 422.5,
+   "raw_source_value": 422500.0,
+   "source_sheet": "P&L",
+   "source_cell": "I16",
+   "metric": "Depreciation",
+   "period_index": 8,
+   "scenario": "actual",
+   "confidence": 0.65
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "K31",
+   "value": 425.0,
+   "raw_source_value": 425000.0,
+   "source_sheet": "P&L",
+   "source_cell": "J16",
+   "metric": "Depreciation",
+   "period_index": 9,
+   "scenario": "actual",
+   "confidence": 0.65
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "L31",
+   "value": 427.5,
+   "raw_source_value": 427500.0,
+   "source_sheet": "P&L",
+   "source_cell": "K16",
+   "metric": "Depreciation",
+   "period_index": 10,
+   "scenario": "actual",
+   "confidence": 0.65
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "M31",
+   "value": 430.0,
+   "raw_source_value": 430000.0,
+   "source_sheet": "P&L",
+   "source_cell": "L16",
+   "metric": "Depreciation",
+   "period_index": 11,
+   "scenario": "actual",
+   "confidence": 0.65
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "N31",
+   "value": 432.5,
+   "raw_source_value": 432500.0,
+   "source_sheet": "P&L",
+   "source_cell": "M16",
+   "metric": "Depreciation",
+   "period_index": 12,
+   "scenario": "actual",
+   "confidence": 0.65
+  }
+ ],
+ "filled_truncated": false,
+ "unmatched": [
+  {
+   "reason": "no source column for period_index=0 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "C6",
+   "metric": "cash",
+   "period_index": 0,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=1 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "D6",
+   "metric": "cash",
+   "period_index": 1,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "E6",
+   "metric": "cash",
+   "period_index": 2,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "F6",
+   "metric": "cash",
+   "period_index": 3,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=4 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "G6",
+   "metric": "cash",
+   "period_index": 4,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=5 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "H6",
+   "metric": "cash",
+   "period_index": 5,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "I6",
+   "metric": "cash",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "J6",
+   "metric": "cash",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "K6",
+   "metric": "cash",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "L6",
+   "metric": "cash",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "M6",
+   "metric": "cash",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "N6",
+   "metric": "cash",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=0 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "C7",
+   "metric": "cash",
+   "period_index": 0,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=1 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "D7",
+   "metric": "cash",
+   "period_index": 1,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "E7",
+   "metric": "cash",
+   "period_index": 2,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "F7",
+   "metric": "cash",
+   "period_index": 3,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=4 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "G7",
+   "metric": "cash",
+   "period_index": 4,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=5 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "H7",
+   "metric": "cash",
+   "period_index": 5,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "I7",
+   "metric": "cash",
+   "period_index": 6,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "J7",
+   "metric": "cash",
+   "period_index": 7,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "K7",
+   "metric": "cash",
+   "period_index": 8,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "L7",
+   "metric": "cash",
+   "period_index": 9,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "M7",
+   "metric": "cash",
+   "period_index": 10,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "N7",
+   "metric": "cash",
+   "period_index": 11,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=0 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "C8",
+   "metric": "accounts_receivable",
+   "period_index": 0,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=1 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "D8",
+   "metric": "accounts_receivable",
+   "period_index": 1,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "E8",
+   "metric": "accounts_receivable",
+   "period_index": 2,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "F8",
+   "metric": "accounts_receivable",
+   "period_index": 3,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=4 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "G8",
+   "metric": "accounts_receivable",
+   "period_index": 4,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=5 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "H8",
+   "metric": "accounts_receivable",
+   "period_index": 5,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "I8",
+   "metric": "accounts_receivable",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "J8",
+   "metric": "accounts_receivable",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "K8",
+   "metric": "accounts_receivable",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "L8",
+   "metric": "accounts_receivable",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "M8",
+   "metric": "accounts_receivable",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "N8",
+   "metric": "accounts_receivable",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=0 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "C9",
+   "metric": "accounts_receivable",
+   "period_index": 0,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=1 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "D9",
+   "metric": "accounts_receivable",
+   "period_index": 1,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "E9",
+   "metric": "accounts_receivable",
+   "period_index": 2,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "F9",
+   "metric": "accounts_receivable",
+   "period_index": 3,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=4 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "G9",
+   "metric": "accounts_receivable",
+   "period_index": 4,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=5 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "H9",
+   "metric": "accounts_receivable",
+   "period_index": 5,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "I9",
+   "metric": "accounts_receivable",
+   "period_index": 6,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "J9",
+   "metric": "accounts_receivable",
+   "period_index": 7,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "K9",
+   "metric": "accounts_receivable",
+   "period_index": 8,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "L9",
+   "metric": "accounts_receivable",
+   "period_index": 9,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "M9",
+   "metric": "accounts_receivable",
+   "period_index": 10,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "N9",
+   "metric": "accounts_receivable",
+   "period_index": 11,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=0 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "C10",
+   "metric": "inventory",
+   "period_index": 0,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=1 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "D10",
+   "metric": "inventory",
+   "period_index": 1,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "E10",
+   "metric": "inventory",
+   "period_index": 2,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "F10",
+   "metric": "inventory",
+   "period_index": 3,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=4 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "G10",
+   "metric": "inventory",
+   "period_index": 4,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=5 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "H10",
+   "metric": "inventory",
+   "period_index": 5,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "I10",
+   "metric": "inventory",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "J10",
+   "metric": "inventory",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "K10",
+   "metric": "inventory",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "L10",
+   "metric": "inventory",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "M10",
+   "metric": "inventory",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "N10",
+   "metric": "inventory",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=0 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "C11",
+   "metric": "inventory",
+   "period_index": 0,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=1 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "D11",
+   "metric": "inventory",
+   "period_index": 1,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "E11",
+   "metric": "inventory",
+   "period_index": 2,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "F11",
+   "metric": "inventory",
+   "period_index": 3,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=4 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "G11",
+   "metric": "inventory",
+   "period_index": 4,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=5 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "H11",
+   "metric": "inventory",
+   "period_index": 5,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "I11",
+   "metric": "inventory",
+   "period_index": 6,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "J11",
+   "metric": "inventory",
+   "period_index": 7,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "K11",
+   "metric": "inventory",
+   "period_index": 8,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "L11",
+   "metric": "inventory",
+   "period_index": 9,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "M11",
+   "metric": "inventory",
+   "period_index": 10,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "N11",
+   "metric": "inventory",
+   "period_index": 11,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "C12",
+   "metric": "Prepaid Expenses",
+   "period_index": 0,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "D12",
+   "metric": "Prepaid Expenses",
+   "period_index": 1,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "E12",
+   "metric": "Prepaid Expenses",
+   "period_index": 2,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "F12",
+   "metric": "Prepaid Expenses",
+   "period_index": 3,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "G12",
+   "metric": "Prepaid Expenses",
+   "period_index": 4,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "H12",
+   "metric": "Prepaid Expenses",
+   "period_index": 5,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "I12",
+   "metric": "Prepaid Expenses",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "J12",
+   "metric": "Prepaid Expenses",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "K12",
+   "metric": "Prepaid Expenses",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "L12",
+   "metric": "Prepaid Expenses",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "M12",
+   "metric": "Prepaid Expenses",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "N12",
+   "metric": "Prepaid Expenses",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "C13",
+   "metric": "Prepaid Expenses",
+   "period_index": 0,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "D13",
+   "metric": "Prepaid Expenses",
+   "period_index": 1,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "E13",
+   "metric": "Prepaid Expenses",
+   "period_index": 2,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "F13",
+   "metric": "Prepaid Expenses",
+   "period_index": 3,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "G13",
+   "metric": "Prepaid Expenses",
+   "period_index": 4,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "H13",
+   "metric": "Prepaid Expenses",
+   "period_index": 5,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "I13",
+   "metric": "Prepaid Expenses",
+   "period_index": 6,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "J13",
+   "metric": "Prepaid Expenses",
+   "period_index": 7,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "K13",
+   "metric": "Prepaid Expenses",
+   "period_index": 8,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "L13",
+   "metric": "Prepaid Expenses",
+   "period_index": 9,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "M13",
+   "metric": "Prepaid Expenses",
+   "period_index": 10,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "N13",
+   "metric": "Prepaid Expenses",
+   "period_index": 11,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "C17",
+   "metric": "ppe_net",
+   "period_index": 0,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "D17",
+   "metric": "ppe_net",
+   "period_index": 1,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "E17",
+   "metric": "ppe_net",
+   "period_index": 2,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "F17",
+   "metric": "ppe_net",
+   "period_index": 3,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "G17",
+   "metric": "ppe_net",
+   "period_index": 4,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "H17",
+   "metric": "ppe_net",
+   "period_index": 5,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "I17",
+   "metric": "ppe_net",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "J17",
+   "metric": "ppe_net",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "K17",
+   "metric": "ppe_net",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "L17",
+   "metric": "ppe_net",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "M17",
+   "metric": "ppe_net",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "N17",
+   "metric": "ppe_net",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "C18",
+   "metric": "ppe_net",
+   "period_index": 0,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "D18",
+   "metric": "ppe_net",
+   "period_index": 1,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "E18",
+   "metric": "ppe_net",
+   "period_index": 2,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "F18",
+   "metric": "ppe_net",
+   "period_index": 3,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "G18",
+   "metric": "ppe_net",
+   "period_index": 4,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "H18",
+   "metric": "ppe_net",
+   "period_index": 5,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "I18",
+   "metric": "ppe_net",
+   "period_index": 6,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "J18",
+   "metric": "ppe_net",
+   "period_index": 7,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "K18",
+   "metric": "ppe_net",
+   "period_index": 8,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "L18",
+   "metric": "ppe_net",
+   "period_index": 9,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "M18",
+   "metric": "ppe_net",
+   "period_index": 10,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "N18",
+   "metric": "ppe_net",
+   "period_index": 11,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "C19",
+   "metric": "intangible_assets",
+   "period_index": 0,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "D19",
+   "metric": "intangible_assets",
+   "period_index": 1,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "E19",
+   "metric": "intangible_assets",
+   "period_index": 2,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "F19",
+   "metric": "intangible_assets",
+   "period_index": 3,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "G19",
+   "metric": "intangible_assets",
+   "period_index": 4,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "H19",
+   "metric": "intangible_assets",
+   "period_index": 5,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "I19",
+   "metric": "intangible_assets",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "J19",
+   "metric": "intangible_assets",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "K19",
+   "metric": "intangible_assets",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "L19",
+   "metric": "intangible_assets",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "M19",
+   "metric": "intangible_assets",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "N19",
+   "metric": "intangible_assets",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "C20",
+   "metric": "intangible_assets",
+   "period_index": 0,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "D20",
+   "metric": "intangible_assets",
+   "period_index": 1,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "E20",
+   "metric": "intangible_assets",
+   "period_index": 2,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "F20",
+   "metric": "intangible_assets",
+   "period_index": 3,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "G20",
+   "metric": "intangible_assets",
+   "period_index": 4,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "H20",
+   "metric": "intangible_assets",
+   "period_index": 5,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "I20",
+   "metric": "intangible_assets",
+   "period_index": 6,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "J20",
+   "metric": "intangible_assets",
+   "period_index": 7,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "K20",
+   "metric": "intangible_assets",
+   "period_index": 8,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "L20",
+   "metric": "intangible_assets",
+   "period_index": 9,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "M20",
+   "metric": "intangible_assets",
+   "period_index": 10,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "N20",
+   "metric": "intangible_assets",
+   "period_index": 11,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "C21",
+   "metric": "goodwill",
+   "period_index": 0,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "D21",
+   "metric": "goodwill",
+   "period_index": 1,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "E21",
+   "metric": "goodwill",
+   "period_index": 2,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "F21",
+   "metric": "goodwill",
+   "period_index": 3,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "G21",
+   "metric": "goodwill",
+   "period_index": 4,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "H21",
+   "metric": "goodwill",
+   "period_index": 5,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "I21",
+   "metric": "goodwill",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "J21",
+   "metric": "goodwill",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "K21",
+   "metric": "goodwill",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "L21",
+   "metric": "goodwill",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "M21",
+   "metric": "goodwill",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "N21",
+   "metric": "goodwill",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "C22",
+   "metric": "goodwill",
+   "period_index": 0,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "D22",
+   "metric": "goodwill",
+   "period_index": 1,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "E22",
+   "metric": "goodwill",
+   "period_index": 2,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "F22",
+   "metric": "goodwill",
+   "period_index": 3,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "G22",
+   "metric": "goodwill",
+   "period_index": 4,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "H22",
+   "metric": "goodwill",
+   "period_index": 5,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "I22",
+   "metric": "goodwill",
+   "period_index": 6,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "J22",
+   "metric": "goodwill",
+   "period_index": 7,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "K22",
+   "metric": "goodwill",
+   "period_index": 8,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "L22",
+   "metric": "goodwill",
+   "period_index": 9,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "M22",
+   "metric": "goodwill",
+   "period_index": 10,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "N22",
+   "metric": "goodwill",
+   "period_index": 11,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=0 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "C27",
+   "metric": "accounts_payable",
+   "period_index": 0,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=1 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "D27",
+   "metric": "accounts_payable",
+   "period_index": 1,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "E27",
+   "metric": "accounts_payable",
+   "period_index": 2,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "F27",
+   "metric": "accounts_payable",
+   "period_index": 3,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=4 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "G27",
+   "metric": "accounts_payable",
+   "period_index": 4,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=5 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "H27",
+   "metric": "accounts_payable",
+   "period_index": 5,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "I27",
+   "metric": "accounts_payable",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "J27",
+   "metric": "accounts_payable",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "K27",
+   "metric": "accounts_payable",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "L27",
+   "metric": "accounts_payable",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "M27",
+   "metric": "accounts_payable",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "N27",
+   "metric": "accounts_payable",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=0 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "C28",
+   "metric": "accounts_payable",
+   "period_index": 0,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=1 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "D28",
+   "metric": "accounts_payable",
+   "period_index": 1,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "E28",
+   "metric": "accounts_payable",
+   "period_index": 2,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "F28",
+   "metric": "accounts_payable",
+   "period_index": 3,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=4 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "G28",
+   "metric": "accounts_payable",
+   "period_index": 4,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=5 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "H28",
+   "metric": "accounts_payable",
+   "period_index": 5,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "I28",
+   "metric": "accounts_payable",
+   "period_index": 6,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "J28",
+   "metric": "accounts_payable",
+   "period_index": 7,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "K28",
+   "metric": "accounts_payable",
+   "period_index": 8,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "L28",
+   "metric": "accounts_payable",
+   "period_index": 9,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "M28",
+   "metric": "accounts_payable",
+   "period_index": 10,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "BS",
+   "template_cell": "N28",
+   "metric": "accounts_payable",
+   "period_index": 11,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "C29",
+   "metric": "Accrued Expenses",
+   "period_index": 0,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "D29",
+   "metric": "Accrued Expenses",
+   "period_index": 1,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "E29",
+   "metric": "Accrued Expenses",
+   "period_index": 2,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "F29",
+   "metric": "Accrued Expenses",
+   "period_index": 3,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "G29",
+   "metric": "Accrued Expenses",
+   "period_index": 4,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "H29",
+   "metric": "Accrued Expenses",
+   "period_index": 5,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "I29",
+   "metric": "Accrued Expenses",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "BS",
+   "template_cell": "J29",
+   "metric": "Accrued Expenses",
+   "period_index": 7,
+   "scenario": "actual"
+  }
+ ],
+ "unmatched_truncated": true,
+ "unmatched_count": 963,
+ "unmatched_reasons": [
+  {
+   "reason": "no source series mapped to this metric",
+   "count": 651
+  },
+  {
+   "reason": "unit/scale unresolved (unit_kind_mismatch); supply display_unit or check formats",
+   "count": 36
+  },
+  {
+   "reason": "source has no budget column or row-variant for 'P&L!r16'",
+   "count": 24
+  },
+  {
+   "reason": "no source column for period_index=0 (monthly)",
+   "count": 18
+  },
+  {
+   "reason": "no source column for period_index=1 (monthly)",
+   "count": 18
+  },
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "count": 18
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "count": 18
+  },
+  {
+   "reason": "no source column for period_index=4 (monthly)",
+   "count": 18
+  },
+  {
+   "reason": "no source column for period_index=5 (monthly)",
+   "count": 18
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "count": 18
+  }
+ ],
+ "unmapped_metrics": [
+  "(+/-) Working Capital Changes",
+  "Accrued Expenses",
+  "Acquisitions / Disposals",
+  "Additional EBITDA adjustment slots (type + amounts)",
+  "Amortization",
+  "CapEx",
+  "Capital Lease Obligations",
+  "Churned Customers",
+  "Customer Count",
+  "Days Payable Outstanding (DPO)",
+  "Days Sales Outstanding (DSO)",
+  "Debt Draws / (Repayments)",
+  "Dividends / Distributions",
+  "Goodwill",
+  "Intangibles",
+  "Integration Costs",
+  "Interest Expense",
+  "Management Fees",
+  "Mezzanine - Outstanding",
+  "Net Income",
+  "Net Income Margin (%)",
+  "Net Revenue Retention (%)",
+  "New Customers",
+  "New Hires",
+  "Non-Cash Stock Comp",
+  "Other Debt",
+  "Other Income / (Expense)",
+  "PP&E (Net)",
+  "Prepaid Expenses",
+  "Revolver - Commitment",
+  "Revolver Rate (%)",
+  "Second Lien - Outstanding",
+  "Seller Notes",
+  "TLA Rate (%)",
+  "TLB Rate (%)",
+  "Term Loan B - Outstanding",
+  "Transaction Costs",
+  "Voluntary Attrition"
+ ],
+ "skipped": [],
+ "skipped_truncated": false,
+ "skipped_count": 0,
+ "review": [
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "C8",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the c] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "D8",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the c] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "E8",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the c] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "F8",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the c] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "G8",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the c] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "H8",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the c] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "I8",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the c] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "J8",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the c] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "K8",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the c] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "L8",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the c] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "M8",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the c] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "Cash-Flow",
+   "template_cell": "N8",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the c] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "C10",
+   "note": "Total turnover @ P&L [reconciled: Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be]"
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "D10",
+   "note": "Total turnover @ P&L [reconciled: Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be]"
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "E10",
+   "note": "Total turnover @ P&L [reconciled: Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be]"
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "F10",
+   "note": "Total turnover @ P&L [reconciled: Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be]"
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "G10",
+   "note": "Total turnover @ P&L [reconciled: Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be]"
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "H10",
+   "note": "Total turnover @ P&L [reconciled: Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be]"
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "I10",
+   "note": "Total turnover @ P&L [reconciled: Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be]"
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "J10",
+   "note": "Total turnover @ P&L [reconciled: Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be]"
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "K10",
+   "note": "Total turnover @ P&L [reconciled: Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be]"
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "L10",
+   "note": "Total turnover @ P&L [reconciled: Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be]"
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "M10",
+   "note": "Total turnover @ P&L [reconciled: Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be]"
+  },
+  {
+   "template_sheet": "KPI",
+   "template_cell": "N10",
+   "note": "Total turnover @ P&L [reconciled: Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "C5",
+   "note": "Total turnover @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "D5",
+   "note": "Total turnover @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "E5",
+   "note": "Total turnover @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "F5",
+   "note": "Total turnover @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "G5",
+   "note": "Total turnover @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "H5",
+   "note": "Total turnover @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "I5",
+   "note": "Total turnover @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "J5",
+   "note": "Total turnover @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "K5",
+   "note": "Total turnover @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "L5",
+   "note": "Total turnover @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "M5",
+   "note": "Total turnover @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "N5",
+   "note": "Total turnover @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "C7",
+   "note": "Cost of sales @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "D7",
+   "note": "Cost of sales @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "E7",
+   "note": "Cost of sales @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "F7",
+   "note": "Cost of sales @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "G7",
+   "note": "Cost of sales @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "H7",
+   "note": "Cost of sales @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "I7",
+   "note": "Cost of sales @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "J7",
+   "note": "Cost of sales @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "K7",
+   "note": "Cost of sales @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "L7",
+   "note": "Cost of sales @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "M7",
+   "note": "Cost of sales @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "N7",
+   "note": "Cost of sales @ P&L [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "C12",
+   "note": "Total operating costs @ P&L [reconciled: Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13)] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "D12",
+   "note": "Total operating costs @ P&L [reconciled: Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13)] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "E12",
+   "note": "Total operating costs @ P&L [reconciled: Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13)] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "F12",
+   "note": "Total operating costs @ P&L [reconciled: Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13)] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "G12",
+   "note": "Total operating costs @ P&L [reconciled: Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13)] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "H12",
+   "note": "Total operating costs @ P&L [reconciled: Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13)] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "I12",
+   "note": "Total operating costs @ P&L [reconciled: Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13)] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "J12",
+   "note": "Total operating costs @ P&L [reconciled: Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13)] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "K12",
+   "note": "Total operating costs @ P&L [reconciled: Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13)] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "L12",
+   "note": "Total operating costs @ P&L [reconciled: Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13)] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "M12",
+   "note": "Total operating costs @ P&L [reconciled: Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13)] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "N12",
+   "note": "Total operating costs @ P&L [reconciled: Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13)] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "C20",
+   "note": "One-off items addback @ P&L [reconciled: Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, ] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "D20",
+   "note": "One-off items addback @ P&L [reconciled: Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, ] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "E20",
+   "note": "One-off items addback @ P&L [reconciled: Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, ] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "F20",
+   "note": "One-off items addback @ P&L [reconciled: Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, ] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "G20",
+   "note": "One-off items addback @ P&L [reconciled: Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, ] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "H20",
+   "note": "One-off items addback @ P&L [reconciled: Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, ] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "I20",
+   "note": "One-off items addback @ P&L [reconciled: Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, ] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "J20",
+   "note": "One-off items addback @ P&L [reconciled: Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, ] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "K20",
+   "note": "One-off items addback @ P&L [reconciled: Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, ] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "L20",
+   "note": "One-off items addback @ P&L [reconciled: Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, ] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "M20",
+   "note": "One-off items addback @ P&L [reconciled: Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, ] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "N20",
+   "note": "One-off items addback @ P&L [reconciled: Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, ] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "C31",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Deprec] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "D31",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Deprec] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "E31",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Deprec] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "F31",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Deprec] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "G31",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Deprec] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "H31",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Deprec] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "I31",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Deprec] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "J31",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Deprec] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "K31",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Deprec] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "L31",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Deprec] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "M31",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Deprec] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "N31",
+   "note": "Depreciation & amortisat @ P&L [reconciled: Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Deprec] [scale_unverified:assumed_default]"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "O20",
+   "note": "template check FAILED: P&L!O20 (105 \u2192 515.0)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "O25",
+   "note": "template check FAILED: P&L!O25 (0 \u2192 12116138.0)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "O26",
+   "note": "template check FAILED: P&L!O26 (0 \u2192 6608803.0)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "O27",
+   "note": "template check FAILED: P&L!O27 (0 \u2192 3304401.0)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "C28",
+   "note": "template check FAILED: P&L!C28 (45 \u2192 9819735.0)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "D28",
+   "note": "template check FAILED: P&L!D28 (50 \u2192 250.0)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "H28",
+   "note": "template check FAILED: P&L!H28 (128 \u2192 90.0)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "L28",
+   "note": "template check FAILED: P&L!L28 (63 \u2192 175.0)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "N28",
+   "note": "template check FAILED: P&L!N28 (0 \u2192 12209607.0)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "O28",
+   "note": "template check FAILED: P&L!O28 (853 \u2192 22029857.0)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "C29",
+   "note": "template check FAILED: P&L!C29 (44 \u2192 9822386.329)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "D29",
+   "note": "template check FAILED: P&L!D29 (49 \u2192 2954.3560000000007)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "E29",
+   "note": "template check FAILED: P&L!E29 (39 \u2192 2758.4429999999998)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "F29",
+   "note": "template check FAILED: P&L!F29 (87 \u2192 2813.6110000000017)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "G29",
+   "note": "template check FAILED: P&L!G29 (107 \u2192 2869.883)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "H29",
+   "note": "template check FAILED: P&L!H29 (127 \u2192 3017.281000000001)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "I29",
+   "note": "template check FAILED: P&L!I29 (110 \u2192 2985.827)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "J29",
+   "note": "template check FAILED: P&L!J29 (95 \u2192 3045.5430000000015)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "K29",
+   "note": "template check FAILED: P&L!K29 (75 \u2192 3106.4539999999997)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "L29",
+   "note": "template check FAILED: P&L!L29 (62 \u2192 3343.584)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "M29",
+   "note": "template check FAILED: P&L!M29 (47 \u2192 3231.9540000000015)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "N29",
+   "note": "template check FAILED: P&L!N29 (-1 \u2192 12212903.595)"
+  },
+  {
+   "template_sheet": "P&L",
+   "template_cell": "O29",
+   "note": "template check FAILED: P&L!O29 (841 \u2192 22065416.86)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "C49",
+   "note": "template check FAILED: Debt-Ratio!C49 (-44.5 \u2192 5.5)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "D49",
+   "note": "template check FAILED: Debt-Ratio!D49 (-36.94897959183673 \u2192 5.5)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "E49",
+   "note": "template check FAILED: Debt-Ratio!E49 (-48.85897435897436 \u2192 5.5)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "F49",
+   "note": "template check FAILED: Debt-Ratio!F49 (-17.201149425287355 \u2192 5.5)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "G49",
+   "note": "template check FAILED: Debt-Ratio!G49 (-11.602803738317757 \u2192 5.5)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "H49",
+   "note": "template check FAILED: Debt-Ratio!H49 (-9.224409448818898 \u2192 5.5)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "I49",
+   "note": "template check FAILED: Debt-Ratio!I49 (-9.727272727272727 \u2192 5.5)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "J49",
+   "note": "template check FAILED: Debt-Ratio!J49 (-11.342105263157894 \u2192 5.5)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "K49",
+   "note": "template check FAILED: Debt-Ratio!K49 (-16.766666666666666 \u2192 5.5)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "L49",
+   "note": "template check FAILED: Debt-Ratio!L49 (-18.693548387096776 \u2192 5.5)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "M49",
+   "note": "template check FAILED: Debt-Ratio!M49 (-24.180851063829788 \u2192 5.5)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "C50",
+   "note": "template check FAILED: Debt-Ratio!C50 (-8.090909090909092 \u2192 1.0)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "D50",
+   "note": "template check FAILED: Debt-Ratio!D50 (-6.71799628942486 \u2192 1.0)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "E50",
+   "note": "template check FAILED: Debt-Ratio!E50 (-8.883449883449883 \u2192 1.0)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "F50",
+   "note": "template check FAILED: Debt-Ratio!F50 (-3.12748171368861 \u2192 1.0)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "G50",
+   "note": "template check FAILED: Debt-Ratio!G50 (-2.109600679694138 \u2192 1.0)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "H50",
+   "note": "template check FAILED: Debt-Ratio!H50 (-1.6771653543307088 \u2192 1.0)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "I50",
+   "note": "template check FAILED: Debt-Ratio!I50 (-1.768595041322314 \u2192 1.0)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "J50",
+   "note": "template check FAILED: Debt-Ratio!J50 (-2.062200956937799 \u2192 1.0)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "K50",
+   "note": "template check FAILED: Debt-Ratio!K50 (-3.0484848484848484 \u2192 1.0)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "L50",
+   "note": "template check FAILED: Debt-Ratio!L50 (-3.398826979472141 \u2192 1.0)"
+  },
+  {
+   "template_sheet": "Debt-Ratio",
+   "template_cell": "M50",
+   "note": "template check FAILED: Debt-Ratio!M50 (-4.396518375241779 \u2192 1.0)"
+  }
+ ],
+ "review_truncated": false,
+ "review_count": 129,
+ "coverage_notes": [
+  "No source series in the catalogue corresponds to prepaid expenses or prepayments/accrued income. The Cash & BS items sheet contains cash, revolving credit, term loan, accounts receivable, inventories, and accounts payable \u2014 none of which represent prepaid expenses. There is no trial balance or balance sheet line for prepayments in the provided source data.",
+  "No source series representing net PP&E (property, plant and equipment net of accumulated depreciation) exists in the catalogue. The balance sheet items available cover cash, revolving credit facility, term loan, accounts receivable, inventories, and accounts payable \u2014 none of which correspond to tangible fixed assets. The P&L sheet contains depreciation & amortisation (P&L!r16) but that is a flow item, not a net book value stock. A fixed asset register or management accounts balance sheet extract would be required to populate this metric.",
+  "No source series in the catalogue covers intangible assets (net of amortisation, excluding goodwill). The available balance-sheet series are limited to cash, revolving credit facility, term loan A, accounts receivable, stock/inventories, and accounts payable. The P&L sheet includes a depreciation & amortisation line but no fixed-asset or intangible-asset register balances. The required data (capitalised software, licences, customer relationships net of accumulated amortisation) is simply not present in any of the provided source series.",
+  "No goodwill or intangibles series exists anywhere in the source catalogue. The available sheets (P&L, Cash & BS items, SaaS metrics) contain no balance-sheet line for goodwill or acquisition intangibles. The Cash & BS items sheet covers only cash, revolving credit, term loan, accounts receivable, inventory, and accounts payable. Goodwill will need to be sourced directly from the management accounts or statutory ledger and added as a new series.",
+  "No source series in the catalogue corresponds to accrued expenses or deferred income. The available balance-sheet series cover cash, revolving credit, term loan, accounts receivable, inventories, and accounts payable \u2014 none of which qualify under the template definition (expenses incurred but not yet invoiced/paid, excluding trade payables and debt). A dedicated accrued-expenses or accrued-liabilities line from the management accounts or trial balance would be required to populate this metric.",
+  "The source P&L sheet does not contain a net income line. The deepest profit line available is 'Op. profit before deprec' (P&L!r14), and separately 'Depreciation & amortisat' (P&L!r16) and 'One-off items addback' (P&L!r15) \u2014 but there is no interest expense, tax charge, or any line labelled EBIT, EBT, or Net Income/Profit after tax in the catalogue. Subtracting D&A from operating profit before depreciation would yield an EBIT proxy, but that still omits interest and tax, so it cannot be used as net income without fabricating numbers. No source series maps to bottom-line net income.",
+  "The three balance-sheet series that would drive this metric (Cash & BS items!r8 Accounts receivable, r9 Stock/inventories, r10 Accounts payable) only cover 2026-01..2026-12, whereas the template requires monthly slots for 2025-01..2025-12. Period-over-period movements cannot be computed for the required window from the available source data. If 2025 month-end balance sheet data were added to the source, this metric could be reconciled as -(\u0394AR + \u0394Inventory \u2212 \u0394AP) with a sign convention where WC release is positive.",
+  "No capital expenditure series exists in the source catalogue. The P&L, Cash & BS items, and SaaS metrics sheets contain no CapEx line (purchases of PP&E or capitalised assets). The closest candidates \u2014 depreciation & amortisation (P&L!r16) and cash at bank (Cash & BS items!r5) \u2014 are already used and do not represent cash capex outflows. The metric cannot be populated from available data; it must be sourced from the management accounts / capex ledger as stated in the template definition.",
+  "No source series in the catalogue covers M&A cash flows (acquisition consideration paid or disposal proceeds received). The available series span P&L lines, balance-sheet balances, and SaaS KPIs \u2014 none of which represent net cash from business or asset acquisitions/disposals. This metric will need to be populated manually from management accounts or M&A records as stated in the template definition.",
+  "No source series tracks net debt draws or repayments as a period cash-flow movement. The available debt series (Cash & BS items!r6 Revolving credit facility and Cash & BS items!r7 Term loan A) are balance-sheet stock balances (point-in-time), not period cash-flow movements, and both are already used by other template lines. Even if they were free, deriving a net draw/repayment figure from month-on-month balance changes would require computing deltas \u2014 which is a derived calculation, not a direct source series \u2014 and the samples show flat balances (2.5M and 28M) suggesting no movement is recorded. No debt schedule or treasury cash-flow series exists in the source catalogue. This metric is genuinely unavailable from the provided data.",
+  "No source series in the catalogue covers cash dividends or equity distributions paid to shareholders. The available series span P&L items, balance-sheet stocks (cash, debt, receivables, payables, inventory), and SaaS/headcount metrics. None represent a cash-flow dividend or distribution line. This figure must be sourced directly from management accounts or treasury records and entered manually into the template.",
+  "Cash & BS items!r6 is already used by another template line and represents the drawn revolving credit balance ($2.5M flat). The template explicitly requires the commitment (maximum available line), not the drawn amount. No separate series for facility commitment/limit exists in the source catalogue. The commitment figure must be sourced from the loan agreement or a debt schedule not present in this model.",
+  "The source catalogue contains only one term loan series: Cash & BS items!r7 (Term loan A), which is already assigned to another template line. There is no Term Loan B series anywhere in the source data. The source truly has no data for Term Loan B outstanding principal.",
+  "The source catalogue contains no second-lien debt series. The only debt instruments present are 'Revolving credit facility' (Cash & BS items!r6) and 'Term loan A' (Cash & BS items!r7), both of which are already assigned to other template lines and represent senior secured facilities, not second-lien debt. No debt schedule sheet or second-lien tranche series exists in the provided source data.",
+  "No mezzanine debt series exists in the source catalogue. The available debt instruments are Revolving credit facility (Cash & BS items!r6) and Term loan A (Cash & BS items!r7), both of which are already assigned to other template lines. Neither represents mezzanine debt. The source catalogue contains no debt schedule or any series labelled mezzanine, subordinated debt, PIK, or second lien. The metric cannot be populated from available data.",
+  "No source series in the catalogue covers capital/finance lease liabilities. The Cash & BS items sheet contains only Cash at bank, Revolving credit facility, Term loan A, Accounts receivable, Stock/inventories, and Accounts payable \u2014 none of which represent finance lease obligations. The P&L and SaaS metrics sheets also contain no relevant balance-sheet debt line for leases. The template definition directs users to management accounts or a lease schedule, neither of which is present in the source data provided.",
+  "No source series in the catalogue corresponds to seller/vendor note balances or deferred consideration. The available debt-related series are Revolving credit facility (r6) and Term loan A (r7), both of which are already assigned to other template lines and represent bank facilities, not seller notes. The SPA/debt schedule referenced in the template definition has not been surfaced as a source series. Data is genuinely unavailable from the provided catalogue.",
+  "The source catalogue contains only two debt instruments: 'Revolving credit facility' (Cash & BS items!r6) and 'Term loan A' (Cash & BS items!r7), both of which are already assigned to other template lines. No additional debt series (e.g. term loan B, subordinated notes, shareholder loans, finance leases, or any other interest-bearing liability) exists in the source data. The 'Other Debt' slot therefore cannot be populated from available series without double-counting already-used lines.",
+  "No interest rate series exists in the source catalogue. The only revolver-related series is Cash & BS items!r6 (Revolving credit facility balance in USD), which is already used by another template line and in any case represents a balance, not an interest rate. The all-in revolver rate (base + margin) must be sourced directly from the loan agreement or rate schedule and entered manually into the template.",
+  "No source series in the catalogue captures an interest rate or rate schedule for Term Loan A. The source catalogue contains the Term Loan A balance (Cash & BS items!r7, already used) but no corresponding rate series. The all-in rate (base + margin) must be sourced directly from the loan agreement or rate schedule and entered manually into the template.",
+  "No Term Loan B series exists in the source catalogue. The only debt instrument series present are 'Revolving credit facility' (Cash & BS items!r6) and 'Term loan A' (Cash & BS items!r7), both of which are balance/principal amounts rather than interest rates. There is no rate schedule or loan agreement data surfaced in any source sheet. TLB Rate (%) cannot be populated from available data.",
+  "The source P&L catalogue contains no net income line. The deepest available P&L series is 'Op. profit before deprec' (P&L!r14, an EBITDA-level figure) and 'Depreciation & amortisation' (P&L!r16), which together yield only EBIT. There are no interest expense, tax, or net income series in the source, so net income margin cannot be computed or approximated without inventing numbers.",
+  "No source series for new hires or gross headcount additions exists in the catalogue. The only headcount-related series is SaaS metrics!r7 (Total employees / FTE), which is a net stock figure \u2014 it cannot be decomposed into gross new joiners without also knowing separations. Additionally, that series covers 2026-01..2026-06, not the required 2025-01..2025-12 window. The underlying data must come from the HR/payroll system as stated in the metric definition; it is not present in the source catalogue.",
+  "No source series in the catalogue captures voluntary attrition (resignations only). The only headcount-related series is SaaS metrics!r7 (Total employees FTE), which is a stock/level figure and cannot be decomposed into voluntary vs. involuntary separations. HR/payroll system data for voluntary leavers is not present in the source catalogue.",
+  "No source series representing total active customer count (or logo/customer count) exists in the provided catalogue. The available SaaS metrics cover ARR (r6), FTE headcount (r7), and logo churn rate (r8), but none tracks the absolute number of active customers. The definition calls for a CRM/billing system extract, which has not been surfaced in the source data.",
+  "No source series in the catalogue tracks new customer / new logo counts. The available SaaS metrics cover ARR (r6), total FTE headcount (r7), and logo churn rate (r8), none of which represent new customers acquired. The P&L and Cash & BS sheets contain no customer-count data. The template notes the source should be a CRM or billing system, which has not been provided in the source catalogue.",
+  "No source series for churned customer count (in units) exists in the catalogue. The closest available series is SaaS metrics!r8 (Logo churn monthly rate, percent), which is a rate not a count, covers 2026-01..2026-06 rather than the required 2025-01..2025-12 window, and is already used by another template line. The template definition requires an absolute count of customers lost per month sourced from CRM/billing system data, which is not present in any source series provided.",
+  "No source series for Net Revenue Retention (NRR) exists in the catalogue. The available SaaS metrics cover ARR (SaaS metrics!r6), headcount (SaaS metrics!r7), and logo churn rate (SaaS metrics!r8). Logo churn is a related but distinct metric (it measures customer count attrition, not revenue retention including expansion/contraction). NRR requires cohort-level revenue data \u2014 beginning-of-period cohort revenue, expansion, contraction, and churn revenue \u2014 none of which are present in the source. The metric cannot be derived or approximated from any available series without inventing numbers.",
+  "DSO is a derived ratio (Accounts Receivable \u00f7 Revenue \u00d7 Days in Period) and is not stored as a pre-calculated series in the source catalogue. While the two inputs needed to compute it are available \u2014 Cash & BS items!r8 (Accounts receivable) and P&L!r8 (Total turnover) \u2014 both are already assigned to other template lines and cannot be double-counted here. Furthermore, the AR series only covers 2026-01..2026-12 whereas the required slots are 2025-01..2025-12, so there is a full-year coverage gap for the target period. No standalone DSO series exists in the source data.",
+  "DPO is a derived ratio (Accounts Payable / COGS \u00d7 days in period). While the two required inputs exist in the source catalogue \u2014 Accounts Payable (Cash & BS items!r10) and Cost of Sales (P&L!r9) \u2014 neither is available for the required KPI slot period of 2025-01 through 2025-12: Accounts Payable only covers 2026-01..2026-12 and Cost of Sales covers 2025-01..2026-06 (so COGS is available for 2025 but AP is not). Because the AP balance for 2025 is entirely absent from the source data, the ratio cannot be computed for any of the 12 required monthly slots. Additionally, both source series are already used by other template lines, so even if the period overlap existed, double-counting constraints would apply. No pre-calculated DPO series exists in the catalogue. Data unavailable for the required period.",
+  "No dedicated transaction-cost or deal-fee series exists in the source catalogue. The closest candidate is P&L!r15 (One-off items addback), but that series is already consumed by another template line and cannot be double-counted. Even if it were available, it is a catch-all one-off addback that may bundle items beyond qualifying M&A/financing advisory, legal and diligence fees, so a direct mapping would require management confirmation of its composition. No other source series isolates transaction-related professional fees. This line should be populated from the adjustment schedule / management accounts outside the current source extract.",
+  "No source series in the catalogue represents non-cash share-based / equity compensation. The P&L sheet contains only: turnover by region, cost of sales, gross profit, S&M, G&A, total opex, op. profit before depreciation, one-off items addback, and D&A. The Cash & BS items and SaaS metrics sheets contain no compensation breakdown. A one-off items addback line (P&L!r15) exists but is already used by another template line and is not specifically identified as stock-based compensation. There is no series that can be mapped, aggregated, or reconciled to non-cash stock comp without inventing data.",
+  "No source series in the catalogue corresponds to PE sponsor/monitoring management fees as a distinct EBITDA add-back. The only adjustment-related series is P&L!r15 ('One-off items addback'), which is already used by another template line and in any case represents a generic one-off bucket rather than a specifically identified management fee line. None of the remaining unused series (regional turnover, cost of sales, gross profit, S&M, G&A, SaaS metrics) contain management fee data. The metric must be sourced from the underlying management accounts or adjustment schedule outside this workbook.",
+  "No dedicated integration-cost series exists in the source catalogue. The closest candidate is P&L!r15 ('One-off items addback'), but that series is already assigned to another template line and covers all one-off add-backs generically rather than integration costs specifically. No other source series isolates post-acquisition integration costs as a distinct EBITDA adjustment. The metric cannot be populated without a supplementary adjustment schedule or management-accounts breakdown that itemises integration costs separately.",
+  "The source catalogue contains no series corresponding to additional EBITDA adjustment line items beyond the single 'One-off items addback' already captured in P&L!r15. The 39 adjustment slots in the template (typed via the Adjustment-Types dropdown, with OTH-03 requiring notes) are structural input cells that must be populated manually by the reporting team for each period. No source series exists to populate them programmatically; they remain empty pending sponsor/preparer input.",
+  "No dedicated amortization-of-intangibles series exists in the source catalogue. The closest available series is P&L!r16 ('Depreciation & amortisation'), but that series is already used by another template line and combines both depreciation and amortization into a single blended figure. There is no standalone amortization series, nor any other source series from which amortization of intangibles could be isolated without double-counting or inventing numbers.",
+  "No interest expense or finance cost series exists in the source catalogue. The P&L sheet contains turnover, cost of sales, gross profit, operating costs, op. profit before depreciation, one-off addbacks, and D&A \u2014 but no line for interest/finance charges. The Cash & BS items sheet has debt balances (revolving credit facility r6, term loan A r7) from which interest could theoretically be imputed, but those series are already used by other template lines and no interest rate or accrual series is provided. The SaaS metrics sheet has no relevant data. Interest expense must be sourced from the management accounts or debt schedule directly; it is not available in the current source catalogue.",
+  "No source series in the catalogue represents non-operating other income or expense. The P&L sheet contains turnover, cost of sales, gross profit, operating costs, op. profit before depreciation, one-off addbacks, and depreciation/amortisation \u2014 none of which map to a below-EBIT non-operating other income/(expense) line. The Cash & BS items and SaaS metrics sheets likewise contain no such item. This line is genuinely absent from the source data provided."
+ ],
+ "reconciled": [
+  {
+   "metric": "Short-Term Debt",
+   "assumption": "Source provides a revolving credit facility line which is typically a current/short-term borrowing. Assigned to Short-Term Debt as the most defensible short-term interest-bearing debt component available. The term loan (r7) is assigned to Long-Term Debt. No current portion of term loan is separately identified in the source; this is a provisional assignment pending confirmation that the RCF is indeed classified as current."
+  },
+  {
+   "metric": "(+) Depreciation & Amort",
+   "assumption": "Source combines Depreciation & Amortisation into a single line 'Depreciation & amortisat'; assigned in full to this template metric as the combined D&A add-back. Template slots are 2025-01..2025-12 but source runs 2025-01..2026-06 (ltm/month/year); only the 2025 monthly actuals are relevant for the cash-flow slots."
+  },
+  {
+   "metric": "Beginning Cash",
+   "assumption": "The source provides end-of-month cash at bank balances. The opening cash balance for any given month equals the prior month's ending cash balance (i.e., the series is shifted by one period). Since the template asks for the opening balance each month and the only available cash series is the closing/ending balance, the opening balance is reconciled as the prior period's ending value from Cash & BS items!r5. Note that the source series covers 2026-01..2026-12 while the template slots are 2025-01..2025-12, so this series can only partially populate the required slots (January 2026 opening = December 2025 closing, which is not directly available). Provisionally mapped as the best available proxy for opening cash."
+  },
+  {
+   "metric": "Revolver - Drawn",
+   "assumption": "Source series 'Revolving credit facilit' represents the drawn balance of the revolving credit facility, which matches the template's definition of Revolver - Drawn (outstanding drawn balance). Source covers 2026-01..2026-12; template Debt-Overview slots are 2025-01..2025-12 \u2014 only 12 months of overlap exist at the 2026 end; 2025 months will be unpopulated from this source. Flagged for user confirmation on period coverage."
+  },
+  {
+   "metric": "Term Loan A - Outstanding",
+   "assumption": "Source series 'Term loan A' represents the period-end outstanding principal of Term Loan A, matching the template definition. Source covers 2026-01..2026-12; template Debt-Overview slots are 2025-01..2025-12 \u2014 period mismatch noted. Flagged for user confirmation on period coverage."
+  },
+  {
+   "metric": "Revenue Growth (MoM %)",
+   "assumption": "Total turnover (P&L!r8) is the revenue base from which MoM percentage change should be computed. The source provides the absolute revenue level; the MoM growth rate is a derived ratio calculated period-over-period from this series. No pre-computed MoM growth rate series exists in the source."
+  },
+  {
+   "metric": "Gross Margin (%)",
+   "assumption": "Gross Margin % is derived as Gross Profit (P&L!r10) divided by Total Turnover (P&L!r8). Both series exist in the source; the ratio must be computed. No pre-built margin percentage series exists. P&L!r8 is used as the denominator and is not double-counted as it is not assigned to another template metric as a primary series."
+  },
+  {
+   "metric": "EBITDA Margin (%)",
+   "assumption": "EBITDA Margin % is derived as Adjusted EBITDA divided by Total Turnover (P&L!r8). Adjusted EBITDA = Op. profit before deprec (P&L!r14) + One-off items addback (P&L!r15). The source labels P&L!r14 as 'Op. profit before deprec' which is equivalent to EBITDA before one-off adjustments; P&L!r15 provides the one-off addback to reach adjusted EBITDA. The sum of r14 and r15 is divided by P&L!r8 to yield the margin. This is provisional \u2014 confirm whether reported (r14 only) or adjusted (r14 + r15) EBITDA is intended per template qualifies note."
+  },
+  {
+   "metric": "Revenue per Employee ($K)",
+   "assumption": "Revenue per Employee ($K) is derived as Total Turnover (P&L!r8, in USD) divided by Total FTE headcount (SaaS metrics!r7). The result must be expressed in $K (i.e. divide USD amount by 1,000). The template asks for monthly or annualised basis \u2014 this mapping uses monthly revenue divided by period-end FTE, yielding a monthly revenue-per-head figure in $K. Confirm with sponsor whether annualised (monthly revenue \u00d7 12 / FTE) is preferred. Note: P&L!r8 covers 2025-01 to 2026-06 but SaaS metrics!r7 covers only 2026-01 to 2026-06, so the overlap for derivation is limited to 2026-01 to 2026-06; template slots 2025-01 to 2025-12 will be partially unavailable unless FTE data for 2025 is sourced separately."
+  },
+  {
+   "metric": "Headcount (FTEs)",
+   "assumption": "Source labels this row 'Total employees (FTE)' on the SaaS metrics sheet; values (488\u2013508) are consistent with a period-end FTE count. Template requests HR/payroll system data for 2025-01..2025-12 but source only covers 2026-01..2026-06 \u2014 partial period overlap; flagged for user confirmation. Unit tag reads 'USD/money' but values are clearly headcount integers, not monetary amounts."
+  },
+  {
+   "metric": "Days Inventory Outstanding (DIO)",
+   "assumption": "DIO is calculated as (Stock/Inventories \u00f7 Cost of Sales) \u00d7 days in period. Cash & BS items!r9 provides the inventory balance (end-of-month stock) and P&L!r9 provides the monthly cost of sales. DIO for each month = (Inventory balance / Cost of sales for that month) \u00d7 days in month. Note: the template slots cover 2025-01..2025-12 but Cash & BS items!r9 only has data from 2026-01 onward; P&L!r9 covers from 2025-01. The inventory series has no 2025 actuals in the source catalogue, so 2025 DIO slots cannot be populated from available data \u2014 only 2026 months where both series overlap can be computed. Both series are already used by other lines but as a derived ratio (not a summed flow), this reconcile does not double-count monetary totals; it uses them as inputs to a calculated KPI."
+  },
+  {
+   "metric": "Operating Expenses",
+   "assumption": "Source splits opex by function (Sales & Marketing r11, General & Administrative r12) and provides a pre-computed Total Operating Costs (r13). Template wants a single OpEx line entered positive and excluding D&A. r13 equals r11+r12 and does not include depreciation, making it the correct direct equivalent. Assigning r13; r11 and r12 are subordinate components already captured within r13 and must not be mapped separately."
+  },
+  {
+   "metric": "One-Time Restructuring",
+   "assumption": "Source has a single combined 'One-off items addback' line (r15) that bundles all EBITDA adjustment types (restructuring, transaction costs, stock comp, management fees, integration costs, etc.). This is the only adjustment-addback series available. Assigning r15 to One-Time Restructuring as the dominant/residual adjustment line. All other specific adjustment template lines (Transaction Costs, Non-Cash Stock Comp, Management Fees, Integration Costs) are marked unavailable because the source does not disaggregate them \u2014 they are included in r15 and cannot be double-counted."
+  },
+  {
+   "metric": "Depreciation",
+   "assumption": "Source combines Depreciation and Amortisation into a single 'Depreciation & amortisat' line (r16). Template splits them into separate Depreciation and Amortisation lines. Assigning r16 to Depreciation as the primary/dominant component (tangible asset depreciation is typically the larger element for an operating business). Amortisation is marked unavailable with a note that it is included in r16."
+  }
+ ],
+ "reconciled_count": 14,
+ "open_questions": [
+  {
+   "metric": "Revolver - Commitment",
+   "question": "The source catalogue contains 'Cash & BS items!r6 | Revolving credit facility' which appears to represent the drawn/outstanding balance of the revolver (samples show a flat $2.5M, consistent with a drawn balance), and it is already used by another template line. The template metric requires the total committed facility size (the maximum available line, i.e. the commitment/limit), not the drawn amount. No source series explicitly labelled as 'revolver commitment', 'facility limit', or 'total commitment' exists in the catalogue. Options: (1) If the $2.5M flat figure in r6 actually represents the total commitment (i.e. the facility is fully drawn and commitment = drawn), map to Cash & BS items!r6 as a reconcile \u2014 but this would double-count. (2) Treat as unavailable and source the commitment amount from the loan agreement/debt schedule outside this model. A genuine decision is required: is the commitment amount the same as the drawn balance shown in r6, or is it a different (larger) figure not captured in the source data?"
+  }
+ ],
+ "open_questions_count": 1,
+ "unused_source_series": [
+  "Annualised recurring revenue",
+  "General & administrative",
+  "Logo churn (monthly)",
+  "Sales & marketing",
+  "Turnover \u2013 APAC",
+  "Turnover \u2013 EMEA",
+  "Turnover \u2013 North America"
+ ],
+ "template_checks": {
+  "evaluated": 138,
+  "passed": 38,
+  "failed": 45,
+  "not_computable": 55,
+  "indeterminate": 0,
+  "changed": 133,
+  "items": [
+   {
+    "sheet": "P&L",
+    "cell": "O20",
+    "row": 20,
+    "col": 15,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!O20",
+    "before": 105,
+    "after": 515.0,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "O21",
+    "row": 21,
+    "col": 15,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!O21",
+    "before": 315,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "O22",
+    "row": 22,
+    "col": 15,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!O22",
+    "before": 175,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "O23",
+    "row": 23,
+    "col": 15,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!O23",
+    "before": 88,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "O24",
+    "row": 24,
+    "col": 15,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!O24",
+    "before": 170,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "O25",
+    "row": 25,
+    "col": 15,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!O25",
+    "before": 0,
+    "after": 12116138.0,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "O26",
+    "row": 26,
+    "col": 15,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!O26",
+    "before": 0,
+    "after": 6608803.0,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "O27",
+    "row": 27,
+    "col": 15,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!O27",
+    "before": 0,
+    "after": 3304401.0,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "C28",
+    "row": 28,
+    "col": 3,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!C28",
+    "before": 45,
+    "after": 9819735.0,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "D28",
+    "row": 28,
+    "col": 4,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!D28",
+    "before": 50,
+    "after": 250.0,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "E28",
+    "row": 28,
+    "col": 5,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!E28",
+    "before": 40,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "F28",
+    "row": 28,
+    "col": 6,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!F28",
+    "before": 88,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "G28",
+    "row": 28,
+    "col": 7,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!G28",
+    "before": 108,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "H28",
+    "row": 28,
+    "col": 8,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!H28",
+    "before": 128,
+    "after": 90.0,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "I28",
+    "row": 28,
+    "col": 9,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!I28",
+    "before": 111,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "J28",
+    "row": 28,
+    "col": 10,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!J28",
+    "before": 96,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "K28",
+    "row": 28,
+    "col": 11,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!K28",
+    "before": 76,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "L28",
+    "row": 28,
+    "col": 12,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!L28",
+    "before": 63,
+    "after": 175.0,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "M28",
+    "row": 28,
+    "col": 13,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!M28",
+    "before": 48,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "N28",
+    "row": 28,
+    "col": 14,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!N28",
+    "before": 0,
+    "after": 12209607.0,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "O28",
+    "row": 28,
+    "col": 15,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!O28",
+    "before": 853,
+    "after": 22029857.0,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "C29",
+    "row": 29,
+    "col": 3,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!C29",
+    "before": 44,
+    "after": 9822386.329,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "D29",
+    "row": 29,
+    "col": 4,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!D29",
+    "before": 49,
+    "after": 2954.3560000000007,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "E29",
+    "row": 29,
+    "col": 5,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!E29",
+    "before": 39,
+    "after": 2758.4429999999998,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "F29",
+    "row": 29,
+    "col": 6,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!F29",
+    "before": 87,
+    "after": 2813.6110000000017,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "G29",
+    "row": 29,
+    "col": 7,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!G29",
+    "before": 107,
+    "after": 2869.883,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "H29",
+    "row": 29,
+    "col": 8,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!H29",
+    "before": 127,
+    "after": 3017.281000000001,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "I29",
+    "row": 29,
+    "col": 9,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!I29",
+    "before": 110,
+    "after": 2985.827,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "J29",
+    "row": 29,
+    "col": 10,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!J29",
+    "before": 95,
+    "after": 3045.5430000000015,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "K29",
+    "row": 29,
+    "col": 11,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!K29",
+    "before": 75,
+    "after": 3106.4539999999997,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "L29",
+    "row": 29,
+    "col": 12,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!L29",
+    "before": 62,
+    "after": 3343.584,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "M29",
+    "row": 29,
+    "col": 13,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!M29",
+    "before": 47,
+    "after": 3231.9540000000015,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "N29",
+    "row": 29,
+    "col": 14,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!N29",
+    "before": -1,
+    "after": 12212903.595,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "P&L",
+    "cell": "O29",
+    "row": 29,
+    "col": 15,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "P&L!O29",
+    "before": 841,
+    "after": 22065416.86,
+    "status": "fail",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "C19",
+    "row": 19,
+    "col": 3,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!C19",
+    "before": 69.31818181818181,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "D19",
+    "row": 19,
+    "col": 4,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!D19",
+    "before": 61.224489795918366,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "E19",
+    "row": 19,
+    "col": 5,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!E19",
+    "before": 76.92307692307692,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "F19",
+    "row": 19,
+    "col": 6,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!F19",
+    "before": 33.62068965517241,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "G19",
+    "row": 19,
+    "col": 7,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!G19",
+    "before": 26.635514018691588,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "H19",
+    "row": 19,
+    "col": 8,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!H19",
+    "before": 22.440944881889763,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "I19",
+    "row": 19,
+    "col": 9,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!I19",
+    "before": 25.227272727272727,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "J19",
+    "row": 19,
+    "col": 10,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!J19",
+    "before": 28.94736842105263,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "K19",
+    "row": 19,
+    "col": 11,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!K19",
+    "before": 36.666666666666664,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "L19",
+    "row": 19,
+    "col": 12,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!L19",
+    "before": 43.54838709677419,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "M19",
+    "row": 19,
+    "col": 13,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!M19",
+    "before": 56.91489361702128,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "N19",
+    "row": 19,
+    "col": 14,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!N19",
+    "before": 0,
+    "after": 0.0,
+    "status": "pass",
+    "changed": false
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "C20",
+    "row": 20,
+    "col": 3,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!C20",
+    "before": 50,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "D20",
+    "row": 20,
+    "col": 4,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!D20",
+    "before": 42.44897959183673,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "E20",
+    "row": 20,
+    "col": 5,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!E20",
+    "before": 54.35897435897436,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "F20",
+    "row": 20,
+    "col": 6,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!F20",
+    "before": 22.701149425287355,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "G20",
+    "row": 20,
+    "col": 7,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!G20",
+    "before": 17.102803738317757,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "H20",
+    "row": 20,
+    "col": 8,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!H20",
+    "before": 14.724409448818898,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "I20",
+    "row": 20,
+    "col": 9,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!I20",
+    "before": 15.227272727272727,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "J20",
+    "row": 20,
+    "col": 10,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!J20",
+    "before": 16.842105263157894,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "K20",
+    "row": 20,
+    "col": 11,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!K20",
+    "before": 22.266666666666666,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "L20",
+    "row": 20,
+    "col": 12,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!L20",
+    "before": 24.193548387096776,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "M20",
+    "row": 20,
+    "col": 13,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!M20",
+    "before": 29.680851063829788,
+    "after": 0.0,
+    "status": "pass",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "N20",
+    "row": 20,
+    "col": 14,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!N20",
+    "before": 0,
+    "after": 0.0,
+    "status": "pass",
+    "changed": false
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "C26",
+    "row": 26,
+    "col": 3,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!C26",
+    "before": 16.61496913580247,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "D26",
+    "row": 26,
+    "col": 4,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!D26",
+    "before": 16.3438679245283,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "E26",
+    "row": 26,
+    "col": 5,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!E26",
+    "before": 16.344811320754715,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "F26",
+    "row": 26,
+    "col": 6,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!F26",
+    "before": 15.93841019417476,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "G26",
+    "row": 26,
+    "col": 7,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!G26",
+    "before": 15.53108910891089,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "H26",
+    "row": 26,
+    "col": 8,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!H26",
+    "before": 15.532029702970297,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "I26",
+    "row": 26,
+    "col": 9,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!I26",
+    "before": 15.125637755102039,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "J26",
+    "row": 26,
+    "col": 10,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!J26",
+    "before": 14.98986254295533,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "K26",
+    "row": 26,
+    "col": 11,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!K26",
+    "before": 14.990807560137455,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "L26",
+    "row": 26,
+    "col": 12,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!L26",
+    "before": 14.719736842105263,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "M26",
+    "row": 26,
+    "col": 13,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!M26",
+    "before": 14.58396719858156,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "N26",
+    "row": 26,
+    "col": 14,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!N26",
+    "before": 0,
+    "after": 0.0,
+    "status": "pass",
+    "changed": false
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "C28",
+    "row": 28,
+    "col": 3,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!C28",
+    "before": 116.61496913580247,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "D28",
+    "row": 28,
+    "col": 4,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!D28",
+    "before": 116.3438679245283,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "E28",
+    "row": 28,
+    "col": 5,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!E28",
+    "before": 116.34481132075472,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "F28",
+    "row": 28,
+    "col": 6,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!F28",
+    "before": 115.93841019417476,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "G28",
+    "row": 28,
+    "col": 7,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!G28",
+    "before": 115.53108910891089,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "H28",
+    "row": 28,
+    "col": 8,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!H28",
+    "before": 115.53202970297029,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "I28",
+    "row": 28,
+    "col": 9,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!I28",
+    "before": 115.12563775510203,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "J28",
+    "row": 28,
+    "col": 10,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!J28",
+    "before": 114.98986254295534,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "K28",
+    "row": 28,
+    "col": 11,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!K28",
+    "before": 114.99080756013745,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "L28",
+    "row": 28,
+    "col": 12,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!L28",
+    "before": 114.71973684210526,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "M28",
+    "row": 28,
+    "col": 13,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!M28",
+    "before": 114.58396719858156,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "N28",
+    "row": 28,
+    "col": 14,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!N28",
+    "before": 0,
+    "after": 0.0,
+    "status": "pass",
+    "changed": false
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "C29",
+    "row": 29,
+    "col": 3,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!C29",
+    "before": 2.648214368643478,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "D29",
+    "row": 29,
+    "col": 4,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!D29",
+    "before": 2.998066322260383,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "E29",
+    "row": 29,
+    "col": 5,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!E29",
+    "before": 2.3860783238578978,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "F29",
+    "row": 29,
+    "col": 6,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!F29",
+    "before": 5.458511792587516,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "G29",
+    "row": 29,
+    "col": 7,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!G29",
+    "before": 6.889407384740922,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "H29",
+    "row": 29,
+    "col": 8,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!H29",
+    "before": 8.176651888304908,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "I29",
+    "row": 29,
+    "col": 9,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!I29",
+    "before": 7.272420626554793,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "J29",
+    "row": 29,
+    "col": 10,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!J29",
+    "before": 6.337616487660617,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "K29",
+    "row": 29,
+    "col": 11,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!K29",
+    "before": 5.003066025571227,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "L29",
+    "row": 29,
+    "col": 12,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!L29",
+    "before": 4.212031822651292,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "M29",
+    "row": 29,
+    "col": 13,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!M29",
+    "before": 3.22271706731288,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "C30",
+    "row": 30,
+    "col": 3,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!C30",
+    "before": -0.05145137064704598,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "D30",
+    "row": 30,
+    "col": 4,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!D30",
+    "before": -0.05157126118492271,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "E30",
+    "row": 30,
+    "col": 5,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!E30",
+    "before": -0.05157084301300218,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "F30",
+    "row": 30,
+    "col": 6,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!F30",
+    "before": 0.23288226873889456,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "G30",
+    "row": 30,
+    "col": 7,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!G30",
+    "before": 0.36353851005772736,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "H30",
+    "row": 30,
+    "col": 8,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!H30",
+    "before": 0.6664818422905311,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   },
+   {
+    "sheet": "Debt-Ratio",
+    "cell": "I30",
+    "row": 30,
+    "col": 9,
+    "kind": "tie_out",
+    "origin": "check_section",
+    "label": "Debt-Ratio!I30",
+    "before": 0.3474465008835733,
+    "after": "#DIV/0!",
+    "status": "not_computable",
+    "changed": true
+   }
+  ],
+  "calc_seconds": 0.38
+ },
+ "rule_violations": [],
+ "rule_violation_count": 0,
+ "reset": "full",
+ "cleared_count": 677,
+ "cleared_values": 677,
+ "cleared_formulas": 0,
+ "proposed_additions": [
+  {
+   "sheet_name": "P&L",
+   "row": 25,
+   "label_col": 2,
+   "label": "Turnover \u2013 North America",
+   "kind": "other",
+   "source_series_id": "P&L!r5",
+   "unit": "money USD",
+   "values": [
+    {
+     "col": 3,
+     "source_sheet": "P&L",
+     "source_cell": "B5",
+     "match": "date"
+    },
+    {
+     "col": 14,
+     "source_sheet": "P&L",
+     "source_cell": "M5",
+     "match": "date"
+    }
+   ],
+   "region_rules": "Add further EBITDA adjustments by selecting an Adj Type from the dropdown and entering monthly amounts; rows already flow into Total Adjustments and YTD sums.",
+   "confidence": 0.85,
+   "slot_mode": "blank",
+   "expected_label": null,
+   "total_row": 28,
+   "row_start": 25
+  },
+  {
+   "sheet_name": "P&L",
+   "row": 26,
+   "label_col": 2,
+   "label": "Turnover \u2013 EMEA",
+   "kind": "other",
+   "source_series_id": "P&L!r6",
+   "unit": "money USD",
+   "values": [
+    {
+     "col": 3,
+     "source_sheet": "P&L",
+     "source_cell": "B6",
+     "match": "date"
+    },
+    {
+     "col": 14,
+     "source_sheet": "P&L",
+     "source_cell": "M6",
+     "match": "date"
+    }
+   ],
+   "region_rules": "Add further EBITDA adjustments by selecting an Adj Type from the dropdown and entering monthly amounts; rows already flow into Total Adjustments and YTD sums.",
+   "confidence": 0.85,
+   "slot_mode": "blank",
+   "expected_label": null,
+   "total_row": 28,
+   "row_start": 25
+  },
+  {
+   "sheet_name": "P&L",
+   "row": 27,
+   "label_col": 2,
+   "label": "Turnover \u2013 APAC",
+   "kind": "other",
+   "source_series_id": "P&L!r7",
+   "unit": "money USD",
+   "values": [
+    {
+     "col": 3,
+     "source_sheet": "P&L",
+     "source_cell": "B7",
+     "match": "date"
+    },
+    {
+     "col": 14,
+     "source_sheet": "P&L",
+     "source_cell": "M7",
+     "match": "date"
+    }
+   ],
+   "region_rules": "Add further EBITDA adjustments by selecting an Adj Type from the dropdown and entering monthly amounts; rows already flow into Total Adjustments and YTD sums.",
+   "confidence": 0.85,
+   "slot_mode": "blank",
+   "expected_label": null,
+   "total_row": 28,
+   "row_start": 25
+  }
+ ],
+ "pending_label_overwrites": [],
+ "addition_notes": [
+  "region P&L!r25-r27 activated: hosted metric(s) ['Additional EBITDA adjustment slots (type + amounts)'] had no direct source match \u2014 unused source series routed here",
+  "region P&L!r25-r27 full: 2 candidates skipped"
+ ],
+ "additions_applied": [
+  {
+   "sheet_name": "P&L",
+   "row": 25,
+   "label": "Turnover \u2013 North America",
+   "cells_written": 2,
+   "source_series_id": "P&L!r5"
+  },
+  {
+   "sheet_name": "P&L",
+   "row": 26,
+   "label": "Turnover \u2013 EMEA",
+   "cells_written": 2,
+   "source_series_id": "P&L!r6"
+  },
+  {
+   "sheet_name": "P&L",
+   "row": 27,
+   "label": "Turnover \u2013 APAC",
+   "cells_written": 2,
+   "source_series_id": "P&L!r7"
+  }
+ ],
+ "additions_skipped": [],
+ "notes": [
+  "Source covers 2026-01..2026-12; template slots are 2025-01..2025-12. No 2025 cash data is present in the source workbook \u2014 only 2026 months are available. Mapping is structurally correct but period coverage gap means 2025 slots will be unfilled. Flagged for user awareness.",
+  "Source label is 'Accounts receivable, tra[de]' \u2014 consistent with trade debtors net of provisions. Source covers 2026-01..2026-12; template slots are 2025-01..2025-12. Period coverage gap flagged.",
+  "Source label 'Stock / inventories' matches template Inventory definition. Source covers 2026-01..2026-12; template slots are 2025-01..2025-12. Period coverage gap flagged.",
+  "Source label 'Accounts payable' matches template definition of trade creditors. Template qualifies to exclude accruals, tax and debt \u2014 source label does not indicate these are included, so treated as trade payables only. Source covers 2026-01..2026-12; template slots are 2025-01..2025-12. Period coverage gap flagged.",
+  "Source covers 2026-01..2026-12; template slots are 2025-01..2025-12. Period coverage gap flagged. Provisional: user should confirm RCF is classified as short-term and that no current portion of Term Loan A is separately reportable.",
+  "Source 'Term loan A' is a term loan, consistent with non-current borrowings. Template qualifies to exclude current portion \u2014 source does not separately identify a current portion, so the full balance is mapped here provisionally. Source covers 2026-01..2026-12; template slots are 2025-01..2025-12. Period coverage gap flagged.",
+  "Source does not split D&A into Depreciation vs Amortisation components; the combined line is assigned here. No separate Amortisation template metric exists in this mapping set, so no double-count risk.",
+  "Cash & BS items!r5 is already used by another template line (ending cash balance). However, the opening balance line legitimately derives from the same series shifted one period \u2014 this is a reconcile/roll-forward relationship, not double-counting. The coverage gap (template needs 2025-01..2025-12; source starts 2026-01) means historical 2025 opening balances are unavailable from this source and would need to be sourced from management accounts or bank statements directly.",
+  "Period mismatch: source data starts 2026-01 but template Debt-Overview slots are 2025-01..2025-12. No 2025 revolver data is available in the source. The 2026 data can populate any overlapping slots if the template window is extended or re-confirmed.",
+  "Period mismatch: source data starts 2026-01 but template Debt-Overview slots are 2025-01..2025-12. No 2025 Term Loan A balance data is available in the source. The 2026 data can populate any overlapping slots if the template window is extended or re-confirmed.",
+  "MoM % growth must be derived from P&L!r8 (Total turnover) by computing (current month / prior month) - 1. The source does not supply a pre-built growth rate series. Period coverage of source (2025-01 to 2026-06) covers the template slots (2025-01 to 2025-12).",
+  "Gross Margin % = P&L!r10 / P&L!r8. Both numerator and denominator are available. Source period 2025-01 to 2026-06 covers template slots 2025-01 to 2025-12.",
+  "EBITDA Margin % = (P&L!r14 + P&L!r15) / P&L!r8. Template qualifies note flags ambiguity between reported and adjusted EBITDA \u2014 provisional assignment uses adjusted (including one-off addback). User should confirm. D&A (P&L!r16) is already excluded from r14 per its label. Source period covers template slots.",
+  "Critical coverage gap: SaaS metrics!r7 (FTE) only covers 2026-01 to 2026-06, while template slots are 2025-01 to 2025-12. There is no overlap between FTE data and template slots, making this metric effectively unavailable for the template period unless historical FTE data is provided. Flagged for user decision on whether to extend FTE data or adjust template period.",
+  "Source coverage is 2026-01..2026-06; template slots are 2025-01..2025-12 \u2014 no overlap. The 2025 months will be unfilled. Additionally, the source unit tag says 'USD/money' but the values are plainly integer headcount; treated as count. Qualifies clause requires HR/payroll provenance; source sheet is 'SaaS metrics' which may not satisfy that requirement \u2014 flagged for sponsor confirmation.",
+  "Significant data gap: Cash & BS items!r9 (inventory) starts 2026-01, but the template requires monthly slots for 2025-01..2025-12. No 2025 inventory balance series exists in the source catalogue, making the 2025 DIO slots unavailable from current data. Additionally, both source series are flagged as already used; DIO is a ratio/KPI derived from them rather than a direct monetary line, so reconcile is appropriate, but the mapping confidence is low due to the temporal mismatch.",
+  "Source 'Total turnover' (P&L!r8) is the sum of NA, EMEA and APAC turnover and represents total recognised revenue \u2014 directly equivalent to the template's Revenue metric. Source coverage extends to 2026-06 (actuals and forecasts); template slots are 2025-01..2025-12, which falls within the source range.",
+  "Source 'Cost of sales' (P&L!r9) is the standard equivalent of Cost of Goods Sold. Values are positive, consistent with the template's convention that COGS is entered positive and subtracted to derive Gross Profit.",
+  "Source period runs 2025-01 to 2026-06; template slots are 2025-01 to 2025-12, so only the 2025 actuals portion of r13 is used. Forecast months beyond Dec-2025 are out of scope for these slots.",
+  "PROVISIONAL \u2014 source combines all one-off addbacks into a single line. The assignment to One-Time Restructuring is a default; the actual composition of r15 is unknown. User should confirm whether restructuring is the dominant component or whether a different specific adjustment type should be the primary recipient. Samples show a one-time $250k spike in one month and zeros elsewhere, consistent with a non-recurring item.",
+  "PROVISIONAL \u2014 source combines D&A; full amount assigned to Depreciation. If the amortisation component is material (e.g. significant acquired intangibles), user should provide a split. Samples show a steady ~$405k\u2013$415k/month range."
+ ],
+ "fill_plan": null,
+ "plan_issues": [],
+ "filled_url": "https://lhpwyeztizeccdgtdjwt.supabase.co/storage/v1/object/sign/template-filled/92ac6be4-d7af-4235-9dfc-1ad9135329b2/2026-07-08-aurora-softworks-management-ac.xlsx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9iOGYxZWVhZi03OTY2LTQ5N2YtOTg0ZC00YzU2ZmQwMjdjYzYiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ0ZW1wbGF0ZS1maWxsZWQvOTJhYzZiZTQtZDdhZi00MjM1LTlkZmMtMWFkOTEzNTMyOWIyLzIwMjYtMDctMDgtYXVyb3JhLXNvZnR3b3Jrcy1tYW5hZ2VtZW50LWFjLnhsc3giLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg1OTM3NjIzLCJleHAiOjE3ODU5NDEyMjN9.KqjvL14_22Omiw8OVR_TehmSmK3-mxzG_pIaMhv3Ews",
+ "audit_url": "https://lhpwyeztizeccdgtdjwt.supabase.co/storage/v1/object/sign/template-filled/92ac6be4-d7af-4235-9dfc-1ad9135329b2/2026-07-08-aurora-softworks-management-ac.audit.json?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9iOGYxZWVhZi03OTY2LTQ5N2YtOTg0ZC00YzU2ZmQwMjdjYzYiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ0ZW1wbGF0ZS1maWxsZWQvOTJhYzZiZTQtZDdhZi00MjM1LTlkZmMtMWFkOTEzNTMyOWIyLzIwMjYtMDctMDgtYXVyb3JhLXNvZnR3b3Jrcy1tYW5hZ2VtZW50LWFjLmF1ZGl0Lmpzb24iLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg1OTM3NjI0LCJleHAiOjE3ODU5NDEyMjR9.yS8dS1HezbfUYFo-pTvQiiIZnADV26HgV9UJnZ221hE"
+}

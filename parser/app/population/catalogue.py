@@ -326,14 +326,17 @@ def _unit_from_llm(unit_str, currency, number_format, sheet_ccy, samples=None) -
     money rows the AI correctly tagged 'USD'm' were being overridden to 'percent' by
     a percent-looking format, then blocked by the never-mix-% safety rule.)
 
-    Scale stays raw (base=1) — the real scale is decided by magnitude reconciliation
-    in binding, never here."""
+    The AI's declared SCALE ("USD'000" -> base=1000) is kept: magnitude
+    reconciliation in binding still overrides it whenever the template row holds
+    real numbers, but on an EMPTY template row the label math is all there is —
+    flattening the base to 1 there wrote thousands-denominated sources in ~1000x
+    too small (the 0.01 balance-sheet fills)."""
     from app.population.units import _median_abs
     u = resolve_unit(unit_str)
 
     # 1) AI explicitly named a money unit (currency and/or a scale word) -> trust it.
     if u.kind == "money":
-        return Unit(base=1.0, currency=u.currency or currency or sheet_ccy, kind="money")
+        return Unit(base=u.base or 1.0, currency=u.currency or currency or sheet_ccy, kind="money")
     # 2) AI explicitly said percent / ratio -> trust it.
     if u.kind in ("percent", "ratio"):
         return u

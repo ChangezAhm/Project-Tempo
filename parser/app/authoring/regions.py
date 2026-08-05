@@ -34,7 +34,7 @@ from pydantic import BaseModel, ConfigDict
 from app import supabase_client as sb
 from app.llm import MODEL_MAP, guarded_stream
 from app.population.catalogue import effective_value
-from app.population.cost import SpendCapExceeded, SpendGuard, default_cap_usd, set_guard
+from app.population.cost import SpendCapExceeded, SpendGuard, default_onboarding_cap_usd, set_guard
 from app.population.periods import parse_any_date
 from app.raw_extraction.column_utils import column_index, column_letter
 
@@ -521,7 +521,7 @@ def _detect(digest: str, model: str, tiles: list[tuple[str, bytes]] = ()) -> Reg
     _, text = guarded_stream(model=model, system=_SYSTEM, content=content,
                              max_tokens=_MAX_TOKENS,
                              est_input_chars=len(_SYSTEM) + len(digest),
-                             n_images=n_images)
+                             n_images=n_images, site="region_detection")
     try:
         return _parse(text)
     except Exception as e:  # noqa: BLE001 — malformed JSON from the model
@@ -536,7 +536,7 @@ def _detect(digest: str, model: str, tiles: list[tuple[str, bytes]] = ()) -> Reg
         )},
     ]
     _, text = guarded_stream(model=model, system=_SYSTEM, messages=messages,
-                             max_tokens=_MAX_TOKENS)
+                             max_tokens=_MAX_TOKENS, site="region_detection_retry")
     return _parse(text)
 
 
@@ -779,7 +779,9 @@ def detect_and_persist(template_id: str) -> dict:
     from app.datamodel.derive import _load_snapshot   # lazy: pulls the Aspose parse chain
     from app.datamodel.persist import get_data_model
 
-    set_guard(SpendGuard(default_cap_usd()))
+    # Region detection runs inside /understand — it spends against the ONBOARDING
+    # cap, not the (much smaller) populate cap it used to arm by mistake.
+    set_guard(SpendGuard(default_onboarding_cap_usd()))
     wb_tmp: Path | None = None
     try:
         dm = get_data_model(template_id, limit=30000)

@@ -18,7 +18,7 @@ from collections import Counter
 
 from app.population.catalogue import Series
 from app.population.numfmt import parse_number_format
-from app.population.periods import infer_grain, parse_iso_period, pick_column
+from app.population.periods import infer_grain, parse_iso_period, pick_columns
 from app.population.schema import CellLink, MetricMap
 from app.population.units import is_count_like, reconcile_scale, resolve_scale, resolve_unit
 
@@ -262,15 +262,42 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
                     f, f"source has no {dem_scen} column or row-variant for '{mm.series_id}'"))
                 continue
 
-        # which source column for this template period slot — align by the template
+        # which source column(s) for this template period slot — align by the template
         # column's REAL date (read from its timeline) when we have it, else positional.
+        # ROLLUP semantics (how monthly source values make a quarterly/annual slot):
+        # the statement basis is deterministic truth when present (BS stock -> period
+        # end, P&L flow -> sum); a KPI-style line the model couldn't type falls to the
+        # mapper's judgment, then to unit/label evidence (a percent is a rate -> avg;
+        # a headcount is a stock -> end). No verdict -> the slot stays blank: summing
+        # a stock would silently 3x it.
+        basis = (f.get("basis") or "").strip().lower()
+        if basis == "point_in_time":
+            rollup = "end"
+        elif basis == "flow":
+            rollup = "sum"
+        else:
+            rollup = getattr(mm, "rollup", None)
+            if rollup not in ("sum", "avg", "end"):
+                if resolve_unit(f.get("unit")).kind == "percent" or series.unit.kind == "percent":
+                    rollup = "avg"
+                elif is_count_like(f.get("metric_label")) or is_count_like(series.label):
+                    rollup = "end"
+                else:
+                    rollup = None
         sheet = f.get("sheet_name")
         tdate = dates_by_col.get((sheet, f.get("col"))) or parse_iso_period(f.get("parsed_date"))
-        col = pick_column(f.get("period_index"), pc_by_sheet.get(sheet) or period_count, tdate,
-                          cand_cols, grain, template_grain=sheet_grain.get(sheet),
-                          point_in_time=(f.get("basis") == "point_in_time"))
-        if col is None:
+        picked = pick_columns(f.get("period_index"), pc_by_sheet.get(sheet) or period_count, tdate,
+                              cand_cols, grain, template_grain=sheet_grain.get(sheet),
+                              point_in_time=(basis == "point_in_time"), rollup=rollup)
+        if picked is None:
             unmatched.append(_unmatched(f, f"no source column for period_index={f.get('period_index')} ({grain})"))
+            continue
+        cols, period_op = picked
+        col = cols[0]
+        if period_op == "avg" and len(components) > 1:
+            # averaging across months of a summed multi-series line mixes two
+            # aggregations — no defensible single value, so never write one.
+            unmatched.append(_unmatched(f, "avg rollup over an aggregated multi-series line — ambiguous, not filled"))
             continue
 
         # the template cell's own signals: number format (kind/currency) + the
@@ -320,13 +347,17 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             sign_flip = mm.sign_flip
 
         source_cell = f"{_col_letters(col)}{series.row}"
-        agg_source_cells: list[str] = []
+        # rollup: the primary series' remaining month columns in the bucket
+        agg_source_cells: list[str] = [f"{series.sheet}!{_col_letters(c)}{series.row}" for c in cols[1:]]
         if agg:
-            # every component sits on the primary's sheet at the SAME column
-            agg_source_cells = [f"{c.sheet}!{_col_letters(col)}{c.row}" for c in components[1:]]
+            # every component sits on the primary's sheet, at every rolled-up column
+            agg_source_cells += [f"{c.sheet}!{_col_letters(cc)}{c.row}"
+                                 for c in components[1:] for cc in cols]
             note = "SUM: " + " + ".join(c.label for c in components) + f" @ {series.sheet} [derived:sum]"
         else:
             note = f"{series.label} @ {series.sheet}"
+        if len(cols) > 1:
+            note += f" [derived:{period_op} of {len(cols)} monthly columns]"
         if reconciled:
             note += f" [reconciled: {(mm.assumption or 'source granularity differs')[:140]}]"
         if not any(d is not None for (_c, d, _pt) in series.period_cols):
@@ -343,6 +374,7 @@ def bind(facts: list[dict], catalogue: dict[str, Series], metric_maps: list[Metr
             source_sheet=series.sheet,
             source_cell=source_cell,
             agg_source_cells=agg_source_cells,
+            agg_op="avg" if period_op == "avg" else "sum",
             unit_scale=scale,
             sign_flip=sign_flip,
             confidence=mm.confidence,

@@ -83,18 +83,62 @@ _SYSTEM = (
     "- A TEMPLATE CONTEXT block, when present, carries sponsor-confirmed rules and answered "
     "review questions — it is AUTHORITATIVE. If it states how to reconcile a line, follow "
     "it exactly (that is a human decision that must win over your own).\n"
-    "- set sign_flip=true only when conventions differ (source costs +ve, template -ve).\n"
-    "- confidence in [0,1]. For direct/aggregate, <0.6 is dropped. reconcile is kept "
+    "\nYOU DECIDE THE COMPLETE FILL SEMANTICS per metric — deterministic code executes "
+    "your plan and verifies it against the workbook facts; it does not re-decide it:\n"
+    "- rollup: how the metric aggregates from finer to coarser periods (months -> "
+    "quarter/year) when grains differ: 'sum' for period flows (revenue, costs, cash "
+    "flow), 'end' (period-end value) for point-in-time stocks (balance-sheet items, "
+    "headcount/FTE, customer counts, ARR/MRR and other run-rates), 'avg' for "
+    "rates/ratios/percentages (churn %, margins, conversion). Set it for every mapped "
+    "metric.\n"
+    "- source_unit / target_unit: the units AS YOU READ THEM from the source series "
+    "(its label, unit tag, or the sheet's banner — e.g. \"USD'000\") and from the "
+    "template metric (its unit/format — e.g. 'EUR m', '%', 'FTE'). Echo the unit "
+    "STRINGS — the executor computes the scale factor and cross-checks it against the "
+    "template's real magnitudes; never compute or state a scale yourself. A sheet "
+    "banner like \"all figures USD'000\" applies to money rows, NOT to counts, "
+    "percentages or ratios on the same sheet.\n"
+    "- sign_flip + sign_basis: set sign_flip=true only when conventions differ (source "
+    "costs +ve, template enters costs -ve); sign_basis = one line saying what told you "
+    "(the template's sign convention note, the sign of existing values, the label).\n"
+    "- scenario: when the template demands budget/forecast slots for a metric, emit a "
+    "separate mapping per demanded scenario (same metric key) naming which scenario it "
+    "serves; omit for plain actuals.\n"
+    "- period_map: 'calendar' (default — align by real dates) or 'positional' ONLY "
+    "when the facts show one side has no readable dates.\n"
+    "\nTYPICAL TREATMENTS (suggestions from experience — NOT rules; when the facts "
+    "contradict one, trust the facts and say so in note): balance-sheet sections are "
+    "stocks ('end'); P&L/cash-flow sections are flows ('sum'); percentages/ratios "
+    "average; headcount/FTE/customer counts are stocks and are dimensionless (unit "
+    "'count' — never a money scale).\n"
+    "\n- confidence in [0,1]. For direct/aggregate, <0.6 becomes a user question (with "
+    "your mapping as the suggestion) instead of a fill. reconcile is kept "
     "(provisional) but still score it honestly.\n"
-    "- NEVER output values, cell addresses, scales, or currencies — only the mapping.\n"
+    "- NEVER output numeric cell values, cell addresses, computed scale factors, or "
+    "currency conversions — only the semantic plan.\n"
     'Return ONLY JSON: {"mappings":[{"metric":"...","status":"direct|aggregate|reconcile|'
     'needs_decision|unavailable","series_id":"...|null","also_series_ids":[],'
-    '"assumption":"...|null","sign_flip":false,"confidence":0.0,"note":"..."}]}'
+    '"assumption":"...|null","rollup":"sum|end|avg","scenario":"actual|budget|forecast|null",'
+    '"source_unit":"...|null","target_unit":"...|null","sign_flip":false,'
+    '"sign_basis":"...|null","period_map":"calendar|positional","confidence":0.0,'
+    '"note":"..."}]}'
 )
 
-_BATCH = 25  # template metrics per call; the full series catalogue rides along each
-             # time, so a large batch overflows the output cap (max_tokens) and the
-             # whole chunk fails — keep it small enough that the mapping JSON fits.
+_BATCH = 12  # template metrics per call; the full series catalogue + slot facts ride
+             # along each time, and each metric now gets a complete fill-semantics
+             # answer — small batches keep the output JSON inside max_tokens.
+
+
+def _series_periods(s: Series) -> str:
+    """Compact facts about a series' timeline: grain(s), date range, scenario mix
+    — the planner decides grain correspondence from these, so they must be real."""
+    dated = [(d, pt) for (_c, d, pt) in s.period_cols if d is not None]
+    if not dated:
+        return f"{len(s.period_cols)} undated column(s)" if s.period_cols else "no period columns"
+    grains = sorted({(pt or "?") for _d, pt in dated})
+    lo, hi = min(d for d, _ in dated), max(d for d, _ in dated)
+    scen = sorted({(s.col_scenario.get(c) or "actual") for (c, d, _pt) in s.period_cols if d is not None})
+    return f"{'/'.join(grains)} {lo:%Y-%m}..{hi:%Y-%m} ({len(dated)} cols, {'/'.join(scen)})"
 
 
 def _series_lines(catalogue: dict[str, Series]) -> str:
@@ -104,10 +148,13 @@ def _series_lines(catalogue: dict[str, Series]) -> str:
         unit = []
         if s.unit.currency:
             unit.append(s.unit.currency)
+        if s.unit.base and s.unit.base != 1.0:
+            unit.append(f"x{s.unit.base:g}")
         if s.unit.kind and s.unit.kind != "unknown":
             unit.append(s.unit.kind)
         meta = f" [{'/'.join(unit)}]" if unit else ""
-        lines.append(f"{s.id} | {s.sheet} | {s.label}{meta}" + (f" | e.g. {sample}" if sample else ""))
+        lines.append(f"{s.id} | {s.sheet} | {s.label}{meta} | {_series_periods(s)}"
+                     + (f" | e.g. {sample}" if sample else ""))
     return "\n".join(lines)
 
 
@@ -135,6 +182,12 @@ def _metric_lines(metrics: list[dict]) -> str:
         # lets the mapper prefer/refuse a source of the wrong kind.
         if m.get("expected_source"):
             meta += f" | source: {str(m['expected_source'])[:60]}"
+        # the template SLOTS this metric must fill: per-sheet grain + date range +
+        # section context — the facts the planner's grain/rollup call rests on.
+        if m.get("slots"):
+            meta += f" | slots: {str(m['slots'])[:160]}"
+        if m.get("section_type"):
+            meta += f" | section: {m['section_type']}"
         out.append(f"{m.get('metric')} | {label}{meta}")
     return "\n".join(out)
 
@@ -182,7 +235,8 @@ def _map_chunk(chunk: list[dict], series_block: str, max_tokens: int,
     the caller decides whether that kills the run."""
     user = _user_text(chunk, series_block, context)
     _, text = guarded_stream(model=MODEL_MAP, system=_SYSTEM, content=user,
-                             max_tokens=max_tokens, est_input_chars=len(_SYSTEM) + len(user))
+                             max_tokens=max_tokens, est_input_chars=len(_SYSTEM) + len(user),
+                             temperature=0, site="metric_planner")
     try:
         maps = _parse(text)
         if maps:
@@ -200,11 +254,50 @@ def _map_chunk(chunk: list[dict], series_block: str, max_tokens: int,
         )},
     ]
     _, text = guarded_stream(model=MODEL_MAP, system=_SYSTEM, messages=messages,
-                             max_tokens=max_tokens)
+                             max_tokens=max_tokens, temperature=0, site="metric_planner_retry")
     maps = _parse(text)
     if not maps:
         raise RuntimeError("mapping batch unusable after corrective retry")
     return maps
+
+
+def repair_plan(failing: list[tuple[dict, "MetricMap", list]], catalogue: dict[str, Series],
+                max_tokens: int = 8000, context: str = "") -> list[MetricMap]:
+    """ONE self-repair round (Fill-Plan §2.4 tier 1): the planner sees its own
+    previous entries plus the verifier's typed findings for ONLY the failing
+    metrics, and returns revised entries. Best-effort — a failed repair leaves
+    the original entries (and their issues) standing for the question tier.
+
+    failing: [(metric_dict, previous_fill, [PlanIssue-like dicts/objects])]."""
+    from app.population.cost import SpendCapExceeded
+
+    if not failing or not catalogue:
+        return []
+    blocks = []
+    for metric, prev, issues in failing:
+        prob = "; ".join(f"{i.code}: {i.detail}" for i in issues)
+        blocks.append(f"METRIC:\n{_metric_lines([metric])}\n"
+                      f"YOUR PREVIOUS PLAN: {json.dumps(prev.model_dump(exclude_none=True))}\n"
+                      f"VERIFIER FINDINGS: {prob}")
+    user = (
+        (f"TEMPLATE CONTEXT (authoritative — sponsor-confirmed):\n{context}\n\n" if context else "")
+        + "SOURCE SERIES (id | sheet | label [unit] | periods | samples):\n"
+        + _series_lines(catalogue)
+        + "\n\nThe deterministic verifier could not execute these plan entries. "
+          "Revise EACH one to something executable against the facts above (or mark it "
+          "needs_decision/unavailable with a clear reason — never force a bad fill):\n\n"
+        + "\n\n".join(blocks)
+        + "\n\nReturn the corrected JSON now (mappings for ONLY these metrics)."
+    )
+    try:
+        _, text = guarded_stream(model=MODEL_MAP, system=_SYSTEM, content=user,
+                                 max_tokens=max_tokens, temperature=0, site="plan_repair")
+        return _parse(text)
+    except SpendCapExceeded:
+        raise
+    except Exception as e:  # noqa: BLE001 — repair is best-effort by design
+        logger.warning("plan repair round failed (%s) — issues fall through to questions", e)
+        return []
 
 
 def map_metrics(metrics: list[dict], catalogue: dict[str, Series],

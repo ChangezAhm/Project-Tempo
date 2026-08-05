@@ -22,10 +22,9 @@ from pydantic import BaseModel, ConfigDict
 from app import supabase_client as sb
 from app.datamodel.persist import derive_and_persist, get_data_model
 from app.datamodel.schema import Basis
-from app.llm import MODEL, get_client
+from app.llm import MODEL
 from app.population.cost import (
-    SpendCapExceeded, SpendGuard, default_onboarding_cap_usd, estimate_call_usd,
-    get_guard, set_guard,
+    SpendCapExceeded, SpendGuard, default_onboarding_cap_usd, set_guard,
 )
 from app.understanding.per_sheet import _extract_json, to_strict_schema
 
@@ -76,19 +75,11 @@ SYSTEM = (
 # max_tokens is sized for one ~80-metric batch (a few KB of JSON + adaptive
 # thinking), not the whole workbook — the old 32k single-call budget is gone.
 def _call(user_text: str, max_tokens: int = 16000):
-    guard = get_guard()
-    if guard is not None:
-        guard.check(estimate_call_usd(MODEL, len(SYSTEM) + len(user_text), max_tokens))
-    with get_client().messages.stream(
-        model=MODEL, max_tokens=max_tokens, thinking={"type": "adaptive"},
-        system=SYSTEM, messages=[{"role": "user", "content": user_text}],
-    ) as stream:
-        msg = stream.get_final_message()
-    if guard is not None and getattr(msg, "usage", None) is not None:
-        guard.record_actual(MODEL, msg.usage.input_tokens, msg.usage.output_tokens)
-    if msg.stop_reason == "max_tokens":
-        raise RuntimeError(f"Enrichment truncated at max_tokens={max_tokens} — raise it.")
-    return msg, next((b.text for b in msg.content if b.type == "text"), "")
+    # Routed through the choke point — spend guard + tracing, no hand-rolled copy.
+    from app.llm import guarded_stream
+
+    return guarded_stream(model=MODEL, system=SYSTEM, content=user_text,
+                          max_tokens=max_tokens, site="dimension_enrichment")
 
 
 def _classify_batch(items: list[dict]) -> tuple[list[DimAssignment], tuple[int, int]]:

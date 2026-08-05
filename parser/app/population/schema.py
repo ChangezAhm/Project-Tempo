@@ -23,11 +23,14 @@ class CellLink(_M):
     template_cell: str
     source_sheet: str
     source_cell: str
-    # AGGREGATION: additional source cells ("Sheet!A1") whose values are SUMMED
-    # with source_cell to fill one template line (e.g. Total = NA + EMEA + APAC).
-    # Empty for a normal 1:1 link. A derived fill stays fully auditable — every
-    # operand is a real cited cell and the note shows the arithmetic.
+    # AGGREGATION: additional source cells ("Sheet!A1") combined with source_cell
+    # to fill one template line — summed for a row aggregate (Total = NA + EMEA +
+    # APAC) or a monthly->quarterly rollup of a flow; averaged (agg_op='avg') for
+    # a rate rolled up across months. Empty for a normal 1:1 link. A derived fill
+    # stays fully auditable — every operand is a real cited cell and the note
+    # shows the arithmetic.
     agg_source_cells: list[str] = []
+    agg_op: str = "sum"           # 'sum' | 'avg' — how agg_source_cells combine
     unit_scale: float = 1.0
     sign_flip: bool = False
     confidence: float = 0.5
@@ -74,6 +77,21 @@ class MetricMap(_M):
     #   unavailable — source has no data for it (series_id null); note says why.
     status: str = "direct"
     assumption: str | None = None  # reconcile: plain-English statement of what was assumed
+    # ROLLUP semantics: how a coarser template period is built from finer source
+    # periods (months -> quarter/year) when grains differ. 'sum' = period flow,
+    # 'end' = point-in-time stock (period-end value), 'avg' = rate/ratio. None =
+    # unknown; binding then falls back to basis/unit heuristics or leaves blank.
+    rollup: str | None = None
+    # --- FILL-PLAN fields (docs/Fill-Plan-Architecture.md §2.2): the COMPLETE
+    # semantic decision, series-level. The executor computes from these; it never
+    # re-decides them. All optional so pre-plan mappings still parse.
+    scenario: str | None = None    # actual|budget|forecast — the demanded scenario this
+                                   # entry serves; None = every demanded scenario
+    source_unit: str | None = None  # the unit AS READ from the source ("USD'000", "%", "FTE")
+    target_unit: str | None = None  # the unit AS READ from the template ("EUR m", "%")
+    sign_basis: str | None = None   # one line: why sign_flip is what it is
+    period_map: str = "calendar"    # calendar|positional — positional ONLY when a side is
+                                    # dateless in the facts; always flagged in the audit
     sign_flip: bool = False       # source/template sign conventions differ (e.g. costs +ve in source)
     confidence: float = 0.5
     note: str | None = None
@@ -81,3 +99,23 @@ class MetricMap(_M):
 
 class MappingOut(_M):
     mappings: list[MetricMap] = []
+
+
+# Fill-Plan name for the same record: one COMPLETE series-level decision.
+SeriesFill = MetricMap
+
+
+class PlanIssue(_M):
+    """One typed verifier/executor finding about a plan entry. The resolution
+    ladder (repair -> flagged default -> batched question -> hard block) is
+    driven by ``severity``; nothing dies as a bare reason string."""
+    metric: str
+    code: str                     # SERIES_NOT_FOUND | PLAN_INCOMPLETE | COMPONENT_MISMATCH |
+                                  # SCENARIO_NO_SOURCE | GRAIN_UNBRIDGEABLE | BUCKET_INCOMPLETE |
+                                  # PERIOD_END_MISSING | SCALE_CONFLICT | UNIT_KIND_MISMATCH |
+                                  # SIGN_CONFLICT | DOUBLE_COUNT | LOW_CONFIDENCE | SOURCE_GAP
+    detail: str
+    severity: str = "question"    # repair | default | question | block
+    suggested_resolution: str | None = None
+    resolution: str | None = None  # set when tier-2 auto-resolved (visible, never silent)
+    cells: list[str] = []          # affected template cells ("Sheet!A1"), for batching

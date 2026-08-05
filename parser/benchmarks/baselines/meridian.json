@@ -1,0 +1,2445 @@
+{
+ "target_template_id": "681f6d92-9cfb-4986-b112-19c69595a2ae",
+ "source_filename": "2026-07-08-aurora-softworks-management-ac.xlsx",
+ "as_of_date": "2026-08-04",
+ "demand_metrics": 16,
+ "summary": {
+  "facts": 169,
+  "filled": 113,
+  "unmatched": 56,
+  "skipped": 0
+ },
+ "routing": {
+  "series": 21,
+  "catalogue_source": "ai_understanding",
+  "context_chars": 511,
+  "rescue_attempted": 1,
+  "rescue_placed": 0,
+  "totals_modelled": 7
+ },
+ "links_count": 113,
+ "filled": [
+  {
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "D5",
+   "value": 149.5,
+   "raw_source_value": 149500.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "D6",
+   "metric": "ARR",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.8
+  },
+  {
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "E5",
+   "value": 158.4,
+   "raw_source_value": 158400.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "G6",
+   "metric": "ARR",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.8
+  },
+  {
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "D6",
+   "value": 498.0,
+   "raw_source_value": 498.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "D7",
+   "metric": "Headcount",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "E6",
+   "value": 512.0,
+   "raw_source_value": 512.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "G7",
+   "metric": "Headcount",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "D7",
+   "value": 0.016333333333333335,
+   "raw_source_value": 0.016333333333333335,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "B8",
+   "metric": "Churn",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "E7",
+   "value": 0.014666666666666666,
+   "raw_source_value": 0.014666666666666666,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "E8",
+   "metric": "Churn",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E8",
+   "value": 12.453799,
+   "raw_source_value": 12453799.0,
+   "source_sheet": "P&L",
+   "source_cell": "N8",
+   "metric": "revenue",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F8",
+   "value": 12.702874999999999,
+   "raw_source_value": 12702875.0,
+   "source_sheet": "P&L",
+   "source_cell": "O8",
+   "metric": "revenue",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G8",
+   "value": 12.956932,
+   "raw_source_value": 12956932.0,
+   "source_sheet": "P&L",
+   "source_cell": "P8",
+   "metric": "revenue",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H8",
+   "value": 13.216071,
+   "raw_source_value": 13216071.0,
+   "source_sheet": "P&L",
+   "source_cell": "Q8",
+   "metric": "revenue",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I8",
+   "value": 13.480392,
+   "raw_source_value": 13480392.0,
+   "source_sheet": "P&L",
+   "source_cell": "R8",
+   "metric": "revenue",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J8",
+   "value": 13.75,
+   "raw_source_value": 13750000.0,
+   "source_sheet": "P&L",
+   "source_cell": "S8",
+   "metric": "revenue",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E9",
+   "value": -4.35883,
+   "raw_source_value": 4358830.0,
+   "source_sheet": "P&L",
+   "source_cell": "N9",
+   "metric": "cost_of_sales",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F9",
+   "value": -4.446006,
+   "raw_source_value": 4446006.0,
+   "source_sheet": "P&L",
+   "source_cell": "O9",
+   "metric": "cost_of_sales",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G9",
+   "value": -4.534926,
+   "raw_source_value": 4534926.0,
+   "source_sheet": "P&L",
+   "source_cell": "P9",
+   "metric": "cost_of_sales",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H9",
+   "value": -4.625624999999999,
+   "raw_source_value": 4625625.0,
+   "source_sheet": "P&L",
+   "source_cell": "Q9",
+   "metric": "cost_of_sales",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I9",
+   "value": -4.718137,
+   "raw_source_value": 4718137.0,
+   "source_sheet": "P&L",
+   "source_cell": "R9",
+   "metric": "cost_of_sales",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J9",
+   "value": -4.8125,
+   "raw_source_value": 4812500.0,
+   "source_sheet": "P&L",
+   "source_cell": "S9",
+   "metric": "cost_of_sales",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E12",
+   "value": -4.732443,
+   "raw_source_value": 4732443.0,
+   "source_sheet": "P&L",
+   "source_cell": "N11",
+   "metric": "operating_expenses",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F12",
+   "value": -4.8270919999999995,
+   "raw_source_value": 4827092.0,
+   "source_sheet": "P&L",
+   "source_cell": "O11",
+   "metric": "operating_expenses",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G12",
+   "value": -4.923634,
+   "raw_source_value": 4923634.0,
+   "source_sheet": "P&L",
+   "source_cell": "P11",
+   "metric": "operating_expenses",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H12",
+   "value": -5.022107,
+   "raw_source_value": 5022107.0,
+   "source_sheet": "P&L",
+   "source_cell": "Q11",
+   "metric": "operating_expenses",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I12",
+   "value": -5.122548999999999,
+   "raw_source_value": 5122549.0,
+   "source_sheet": "P&L",
+   "source_cell": "R11",
+   "metric": "operating_expenses",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J12",
+   "value": -5.225,
+   "raw_source_value": 5225000.0,
+   "source_sheet": "P&L",
+   "source_cell": "S11",
+   "metric": "operating_expenses",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E14",
+   "value": 0.06,
+   "raw_source_value": 60000.0,
+   "source_sheet": "P&L",
+   "source_cell": "N15",
+   "metric": "ebitda_adjustments",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F14",
+   "value": 0.0,
+   "raw_source_value": 0.0,
+   "source_sheet": "P&L",
+   "source_cell": "O15",
+   "metric": "ebitda_adjustments",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G14",
+   "value": 0.0,
+   "raw_source_value": 0.0,
+   "source_sheet": "P&L",
+   "source_cell": "P15",
+   "metric": "ebitda_adjustments",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H14",
+   "value": 0.21,
+   "raw_source_value": 210000.0,
+   "source_sheet": "P&L",
+   "source_cell": "Q15",
+   "metric": "ebitda_adjustments",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I14",
+   "value": 0.0,
+   "raw_source_value": 0.0,
+   "source_sheet": "P&L",
+   "source_cell": "R15",
+   "metric": "ebitda_adjustments",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J14",
+   "value": 0.15,
+   "raw_source_value": 150000.0,
+   "source_sheet": "P&L",
+   "source_cell": "S15",
+   "metric": "ebitda_adjustments",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E18",
+   "value": 5.52,
+   "raw_source_value": 5520000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "B5",
+   "metric": "cash",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F18",
+   "value": 5.7,
+   "raw_source_value": 5700000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "C5",
+   "metric": "cash",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G18",
+   "value": 5.88,
+   "raw_source_value": 5880000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "D5",
+   "metric": "cash",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H18",
+   "value": 6.06,
+   "raw_source_value": 6060000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "E5",
+   "metric": "cash",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I18",
+   "value": 6.239999999999999,
+   "raw_source_value": 6240000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "F5",
+   "metric": "cash",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J18",
+   "value": 6.42,
+   "raw_source_value": 6420000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "G5",
+   "metric": "cash",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K18",
+   "value": 6.64,
+   "raw_source_value": 6640000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "I5",
+   "metric": "cash",
+   "period_index": 6,
+   "scenario": "actual",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L18",
+   "value": 6.859999999999999,
+   "raw_source_value": 6860000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "J5",
+   "metric": "cash",
+   "period_index": 7,
+   "scenario": "actual",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M18",
+   "value": 7.08,
+   "raw_source_value": 7080000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "K5",
+   "metric": "cash",
+   "period_index": 8,
+   "scenario": "actual",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N18",
+   "value": 7.3,
+   "raw_source_value": 7300000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "L5",
+   "metric": "cash",
+   "period_index": 9,
+   "scenario": "actual",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O18",
+   "value": 7.52,
+   "raw_source_value": 7520000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "M5",
+   "metric": "cash",
+   "period_index": 10,
+   "scenario": "actual",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P18",
+   "value": 7.739999999999999,
+   "raw_source_value": 7740000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "N5",
+   "metric": "cash",
+   "period_index": 11,
+   "scenario": "actual",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R18",
+   "value": 7.739999999999999,
+   "raw_source_value": 7740000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "N5",
+   "metric": "cash",
+   "period_index": 12,
+   "scenario": "budget",
+   "confidence": 0.95
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E19",
+   "value": 30.5,
+   "raw_source_value": 30500000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "B6",
+   "metric": "gross_debt",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F19",
+   "value": 30.5,
+   "raw_source_value": 30500000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "C6",
+   "metric": "gross_debt",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G19",
+   "value": 30.5,
+   "raw_source_value": 30500000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "D6",
+   "metric": "gross_debt",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H19",
+   "value": 30.5,
+   "raw_source_value": 30500000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "E6",
+   "metric": "gross_debt",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I19",
+   "value": 30.5,
+   "raw_source_value": 30500000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "F6",
+   "metric": "gross_debt",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J19",
+   "value": 30.5,
+   "raw_source_value": 30500000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "G6",
+   "metric": "gross_debt",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K19",
+   "value": 30.0,
+   "raw_source_value": 30000000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "I6",
+   "metric": "gross_debt",
+   "period_index": 6,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L19",
+   "value": 29.5,
+   "raw_source_value": 29500000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "J6",
+   "metric": "gross_debt",
+   "period_index": 7,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M19",
+   "value": 29.0,
+   "raw_source_value": 29000000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "K6",
+   "metric": "gross_debt",
+   "period_index": 8,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N19",
+   "value": 28.5,
+   "raw_source_value": 28500000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "L6",
+   "metric": "gross_debt",
+   "period_index": 9,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O19",
+   "value": 28.0,
+   "raw_source_value": 28000000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "M6",
+   "metric": "gross_debt",
+   "period_index": 10,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P19",
+   "value": 28.0,
+   "raw_source_value": 28000000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "N6",
+   "metric": "gross_debt",
+   "period_index": 11,
+   "scenario": "actual",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R19",
+   "value": 28.0,
+   "raw_source_value": 28000000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "N6",
+   "metric": "gross_debt",
+   "period_index": 12,
+   "scenario": "budget",
+   "confidence": 0.9
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E24",
+   "value": 9.08,
+   "raw_source_value": 9080000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "B8",
+   "metric": "trade_receivables",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F24",
+   "value": 9.23,
+   "raw_source_value": 9230000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "C8",
+   "metric": "trade_receivables",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G24",
+   "value": 9.379999999999999,
+   "raw_source_value": 9380000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "D8",
+   "metric": "trade_receivables",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H24",
+   "value": 9.53,
+   "raw_source_value": 9530000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "E8",
+   "metric": "trade_receivables",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I24",
+   "value": 9.68,
+   "raw_source_value": 9680000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "F8",
+   "metric": "trade_receivables",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J24",
+   "value": 9.83,
+   "raw_source_value": 9830000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "G8",
+   "metric": "trade_receivables",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K24",
+   "value": 9.99,
+   "raw_source_value": 9990000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "I8",
+   "metric": "trade_receivables",
+   "period_index": 6,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L24",
+   "value": 10.15,
+   "raw_source_value": 10150000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "J8",
+   "metric": "trade_receivables",
+   "period_index": 7,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M24",
+   "value": 10.309999999999999,
+   "raw_source_value": 10310000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "K8",
+   "metric": "trade_receivables",
+   "period_index": 8,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N24",
+   "value": 10.469999999999999,
+   "raw_source_value": 10470000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "L8",
+   "metric": "trade_receivables",
+   "period_index": 9,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O24",
+   "value": 10.629999999999999,
+   "raw_source_value": 10630000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "M8",
+   "metric": "trade_receivables",
+   "period_index": 10,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P24",
+   "value": 10.79,
+   "raw_source_value": 10790000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "N8",
+   "metric": "trade_receivables",
+   "period_index": 11,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R24",
+   "value": 10.79,
+   "raw_source_value": 10790000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "N8",
+   "metric": "trade_receivables",
+   "period_index": 12,
+   "scenario": "budget",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E25",
+   "value": 1.065,
+   "raw_source_value": 1065000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "B9",
+   "metric": "inventory",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F25",
+   "value": 1.0799999999999998,
+   "raw_source_value": 1080000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "C9",
+   "metric": "inventory",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G25",
+   "value": 1.095,
+   "raw_source_value": 1095000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "D9",
+   "metric": "inventory",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H25",
+   "value": 1.1099999999999999,
+   "raw_source_value": 1110000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "E9",
+   "metric": "inventory",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I25",
+   "value": 1.125,
+   "raw_source_value": 1125000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "F9",
+   "metric": "inventory",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J25",
+   "value": 1.14,
+   "raw_source_value": 1140000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "G9",
+   "metric": "inventory",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K25",
+   "value": 1.15,
+   "raw_source_value": 1150000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "I9",
+   "metric": "inventory",
+   "period_index": 6,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L25",
+   "value": 1.16,
+   "raw_source_value": 1160000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "J9",
+   "metric": "inventory",
+   "period_index": 7,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M25",
+   "value": 1.17,
+   "raw_source_value": 1170000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "K9",
+   "metric": "inventory",
+   "period_index": 8,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N25",
+   "value": 1.18,
+   "raw_source_value": 1180000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "L9",
+   "metric": "inventory",
+   "period_index": 9,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O25",
+   "value": 1.19,
+   "raw_source_value": 1190000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "M9",
+   "metric": "inventory",
+   "period_index": 10,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P25",
+   "value": 1.2,
+   "raw_source_value": 1200000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "N9",
+   "metric": "inventory",
+   "period_index": 11,
+   "scenario": "actual",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R25",
+   "value": 1.2,
+   "raw_source_value": 1200000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "N9",
+   "metric": "inventory",
+   "period_index": 12,
+   "scenario": "budget",
+   "confidence": 0.93
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E26",
+   "value": -7.135,
+   "raw_source_value": 7135000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "B10",
+   "metric": "trade_payables",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F26",
+   "value": -7.2299999999999995,
+   "raw_source_value": 7230000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "C10",
+   "metric": "trade_payables",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G26",
+   "value": -7.324999999999999,
+   "raw_source_value": 7325000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "D10",
+   "metric": "trade_payables",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H26",
+   "value": -7.42,
+   "raw_source_value": 7420000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "E10",
+   "metric": "trade_payables",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I26",
+   "value": -7.515,
+   "raw_source_value": 7515000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "F10",
+   "metric": "trade_payables",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J26",
+   "value": -7.609999999999999,
+   "raw_source_value": 7610000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "G10",
+   "metric": "trade_payables",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K26",
+   "value": -7.71,
+   "raw_source_value": 7710000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "I10",
+   "metric": "trade_payables",
+   "period_index": 6,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L26",
+   "value": -7.81,
+   "raw_source_value": 7810000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "J10",
+   "metric": "trade_payables",
+   "period_index": 7,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M26",
+   "value": -7.909999999999999,
+   "raw_source_value": 7910000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "K10",
+   "metric": "trade_payables",
+   "period_index": 8,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N26",
+   "value": -8.01,
+   "raw_source_value": 8010000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "L10",
+   "metric": "trade_payables",
+   "period_index": 9,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O26",
+   "value": -8.11,
+   "raw_source_value": 8110000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "M10",
+   "metric": "trade_payables",
+   "period_index": 10,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P26",
+   "value": -8.209999999999999,
+   "raw_source_value": 8210000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "N10",
+   "metric": "trade_payables",
+   "period_index": 11,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R26",
+   "value": -8.209999999999999,
+   "raw_source_value": 8210000.0,
+   "source_sheet": "Cash & BS items",
+   "source_cell": "N10",
+   "metric": "trade_payables",
+   "period_index": 12,
+   "scenario": "budget",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E30",
+   "value": 143.9,
+   "raw_source_value": 143900.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "B6",
+   "metric": "arr",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F30",
+   "value": 146.70000000000002,
+   "raw_source_value": 146700.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "C6",
+   "metric": "arr",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G30",
+   "value": 149.5,
+   "raw_source_value": 149500.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "D6",
+   "metric": "arr",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H30",
+   "value": 152.4,
+   "raw_source_value": 152400.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "E6",
+   "metric": "arr",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I30",
+   "value": 155.4,
+   "raw_source_value": 155400.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "F6",
+   "metric": "arr",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J30",
+   "value": 158.4,
+   "raw_source_value": 158400.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "G6",
+   "metric": "arr",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.85
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E31",
+   "value": 488.0,
+   "raw_source_value": 488.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "B7",
+   "metric": "headcount",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F31",
+   "value": 493.0,
+   "raw_source_value": 493.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "C7",
+   "metric": "headcount",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G31",
+   "value": 498.0,
+   "raw_source_value": 498.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "D7",
+   "metric": "headcount",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H31",
+   "value": 503.0,
+   "raw_source_value": 503.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "E7",
+   "metric": "headcount",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I31",
+   "value": 508.0,
+   "raw_source_value": 508.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "F7",
+   "metric": "headcount",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J31",
+   "value": 512.0,
+   "raw_source_value": 512.0,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "G7",
+   "metric": "headcount",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.92
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E32",
+   "value": 0.017,
+   "raw_source_value": 0.017,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "B8",
+   "metric": "churn_rate",
+   "period_index": 0,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F32",
+   "value": 0.016,
+   "raw_source_value": 0.016,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "C8",
+   "metric": "churn_rate",
+   "period_index": 1,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G32",
+   "value": 0.016,
+   "raw_source_value": 0.016,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "D8",
+   "metric": "churn_rate",
+   "period_index": 2,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H32",
+   "value": 0.015,
+   "raw_source_value": 0.015,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "E8",
+   "metric": "churn_rate",
+   "period_index": 3,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I32",
+   "value": 0.015,
+   "raw_source_value": 0.015,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "F8",
+   "metric": "churn_rate",
+   "period_index": 4,
+   "scenario": "actual",
+   "confidence": 0.88
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J32",
+   "value": 0.014,
+   "raw_source_value": 0.014,
+   "source_sheet": "SaaS metrics",
+   "source_cell": "G8",
+   "metric": "churn_rate",
+   "period_index": 5,
+   "scenario": "actual",
+   "confidence": 0.88
+  }
+ ],
+ "filled_truncated": false,
+ "unmatched": [
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "F5",
+   "metric": "ARR",
+   "period_index": 2,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "G5",
+   "metric": "ARR",
+   "period_index": 3,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "F6",
+   "metric": "Headcount",
+   "period_index": 2,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "G6",
+   "metric": "Headcount",
+   "period_index": 3,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "F7",
+   "metric": "Churn",
+   "period_index": 2,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "G7",
+   "metric": "Churn",
+   "period_index": 3,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "C2",
+   "metric": "Portfolio company:",
+   "period_index": null,
+   "scenario": "unknown"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K8",
+   "metric": "revenue",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L8",
+   "metric": "revenue",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M8",
+   "metric": "revenue",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N8",
+   "metric": "revenue",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O8",
+   "metric": "revenue",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P8",
+   "metric": "revenue",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "source has no budget column or row-variant for 'P&L!r8'",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R8",
+   "metric": "revenue",
+   "period_index": 12,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K9",
+   "metric": "cost_of_sales",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L9",
+   "metric": "cost_of_sales",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M9",
+   "metric": "cost_of_sales",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N9",
+   "metric": "cost_of_sales",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O9",
+   "metric": "cost_of_sales",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P9",
+   "metric": "cost_of_sales",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "source has no budget column or row-variant for 'P&L!r9'",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R9",
+   "metric": "cost_of_sales",
+   "period_index": 12,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K12",
+   "metric": "operating_expenses",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L12",
+   "metric": "operating_expenses",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M12",
+   "metric": "operating_expenses",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N12",
+   "metric": "operating_expenses",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O12",
+   "metric": "operating_expenses",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P12",
+   "metric": "operating_expenses",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "source has no budget column or row-variant for 'P&L!r11'",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R12",
+   "metric": "operating_expenses",
+   "period_index": 12,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K14",
+   "metric": "ebitda_adjustments",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L14",
+   "metric": "ebitda_adjustments",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M14",
+   "metric": "ebitda_adjustments",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N14",
+   "metric": "ebitda_adjustments",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O14",
+   "metric": "ebitda_adjustments",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P14",
+   "metric": "ebitda_adjustments",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "source has no budget column or row-variant for 'P&L!r15'",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R14",
+   "metric": "ebitda_adjustments",
+   "period_index": 12,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K30",
+   "metric": "arr",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L30",
+   "metric": "arr",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M30",
+   "metric": "arr",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N30",
+   "metric": "arr",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O30",
+   "metric": "arr",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P30",
+   "metric": "arr",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "source has no budget column or row-variant for 'SaaS metrics!r6'",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R30",
+   "metric": "arr",
+   "period_index": 12,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K31",
+   "metric": "headcount",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L31",
+   "metric": "headcount",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M31",
+   "metric": "headcount",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N31",
+   "metric": "headcount",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O31",
+   "metric": "headcount",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P31",
+   "metric": "headcount",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "source has no budget column or row-variant for 'SaaS metrics!r7'",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R31",
+   "metric": "headcount",
+   "period_index": 12,
+   "scenario": "budget"
+  },
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K32",
+   "metric": "churn_rate",
+   "period_index": 6,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L32",
+   "metric": "churn_rate",
+   "period_index": 7,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M32",
+   "metric": "churn_rate",
+   "period_index": 8,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N32",
+   "metric": "churn_rate",
+   "period_index": 9,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O32",
+   "metric": "churn_rate",
+   "period_index": 10,
+   "scenario": "actual"
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P32",
+   "metric": "churn_rate",
+   "period_index": 11,
+   "scenario": "actual"
+  },
+  {
+   "reason": "source has no budget column or row-variant for 'SaaS metrics!r8'",
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R32",
+   "metric": "churn_rate",
+   "period_index": 12,
+   "scenario": "budget"
+  }
+ ],
+ "unmatched_truncated": false,
+ "unmatched_count": 56,
+ "unmatched_reasons": [
+  {
+   "reason": "no source column for period_index=6 (monthly)",
+   "count": 7
+  },
+  {
+   "reason": "no source column for period_index=7 (monthly)",
+   "count": 7
+  },
+  {
+   "reason": "no source column for period_index=8 (monthly)",
+   "count": 7
+  },
+  {
+   "reason": "no source column for period_index=9 (monthly)",
+   "count": 7
+  },
+  {
+   "reason": "no source column for period_index=10 (monthly)",
+   "count": 7
+  },
+  {
+   "reason": "no source column for period_index=11 (monthly)",
+   "count": 7
+  },
+  {
+   "reason": "no source column for period_index=2 (monthly)",
+   "count": 3
+  },
+  {
+   "reason": "no source column for period_index=3 (monthly)",
+   "count": 3
+  },
+  {
+   "reason": "no source series mapped to this metric",
+   "count": 1
+  },
+  {
+   "reason": "source has no budget column or row-variant for 'P&L!r8'",
+   "count": 1
+  }
+ ],
+ "unmapped_metrics": [
+  "Portfolio company:"
+ ],
+ "skipped": [],
+ "skipped_truncated": false,
+ "skipped_count": 0,
+ "review": [
+  {
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "D5",
+   "note": "Annualised recurring revenue @ SaaS metrics [reconciled: Source ARR is in USD; template requires EUR millions. Values appear to be in absolute USD (not millions). Currency conversion to EUR and sca] [scale_unverified:no_template_magnitude] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "E5",
+   "note": "Annualised recurring revenue @ SaaS metrics [reconciled: Source ARR is in USD; template requires EUR millions. Values appear to be in absolute USD (not millions). Currency conversion to EUR and sca] [scale_unverified:no_template_magnitude] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "D7",
+   "note": "Logo churn (monthly) @ SaaS metrics [derived:avg of 3 monthly columns] [reconciled: Source provides monthly logo churn rate. Template asks for quarter-average monthly churn; average the three monthly values within the quarte]"
+  },
+  {
+   "template_sheet": "KPI Dashboard",
+   "template_cell": "E7",
+   "note": "Logo churn (monthly) @ SaaS metrics [derived:avg of 3 monthly columns] [reconciled: Source provides monthly logo churn rate. Template asks for quarter-average monthly churn; average the three monthly values within the quarte]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E8",
+   "note": "Total turnover @ P&L [reconciled: Source provides 'Total turnover' which is the sum of NA, EMEA and APAC segments. Template wants a single Net Revenue line. Using the total t] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F8",
+   "note": "Total turnover @ P&L [reconciled: Source provides 'Total turnover' which is the sum of NA, EMEA and APAC segments. Template wants a single Net Revenue line. Using the total t] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G8",
+   "note": "Total turnover @ P&L [reconciled: Source provides 'Total turnover' which is the sum of NA, EMEA and APAC segments. Template wants a single Net Revenue line. Using the total t] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H8",
+   "note": "Total turnover @ P&L [reconciled: Source provides 'Total turnover' which is the sum of NA, EMEA and APAC segments. Template wants a single Net Revenue line. Using the total t] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I8",
+   "note": "Total turnover @ P&L [reconciled: Source provides 'Total turnover' which is the sum of NA, EMEA and APAC segments. Template wants a single Net Revenue line. Using the total t] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J8",
+   "note": "Total turnover @ P&L [reconciled: Source provides 'Total turnover' which is the sum of NA, EMEA and APAC segments. Template wants a single Net Revenue line. Using the total t] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E9",
+   "note": "Cost of sales @ P&L [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F9",
+   "note": "Cost of sales @ P&L [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G9",
+   "note": "Cost of sales @ P&L [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H9",
+   "note": "Cost of sales @ P&L [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I9",
+   "note": "Cost of sales @ P&L [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J9",
+   "note": "Cost of sales @ P&L [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E12",
+   "note": "SUM: Sales & marketing + General & administrative @ P&L [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F12",
+   "note": "SUM: Sales & marketing + General & administrative @ P&L [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G12",
+   "note": "SUM: Sales & marketing + General & administrative @ P&L [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H12",
+   "note": "SUM: Sales & marketing + General & administrative @ P&L [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I12",
+   "note": "SUM: Sales & marketing + General & administrative @ P&L [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J12",
+   "note": "SUM: Sales & marketing + General & administrative @ P&L [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E14",
+   "note": "One-off items addback @ P&L [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F14",
+   "note": "One-off items addback @ P&L [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G14",
+   "note": "One-off items addback @ P&L [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H14",
+   "note": "One-off items addback @ P&L [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I14",
+   "note": "One-off items addback @ P&L [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J14",
+   "note": "One-off items addback @ P&L [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R18",
+   "note": "Cash at bank @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R19",
+   "note": "SUM: Revolving credit facilit + Term loan A @ Cash & BS items [derived:sum] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R24",
+   "note": "Accounts receivable, tra @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R25",
+   "note": "Stock / inventories @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "K26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "L26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "M26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "N26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "O26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "P26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "R26",
+   "note": "Accounts payable @ Cash & BS items [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "E30",
+   "note": "Annualised recurring revenue @ SaaS metrics [reconciled: Source ARR is in USD absolute values (not millions). Currency conversion to EUR and scaling to millions required. Monthly series; template m] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "F30",
+   "note": "Annualised recurring revenue @ SaaS metrics [reconciled: Source ARR is in USD absolute values (not millions). Currency conversion to EUR and scaling to millions required. Monthly series; template m] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "G30",
+   "note": "Annualised recurring revenue @ SaaS metrics [reconciled: Source ARR is in USD absolute values (not millions). Currency conversion to EUR and scaling to millions required. Monthly series; template m] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "H30",
+   "note": "Annualised recurring revenue @ SaaS metrics [reconciled: Source ARR is in USD absolute values (not millions). Currency conversion to EUR and scaling to millions required. Monthly series; template m] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "I30",
+   "note": "Annualised recurring revenue @ SaaS metrics [reconciled: Source ARR is in USD absolute values (not millions). Currency conversion to EUR and scaling to millions required. Monthly series; template m] [currency_unverified:USD->EUR]"
+  },
+  {
+   "template_sheet": "Monthly Flash",
+   "template_cell": "J30",
+   "note": "Annualised recurring revenue @ SaaS metrics [reconciled: Source ARR is in USD absolute values (not millions). Currency conversion to EUR and scaling to millions required. Monthly series; template m] [currency_unverified:USD->EUR]"
+  }
+ ],
+ "review_truncated": false,
+ "review_count": 99,
+ "coverage_notes": [
+  "'Portfolio company:' is a label/identifier field (the company name or identifier), not a numeric metric. No source series in the catalogue contains a company name or entity identifier; all series are financial or operational data series. This field would typically be a static text input entered manually in the template header, not populated from any data series."
+ ],
+ "reconciled": [
+  {
+   "metric": "ARR (\u20acm)",
+   "assumption": "Source ARR is in USD; template requires EUR millions. Values appear to be in absolute USD (not millions). Currency conversion to EUR and scaling to millions required before use. Mapped as best available ARR series."
+  },
+  {
+   "metric": "Monthly Churn % (quarter avg)",
+   "assumption": "Source provides monthly logo churn rate. Template asks for quarter-average monthly churn; average the three monthly values within the quarter. Source is logo churn \u2014 note this in the report as the churn definition used."
+  },
+  {
+   "metric": "Net Revenue",
+   "assumption": "Source provides 'Total turnover' which is the sum of NA, EMEA and APAC segments. Template wants a single Net Revenue line. Using the total turnover as the direct equivalent of net revenue. Source is in USD; template requires EUR millions \u2014 currency conversion and scaling needed."
+  },
+  {
+   "metric": "ARR (\u20acm)",
+   "assumption": "Source ARR is in USD absolute values (not millions). Currency conversion to EUR and scaling to millions required. Monthly series; template metric is month-end (period-end run-rate)."
+  }
+ ],
+ "reconciled_count": 4,
+ "open_questions": [],
+ "open_questions_count": 0,
+ "unused_source_series": [
+  "Depreciation & amortisat",
+  "Gross profit",
+  "Op. profit before deprec",
+  "Total operating costs",
+  "Turnover \u2013 APAC",
+  "Turnover \u2013 EMEA",
+  "Turnover \u2013 North America"
+ ],
+ "template_checks": {},
+ "rule_violations": [],
+ "rule_violation_count": 0,
+ "reset": "full",
+ "cleared_count": 36,
+ "cleared_values": 36,
+ "cleared_formulas": 0,
+ "proposed_additions": [],
+ "pending_label_overwrites": [],
+ "addition_notes": [
+  "no extensible regions stored \u2014 re-run Understand (or region detection) first"
+ ],
+ "additions_applied": [],
+ "additions_skipped": [],
+ "notes": [
+  "Quarter-level template metric; source is monthly. Rollup = end (period-end run-rate).",
+  "Source labelled 'Total employees (FTE)'; direct match. Quarter-level template: use period-end value.",
+  "Only churn series available is logo churn (monthly). Template qualifies 'specify whether logo or revenue churn' \u2014 flag as logo churn.",
+  "Regional breakdown (r5, r6, r7) aggregates to r8; r8 used to avoid double-counting. USD to EUR conversion required.",
+  "Source 'Cost of sales' is a positive number; template requires costs entered as negative. Sign flip applied. USD to EUR conversion and scaling to millions required.",
+  "Source splits opex into Sales & marketing (r11) and General & administrative (r12); template wants a single Overheads line. Summed both. Sign flip applied (costs positive in source, negative in template). USD to EUR conversion and scaling required. r13 (Total operating costs) not used to avoid double-counting.",
+  "Source 'One-off items addback' directly corresponds to EBITDA add-backs. Sign convention matches (add-backs positive). USD to EUR conversion and scaling required.",
+  "Source 'Cash at bank' is a direct match for closing cash. Excludes undrawn facilities as required. USD to EUR conversion and scaling required.",
+  "Source has two drawn debt instruments: Revolving credit facility (r6) and Term loan A (r7). Gross debt = sum of both drawn facilities. USD to EUR conversion and scaling required.",
+  "Source 'Accounts receivable, trade' directly matches trade receivables. USD to EUR conversion and scaling required.",
+  "Source 'Stock / inventories' directly matches inventory. USD to EUR conversion and scaling required.",
+  "Source 'Accounts payable' is positive; template requires trade payables entered as negative. Sign flip applied. USD to EUR conversion and scaling required.",
+  "Same source series as quarter-level ARR metric above. USD to EUR conversion and unit scaling to millions required.",
+  "Source 'Total employees (FTE)' is a direct match. Period-end value each month.",
+  "Source 'Logo churn (monthly)' maps to monthly churn rate. Template qualifies that logo vs revenue churn definition should be specified \u2014 this is logo churn. Values appear as decimals (e.g. 0.017); template unit is % so multiply by 100 when populating."
+ ],
+ "filled_url": "https://lhpwyeztizeccdgtdjwt.supabase.co/storage/v1/object/sign/template-filled/4514017c-7a4d-4174-a73c-9508b048209d/2026-07-08-aurora-softworks-management-ac.xlsx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9iOGYxZWVhZi03OTY2LTQ5N2YtOTg0ZC00YzU2ZmQwMjdjYzYiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ0ZW1wbGF0ZS1maWxsZWQvNDUxNDAxN2MtN2E0ZC00MTc0LWE3M2MtOTUwOGIwNDgyMDlkLzIwMjYtMDctMDgtYXVyb3JhLXNvZnR3b3Jrcy1tYW5hZ2VtZW50LWFjLnhsc3giLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg1OTE5NzMwLCJleHAiOjE3ODU5MjMzMzB9.OQYEK4XBibEzB_VMUceum83GERGPAfQ3-o1wynhx8WY",
+ "audit_url": "https://lhpwyeztizeccdgtdjwt.supabase.co/storage/v1/object/sign/template-filled/4514017c-7a4d-4174-a73c-9508b048209d/2026-07-08-aurora-softworks-management-ac.audit.json?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9iOGYxZWVhZi03OTY2LTQ5N2YtOTg0ZC00YzU2ZmQwMjdjYzYiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ0ZW1wbGF0ZS1maWxsZWQvNDUxNDAxN2MtN2E0ZC00MTc0LWE3M2MtOTUwOGIwNDgyMDlkLzIwMjYtMDctMDgtYXVyb3JhLXNvZnR3b3Jrcy1tYW5hZ2VtZW50LWFjLmF1ZGl0Lmpzb24iLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzg1OTE5NzMwLCJleHAiOjE3ODU5MjMzMzB9.2Zxl1QjTm9GOeCQWponq-0Yj9B0o7UwF7H-l4tjKtK8"
+}

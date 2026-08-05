@@ -10,7 +10,7 @@ from app.population.apply import apply_links
 from app.population.binding import _col_letters, bind
 from app.population.catalogue import build_catalogue
 from app.population.mapping import _parse
-from app.population.periods import parse_iso_period, pick_column
+from app.population.periods import parse_iso_period, pick_column, pick_columns
 from app.population.schema import CellLink, MetricMap
 
 
@@ -57,6 +57,77 @@ def test_pick_column_positional_newest_anchored():
     assert pick_column(0, 3, None, _pcols(), "monthly") == 3   # Oct
     # template wants more periods than source has -> oldest slot falls off
     assert pick_column(0, 4, None, _pcols(), "monthly") is None
+
+
+def test_parse_month_name_labels():
+    # 'Jan-25' style headers — unparsed they left a whole BS/KPI sheet dateless
+    # (parsed_date=None) and nothing could align by date.
+    assert parse_iso_period("Jan-25") == date(2025, 1, 1)
+    assert parse_iso_period("March 2026") == date(2026, 3, 1)
+    assert parse_iso_period("Sept'25") == date(2025, 9, 1)
+    assert parse_iso_period("December-2025") == date(2025, 12, 1)
+    # only EXACT month names — 'Margin' must not read as March
+    assert parse_iso_period("Margin-25") is None
+    assert parse_iso_period("Summary 2025") is None
+
+
+def _monthly_2026():
+    # cols 2..7 = Jan..Jun 2026, monthly
+    return [(c, date(2026, c - 1, 1), "month") for c in range(2, 8)]
+
+
+def test_rollup_quarterly_sum_and_avg():
+    # quarterly slot Q1-26 over a monthly source: flows sum the 3 months, rates
+    # average them — and every operand column is returned for citation.
+    assert pick_columns(0, 4, date(2026, 1, 1), _monthly_2026(), "monthly",
+                        template_grain="quarter", rollup="sum") == ([2, 3, 4], "sum")
+    assert pick_columns(1, 4, date(2026, 4, 1), _monthly_2026(), "monthly",
+                        template_grain="quarter", rollup="avg") == ([5, 6, 7], "avg")
+
+
+def test_rollup_end_takes_quarter_end_month():
+    # a stock (ARR, headcount) at Q1-26 = its March value, one column
+    assert pick_columns(0, 4, date(2026, 1, 1), _monthly_2026(), "monthly",
+                        template_grain="quarter", rollup="end") == ([4], "single")
+    # point_in_time basis keeps forcing the same rule without an explicit rollup
+    assert pick_columns(0, 4, date(2026, 1, 1), _monthly_2026(), "monthly",
+                        template_grain="quarter", point_in_time=True) == ([4], "single")
+
+
+def test_rollup_never_guesses():
+    # no rollup semantics -> blank (summing a stock would silently 3x it)
+    assert pick_columns(0, 4, date(2026, 1, 1), _monthly_2026(), "monthly",
+                        template_grain="quarter") is None
+    # Q3-26 has no source months at all
+    assert pick_columns(2, 4, date(2026, 7, 1), _monthly_2026(), "monthly",
+                        template_grain="quarter", rollup="sum") is None
+    # a 2-month bucket is not a quarter — partial sums are never written
+    partial = [(c, date(2026, c - 1, 1), "month") for c in range(2, 4)]   # Jan, Feb only
+    assert pick_columns(0, 4, date(2026, 1, 1), partial, "monthly",
+                        template_grain="quarter", rollup="sum") is None
+
+
+def test_rollup_prefers_same_grain_column():
+    # a real quarterly source column in the bucket wins over any rollup
+    cols = _monthly_2026() + [(9, date(2026, 1, 1), "quarter")]
+    assert pick_columns(0, 4, date(2026, 1, 1), cols, "monthly",
+                        template_grain="quarter", rollup="sum") == ([9], "single")
+
+
+def test_rollup_dedupes_scenario_duplicate_months():
+    # Jan-26 appears twice (an actual and a budget column) — first wins (the
+    # caller orders actuals first), so the quarter sums 3 months, not 4.
+    cols = [(2, date(2026, 1, 1), "month"), (8, date(2026, 1, 1), "month"),
+            (3, date(2026, 2, 1), "month"), (4, date(2026, 3, 1), "month")]
+    assert pick_columns(0, 4, date(2026, 1, 1), cols, "monthly",
+                        template_grain="quarter", rollup="sum") == ([2, 3, 4], "sum")
+
+
+def test_pick_column_wrapper_unchanged():
+    # the single-column wrapper never aggregates: cross-grain with no
+    # point-in-time basis stays None exactly as before
+    assert pick_column(0, 4, date(2026, 1, 1), _monthly_2026(), "monthly",
+                       template_grain="quarter") is None
 
 
 def test_col_letters():
@@ -767,3 +838,86 @@ def test_mapping_parse_handles_fences():
     out = _parse(text)
     assert len(out) == 1 and out[0].series_id == "P&L!r5"
     assert _parse("no json here") == []
+
+
+# --- monthly -> quarterly rollup (bind + apply, the Meridian KPI case) ----
+def _kpi_source():
+    cells = [
+        {"row": 5, "col": 1, "value": "ARR", "address": "A5"},
+        {"row": 5, "col": 3, "value": 10_000_000, "address": "C5"},
+        {"row": 5, "col": 4, "value": 11_000_000, "address": "D5"},
+        {"row": 5, "col": 5, "value": 12_000_000, "address": "E5"},
+        {"row": 6, "col": 1, "value": "Logo churn %", "address": "A6"},
+        {"row": 6, "col": 3, "value": 0.02, "address": "C6"},
+        {"row": 6, "col": 4, "value": 0.03, "address": "D6"},
+        {"row": 6, "col": 5, "value": 0.04, "address": "E6"},
+    ]
+    return {"sheets": [{"name": "SaaS", "cells": cells}]}
+
+
+def _kpi_periods():
+    return {"SaaS": [
+        {"col": 3, "parsed_date": "2026-01", "period_type": "month"},
+        {"col": 4, "parsed_date": "2026-02", "period_type": "month"},
+        {"col": 5, "parsed_date": "2026-03", "period_type": "month"},
+    ]}
+
+
+def _kpi_fact(metric, cell, col, row, pidx, unit, label=None):
+    return {"sheet_name": "KPI", "cell": cell, "col": col, "row": row,
+            "canonical_metric": metric, "metric_label": label or metric,
+            "unit": unit, "currency": "EUR", "period_index": pidx,
+            "scenario": "actual", "parsed_date": None, "basis": "unknown"}
+
+
+def test_bind_quarterly_kpi_rollup_end_to_end():
+    # The Meridian case: a QUARTERLY KPI dashboard fed by a MONTHLY source.
+    # A stock the mapper declares rollup='end' takes the quarter-end month; a
+    # rate (% unit, no mapper verdict) averages the quarter's months; a quarter
+    # with no source months stays blank. All deterministic, all cited.
+    cat = build_catalogue(_kpi_source(), _kpi_periods())
+    maps = [MetricMap(metric="arr", series_id="SaaS!r5", confidence=0.9, rollup="end"),
+            MetricMap(metric="churn", series_id="SaaS!r6", confidence=0.9)]
+    facts = [_kpi_fact("arr", "D5", 4, 5, 0, "EUR millions", label="ARR (€m)"),
+             _kpi_fact("churn", "D6", 4, 6, 0, "%", label="Monthly Churn %"),
+             _kpi_fact("arr", "F5", 6, 5, 2, "EUR millions", label="ARR (€m)")]  # Q3: no data
+    ctx = ({}, {("KPI", 5): [11.0]},
+           {("KPI", 4): date(2026, 1, 1), ("KPI", 5): date(2026, 4, 1),
+            ("KPI", 6): date(2026, 7, 1)})   # quarterly template timeline
+    demand = {"period_count": 4, "period_grain": "monthly", "as_of_date": None,
+              "period_count_by_sheet": {"KPI": 4}, "metrics": []}
+    links, unmatched = bind(facts, cat, maps, demand, template_context=ctx)
+
+    by_cell = {lk.template_cell: lk for lk in links}
+    # ARR Q1 = the March (quarter-end) value, a single cited cell
+    arr = by_cell["D5"]
+    assert arr.source_cell == "E5" and arr.agg_source_cells == []
+    # Churn Q1 = average of Jan/Feb/Mar, every operand cited
+    churn = by_cell["D6"]
+    assert churn.source_cell == "C6" and churn.agg_source_cells == ["SaaS!D6", "SaaS!E6"]
+    assert churn.agg_op == "avg" and "derived:avg of 3 monthly columns" in (churn.note or "")
+    # Q3 has no source months at all -> blank, reported
+    assert any(u["template_cell"] == "F5" and "no source column" in u["reason"] for u in unmatched)
+
+    result = apply_links(facts, _kpi_source(), links, skipped=[])
+    vals = {fc.template_cell: fc.value for fc in result.filled}
+    assert vals["D5"] == 12.0                      # 12,000,000 raw -> 12.0 (Mar, EUR millions)
+    assert abs(vals["D6"] - 0.03) < 1e-12          # (0.02+0.03+0.04)/3
+
+
+def test_apply_avg_aggregation():
+    snap = {"sheets": [{"name": "S", "cells": [
+        {"row": 2, "col": 3, "value": 0.02, "address": "C2"},
+        {"row": 2, "col": 4, "value": 0.04, "address": "D2"},
+    ]}]}
+    fact = {"sheet_name": "T", "cell": "B2", "canonical_metric": "rate",
+            "metric_label": "rate", "period_index": 0, "scenario": "actual"}
+    link = CellLink(template_sheet="T", template_cell="B2", source_sheet="S",
+                    source_cell="C2", agg_source_cells=["S!D2"], agg_op="avg")
+    result = apply_links([fact], snap, [link], skipped=[])
+    assert result.filled and abs(result.filled[0].value - 0.03) < 1e-12
+    # default stays a SUM — existing row aggregates are untouched
+    link2 = CellLink(template_sheet="T", template_cell="B2", source_sheet="S",
+                     source_cell="C2", agg_source_cells=["S!D2"])
+    result2 = apply_links([fact], snap, [link2], skipped=[])
+    assert result2.filled and abs(result2.filled[0].value - 0.06) < 1e-12

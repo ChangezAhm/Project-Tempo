@@ -22,10 +22,10 @@ from pathlib import Path
 from langsmith import traceable
 
 from app import supabase_client as sb
-from app.llm import MODEL, MODEL_MAP, get_client, guarded_stream
+from app.llm import MODEL, MODEL_MAP, bind_worker, get_llm_context, guarded_stream
 from app.population import source_cache
 from app.population.cost import (
-    SpendCapExceeded, SpendGuard, default_onboarding_cap_usd, estimate_call_usd,
+    SpendCapExceeded, SpendGuard, default_onboarding_cap_usd,
     get_guard, set_guard,
 )
 from app.pipeline import _cell_rc, build_dependents_index, trace_impact
@@ -242,10 +242,13 @@ def _triage_ambiguous(snap: dict, routes: list[dict]) -> None:
     ]
     try:
         _, text = guarded_stream(model=MODEL_MAP, system=_TRIAGE_SYSTEM,
-                                 content="\n\n".join(blocks), max_tokens=2000)
+                                 content="\n\n".join(blocks), max_tokens=2000,
+                                 site="sheet_triage")
         verdicts = json.loads(_extract_json(text)).get("sheets", {})
         if not isinstance(verdicts, dict):
             raise ValueError(f"unexpected triage payload: {type(verdicts).__name__}")
+    except SpendCapExceeded:
+        raise   # a cap breach is a hard stop, never "keep everything deep and spend more"
     except Exception as e:  # noqa: BLE001 — escalate on doubt: everything stays deep
         logger.warning("triage call failed (%s) — keeping %d ambiguous sheet(s) deep",
                        e, len(ambiguous))
@@ -280,22 +283,9 @@ def _compact(u) -> dict:
 
 
 def _call_synth(user_text: str, max_tokens: int) -> tuple[object, str]:
-    guard = get_guard()
-    if guard is not None:
-        guard.check(estimate_call_usd(MODEL, len(SYNTHESIZE_SYSTEM) + len(user_text), max_tokens))
-    with get_client().messages.stream(
-        model=MODEL,
-        max_tokens=max_tokens,
-        thinking={"type": "adaptive"},
-        system=SYNTHESIZE_SYSTEM,
-        messages=[{"role": "user", "content": user_text}],
-    ) as stream:
-        msg = stream.get_final_message()
-    if guard is not None and getattr(msg, "usage", None) is not None:
-        guard.record_actual(MODEL, msg.usage.input_tokens, msg.usage.output_tokens)
-    if msg.stop_reason == "max_tokens":
-        raise RuntimeError(f"Synthesis truncated at max_tokens={max_tokens} — raise it.")
-    return msg, next((b.text for b in msg.content if b.type == "text"), "")
+    # Routed through the choke point — spend guard + tracing, no hand-rolled copy.
+    return guarded_stream(model=MODEL, system=SYNTHESIZE_SYSTEM, content=user_text,
+                          max_tokens=max_tokens, site="synthesize_workbook")
 
 
 @traceable(name="synthesize_workbook", run_type="chain")
@@ -494,7 +484,7 @@ def understand_workbook(template_id: str, *, max_sheets: int | None = None, per_
     # the main thread is NOT visible in pool workers, so without this the bulk of
     # the onboarding spend (per-sheet vision calls) would run UNCAPPED.
     with ThreadPoolExecutor(max_workers=per_sheet_workers,
-                            initializer=set_guard, initargs=(get_guard(),)) as ex:
+                            initializer=bind_worker, initargs=(get_guard(), get_llm_context())) as ex:
         results = list(ex.map(_run, jobs))
 
     sheet_results = [r for r in results if r]

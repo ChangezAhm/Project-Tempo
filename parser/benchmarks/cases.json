@@ -1,0 +1,18 @@
+[
+  {
+    "name": "meridian",
+    "template_id": "681f6d92-9cfb-4986-b112-19c69595a2ae",
+    "source": "C:/Users/chang/Downloads/2026-07-08-aurora-softworks-management-ac.xlsx",
+    "as_of_date": "2026-08-04",
+    "expected": "expected/meridian.json",
+    "notes": "Monthly Aurora source into the quarterly-KPI Meridian flash. The Fill-Plan vertical slice."
+  },
+  {
+    "name": "pe-flash",
+    "template_id": "ca1db430-e6ca-4c3a-bfff-dac4d7c637c1",
+    "source": "C:/Users/chang/Downloads/2026-07-08-aurora-softworks-management-ac.xlsx",
+    "as_of_date": "2026-08-04",
+    "expected": null,
+    "notes": "PE portco flash (2025 timeline vs 2026 source — tests honest blanks). Baseline-drift only until expected cells are hand-verified."
+  }
+]

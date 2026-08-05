@@ -73,12 +73,28 @@ def _grain(s: str | None) -> str:
     return s
 
 
+_MONTH_NAMES = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10,
+    "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
+
+
 def parse_iso_period(s: str | None) -> date | None:
     """Parse the ISO-ish period strings detection emits ('YYYY-MM', 'YYYY-Q3',
     'YYYY', 'YYYY-MM-DD') into a comparable date (first of the period)."""
     if not s:
         return None
     s = str(s).strip()
+    # 'Jan-25' / 'Jan 2025' / "Sept'25" — month-name timeline labels. Only an
+    # EXACT month name/abbreviation counts ('Margin-25' must not read as March);
+    # unparsed these leave a whole sheet dateless and force positional matching.
+    m = re.fullmatch(r"([A-Za-z]{3,9})[\s\-/'’.]*(\d{2}|\d{4})", s)
+    if m and m.group(1).lower() in _MONTH_NAMES:
+        y = int(m.group(2))
+        y += 2000 if y < 100 else 0
+        return date(y, _MONTH_NAMES[m.group(1).lower()], 1)
     m = re.fullmatch(r"(\d{4})[\s\-/]?Q([1-4])", s, re.I)
     if m:
         y, q = int(m.group(1)), int(m.group(2))
@@ -115,33 +131,71 @@ def _bucket_end(d: date, grain: str) -> tuple[int, int]:
 def pick_column(period_index: int | None, period_count: int, parsed_date: date | None,
                 period_cols: list[tuple[int, date | None, str]], grain: str,
                 template_grain: str | None = None, point_in_time: bool = False) -> int | None:
-    """Choose the source column for one template period slot.
+    """Single-column form of align_slot (kept for callers that can only cite one
+    cell). With no rollup semantics only 'single' picks arise, so behaviour is
+    identical to the historical function."""
+    res = pick_columns(period_index, period_count, parsed_date, period_cols, grain,
+                       template_grain=template_grain, point_in_time=point_in_time)
+    return res[0][0] if res else None
+
+
+def pick_columns(period_index: int | None, period_count: int, parsed_date: date | None,
+                 period_cols: list[tuple[int, date | None, str]], grain: str,
+                 template_grain: str | None = None, point_in_time: bool = False,
+                 rollup: str | None = None) -> tuple[list[int], str] | None:
+    """align_slot without the failure reason (legacy shape)."""
+    res, _why = align_slot(period_index, period_count, parsed_date, period_cols, grain,
+                           template_grain=template_grain,
+                           rollup=("end" if point_in_time and rollup is None else rollup))
+    return res
+
+
+def align_slot(period_index: int | None, period_count: int, parsed_date: date | None,
+               period_cols: list[tuple[int, date | None, str]], grain: str,
+               template_grain: str | None = None, rollup: str | None = None,
+               ) -> tuple[tuple[list[int], str] | None, str | None]:
+    """Choose the source column(s) for one template period slot — pure EXECUTION
+    of declared semantics, with a typed reason when nothing fits.
+
+    Returns ((columns, op), None) on success — op 'single' (one column holds the
+    value) or 'sum'/'avg' (aggregate the columns' values) — or (None, code):
+
+      no_source_periods     the series has no period columns at all
+      positional_out_of_range  dateless alignment fell off the timeline
+      no_slot_index         the slot has neither a date nor an index
+      no_column_in_bucket   dated slot, no source column lands in its bucket
+      grain_unbridgeable    finer columns exist in the bucket but no rollup op
+                            was declared — never guessed (a summed stock would 3x)
+      bucket_incomplete     sum/avg rollup needs the COMPLETE bucket (3/12 months)
+      period_end_missing    'end' rollup: the bucket's last month isn't in the source
 
     period_cols: [(col_index, date, period_type)] for the series' sheet.
-    - If the template slot has a real DATE -> match the source column in the same
-      calendar bucket at the right grain (31-Jan matches 1-Jan; an FY/LTM column
-      never fills a monthly slot). No match -> None (blank, never guessed).
-    - POINT-IN-TIME exception: a quarterly/annual STOCK slot (balance sheet,
-      debt, headcount) equals its period-END value, so when no same-grain source
-      column exists, the MONTH column landing on the bucket's last month
-      satisfies it. Never applied to flows — one month is not a quarter of P&L.
-    - If the slot has NO date -> align by position, newest-anchored (fallback for
-      templates whose columns carry no readable dates).
-    """
+    - A real template DATE matches the source column in the same calendar bucket
+      at the right grain (31-Jan matches 1-Jan; an FY/LTM column never fills a
+      monthly slot).
+    - CROSS-GRAIN ROLLUP: a quarterly/annual slot whose bucket holds only MONTH
+      columns is computable from them per the declared ``rollup`` op.
+    - A slot with NO date aligns by position, newest-anchored (for templates
+      whose columns carry no readable dates); the caller flags such fills."""
     def cols_of(gr: str):
         return sorted(((d, c) for (c, d, pt) in period_cols if d is not None and _grain(pt) == gr),
                       key=lambda x: x[0])
+
+    if not period_cols:
+        return None, "no_source_periods"
 
     # SOURCE fully undated: the understanding couldn't date ANY column (e.g. formula/
     # complex headers it couldn't read). There's nothing to match on, so align
     # POSITIONALLY by column order, newest-anchored — the only sane option, and the
     # caller flags such fills so a human verifies the alignment.
-    if period_cols and not any(d is not None for (_c, d, _pt) in period_cols):
+    if not any(d is not None for (_c, d, _pt) in period_cols):
         if period_index is None:
-            return None
+            return None, "no_slot_index"
         cols = sorted(c for (c, _d, _pt) in period_cols)
         pos = len(cols) - (period_count - period_index)
-        return cols[pos] if 0 <= pos < len(cols) else None
+        if 0 <= pos < len(cols):
+            return ([cols[pos]], "single"), None
+        return None, "positional_out_of_range"
 
     tgr = _grain(template_grain) if template_grain else None
     if tgr in ("month", "quarter", "year"):
@@ -161,15 +215,36 @@ def pick_column(period_index: int | None, period_count: int, parsed_date: date |
         tkey = _bucket(parsed_date, bgrain)
         for d, c in cand:
             if _bucket(d, bgrain) == tkey:
-                return c
-        if point_in_time and bgrain in ("quarter", "year"):
-            end = _bucket_end(parsed_date, bgrain)
-            months = cols_of("month")
-            for d, c in months:
-                if (d.year, d.month) == end:
-                    return c
-        return None
-    if period_index is None or not cand:
-        return None
+                return ([c], "single"), None
+        if bgrain in ("quarter", "year"):
+            # the bucket's month columns, deduped by calendar month (a month that
+            # appears as both actual and budget contributes once — first wins,
+            # and the caller orders actuals first)
+            months, seen = [], set()
+            for d, c in cols_of("month"):
+                if _bucket(d, bgrain) == tkey and (d.year, d.month) not in seen:
+                    seen.add((d.year, d.month))
+                    months.append((d, c))
+            if not months:
+                return None, "no_column_in_bucket"
+            if rollup == "end":
+                end = _bucket_end(parsed_date, bgrain)
+                for d, c in months:
+                    if (d.year, d.month) == end:
+                        return ([c], "single"), None
+                return None, "period_end_missing"
+            if rollup in ("sum", "avg"):
+                need = 3 if bgrain == "quarter" else 12
+                if len(months) == need:
+                    return ([c for _d, c in months], rollup), None
+                return None, "bucket_incomplete"
+            return None, "grain_unbridgeable"
+        return None, "no_column_in_bucket"
+    if period_index is None:
+        return None, "no_slot_index"
+    if not cand:
+        return None, "no_column_in_bucket"
     pos = len(cand) - (period_count - period_index)   # newest template slot -> newest source col
-    return cand[pos][1] if 0 <= pos < len(cand) else None
+    if 0 <= pos < len(cand):
+        return ([cand[pos][1]], "single"), None
+    return None, "positional_out_of_range"

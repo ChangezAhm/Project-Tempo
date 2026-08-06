@@ -32,10 +32,34 @@ except ValueError:
 _MAX_ITEMS_PER_SOURCE = 16
 
 
+def usage_brief(wb: dict | None) -> str | None:
+    """One-paragraph 'what this workbook IS and how it is used' from the stored
+    workbook understanding — so downstream judgments (mapping, enrichment) know
+    they are filling a TEMPLATE on a portco's behalf, not reading a report.
+    Pure; None when nothing useful is stored."""
+    if not wb:
+        return None
+    bits = []
+    if wb.get("archetype"):
+        bits.append(str(wb["archetype"])[:160])
+    if wb.get("purpose"):
+        bits.append(str(wb["purpose"])[:240])
+    surface = wb.get("input_surface_sheets") or []
+    if surface:
+        bits.append("Data entry happens on: " + ", ".join(map(str, surface[:10])))
+    if not bits:
+        return None
+    return ("This workbook is a TEMPLATE our system populates on behalf of a "
+            "portfolio company. " + " — ".join(bits))
+
+
 def build_context(notes: str | None, answered: list[dict], strict_rules: list[dict],
-                  max_chars: int = _MAX_CHARS) -> str:
+                  brief: str | None = None, max_chars: int = _MAX_CHARS) -> str:
     """Assemble the context block. Pure — takes already-loaded rows."""
     lines: list[str] = []
+    if brief:
+        lines.append("TEMPLATE USAGE:")
+        lines.append(f"  {brief[:500]}")
     if notes and notes.strip():
         lines.append("SPONSOR NOTES:")
         lines.append(f"  {notes.strip()[:600]}")
@@ -77,13 +101,15 @@ def load_context(template_id: str, version_id: str) -> str:
         logger.info("review answers unavailable for context (%s)", e)
 
     strict_rules: list[dict] = []
+    brief = None
     try:
         row = (sb.get_client().table("template_understanding")
                .select("understanding")
                .eq("template_version_id", version_id).limit(1).execute().data)
         wb = (row[0].get("understanding") or {}) if row else {}
         strict_rules = [r for r in (wb.get("business_rules") or []) if r.get("is_strict")]
+        brief = usage_brief(wb)
     except Exception as e:  # noqa: BLE001
         logger.info("workbook rules unavailable for context (%s)", e)
 
-    return build_context(notes, answered, strict_rules)
+    return build_context(notes, answered, strict_rules, brief=brief)

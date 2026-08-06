@@ -267,11 +267,17 @@ def apply_additions(ws_by_name: dict, proposals: list[dict], sval: dict
 
         label_addr = f"{_col_letters(p['label_col'])}{row}"
         label_cell = ws.cells.get(label_addr)
-        if getattr(label_cell, "is_formula", False):
-            _skip(f"label cell {label_addr} holds a formula — never overwritten")
+        mode = (p.get("slot_mode") or "blank").lower()
+        label_is_formula = bool(getattr(label_cell, "is_formula", False))
+        if label_is_formula and not (mode == "editable_label" and p.get("approved") is True):
+            # A formula label is a DEFAULT (often '=_Config!X' style) — an
+            # APPROVED editable_label rename may type over it (owner ruling:
+            # "it literally gives you the option to change it"); every other
+            # path still refuses.
+            _skip(f"label cell {label_addr} holds a formula — only an approved "
+                  "editable_label rename may overwrite it")
             continue
 
-        mode = (p.get("slot_mode") or "blank").lower()
         overwrote = None
         if mode == "blank":
             # Re-verify emptiness in the LIVE workbook: the region map was computed

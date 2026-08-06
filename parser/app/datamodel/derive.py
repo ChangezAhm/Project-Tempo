@@ -766,6 +766,8 @@ def derive_data_model(template_id: str) -> DataModelResult:
             lbl = _iso_label(iso) or _label(cell_val.get((sheet, hr, col)))
             return {"label": lbl, "period_type": grain, "status": None, "parsed_date": parsed}
 
+        emitted_cols: set[int] = set()   # columns holding facts on THIS sheet
+
         def _emit(col: int, row: int, llm_field: dict | None) -> None:
             """Create one DataPoint for an input cell. ``llm_field`` carries the
             LLM's semantics when the cell came from understanding; None for a
@@ -888,6 +890,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 scenario_source=sc_src, basis_source=b_src,
                 confidence=float(l3m.get("confidence", 0.5) or 0.5),
             ))
+            emitted_cols.add(col)
 
         # 1) LLM-detected inputs (semantic, image-grounded).
         for f in u.get("input_fields", []):
@@ -896,6 +899,28 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 flags.append(f"{sheet}: field '{f.get('label')}' exceeded {_MAX_CELLS_PER_FIELD} cells; truncated.")
             for col, row in cells:
                 _emit(col, row, f)
+
+        # 1b) L3 metric ROWS marked value_role='input' are row-level CLAIMS too —
+        # input_fields routinely under-enumerate (the flash template's Budget
+        # variant rows were understood perfectly at metric-row level but never
+        # claimed as fields, so four whole rows produced no facts). Emit each
+        # claimed row across the sheet's period columns; seen-cells win.
+        row_claim_cols = sorted(
+            set(period_idx.get(sheet, {}).keys())
+            | {rc[0] for p in u.get("periods", []) if (rc := _rc(p.get("header_cell") or ""))}
+            # fallback: the columns the sheet's ALREADY-CLAIMED facts use — the
+            # actual rows define exactly which columns their variants span
+            # (templates whose period headers neither L2 nor L3 could pin).
+            or emitted_cols)
+        for m in u.get("metric_rows", []):
+            if (m.get("value_role") or "") != "input":
+                continue
+            rc = _rc(m.get("label_cell") or "")
+            if not rc:
+                continue
+            for col in row_claim_cols:
+                if (sheet, f"{column_letter(col)}{rc[1]}") not in seen:
+                    _emit(col, rc[1], {"label": m.get("label"), "needs_value": True})
 
         # 2) Deterministic metadata-detected inputs (UNION) — captures the cells the
         # LLM under-enumerated; already-seen cells are skipped (LLM semantics win).

@@ -134,3 +134,25 @@ def test_hidden_row_stays_staging_even_when_claimed():
     snap["sheets"][0]["hidden_rows"] = [60]
     f = _by_cell(facts_for_inline(und, structure, snap))["AD60"]
     assert f["category"] == "staging" and f["category_source"] == "geometry:hidden"
+
+
+def test_metric_row_input_claim_covers_unenumerated_rows():
+    # Task #12 regression: a metric_row the understanding marks value_role='input'
+    # is a row-level claim — its cells become facts across the period columns
+    # even when input_fields never enumerated the row (the flash Budget rows).
+    und, structure, snap = _case(
+        cells=[("B4", "hdr"), ("C4", "Jan-26"), ("D4", "Feb-26"),
+               ("B31", "Depreciation"), ("C31", "10"), ("D31", "11"),
+               ("B32", "Budget"), ("C32", None), ("D32", None)],
+        input_fields=[{"label": "Depreciation (actual)", "cells": ["C31:D31"]}],
+    )
+    u = und["sheets"][0]["understanding"]
+    u["periods"] = [{"header_cell": "C4", "date": "2026-01-31", "granularity": "monthly"},
+                    {"header_cell": "D4", "date": "2026-02-28", "granularity": "monthly"}]
+    u["metric_rows"] = [
+        {"label_cell": "B31", "label": "Depreciation", "value_role": "input", "scenario": "actual"},
+        {"label_cell": "B32", "label": "Depreciation (Budget)", "value_role": "input", "scenario": "budget"},
+    ]
+    by = _by_cell(facts_for_inline(und, structure, snap))
+    assert "C32" in by and "D32" in by            # the Budget row now has facts
+    assert by["C32"]["category"] == "data"

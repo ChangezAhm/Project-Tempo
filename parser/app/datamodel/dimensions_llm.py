@@ -84,10 +84,12 @@ def _call(user_text: str, max_tokens: int = 16000):
                           max_tokens=max_tokens, site="dimension_enrichment")
 
 
-def _classify_batch(items: list[dict]) -> tuple[list[DimAssignment], tuple[int, int]]:
+def _classify_batch(items: list[dict], brief: str | None = None) -> tuple[list[DimAssignment], tuple[int, int]]:
     """One LLM call for one batch of metrics. Returns (assignments, (in_tok, out_tok))."""
+    preamble = f"WORKBOOK CONTEXT: {brief}\n\n" if brief else ""
     user_text = (
-        f"Metrics to classify ({len(items)}):\n{json.dumps(items)}\n\n"
+        preamble
+        + f"Metrics to classify ({len(items)}):\n{json.dumps(items)}\n\n"
         "## OUTPUT\nReturn ONLY a JSON object matching this schema:\n" + json.dumps(_SCHEMA)
     )
     msg, text = _call(user_text)
@@ -133,6 +135,16 @@ def enrich(template_id: str) -> dict:
     roles = {r["sheet_name"]: r["role"] for r in (
         sb.get_client().table("template_sheet_understanding").select("sheet_name,role")
         .eq("template_version_id", version_id).execute().data or [])}
+    # workbook usage brief — the model should know it is classifying a TEMPLATE
+    # our system populates, not reading a filled report.
+    brief = None
+    try:
+        from app.population.context import usage_brief
+        row = (sb.get_client().table("template_understanding").select("understanding")
+               .eq("template_version_id", version_id).limit(1).execute().data)
+        brief = usage_brief((row[0].get("understanding") or {}) if row else {})
+    except Exception as e:  # noqa: BLE001 — brief is best-effort
+        logger.info("usage brief unavailable for enrichment (%s)", e)
 
     # distinct metrics (sheet, label) → context. A lexicon-sourced fact is
     # preferred as the group representative: its category_source is what the
@@ -163,7 +175,7 @@ def enrich(template_id: str) -> dict:
     for i in range(0, len(items), _BATCH):
         chunk = items[i:i + _BATCH]
         try:
-            got, (in_tok, out_tok) = _classify_batch(chunk)
+            got, (in_tok, out_tok) = _classify_batch(chunk, brief)
         except SpendCapExceeded:
             raise
         except Exception:  # noqa: BLE001

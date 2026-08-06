@@ -127,10 +127,14 @@ def _formula(cell: dict | None) -> str | None:
 
 
 def _text_label(cell: dict | None) -> str | None:
-    """The cell's business label: a non-formula, non-numeric string, stripped."""
-    if cell is None or _formula(cell):
+    """The cell's business label — the DISPLAYED string, formula-driven or not.
+    A formula label (`=_PL!AB20`, `=val_company&" P&L Accounts"`) still labels
+    the row; skipping it once made every formula-labelled roll-up block
+    invisible to the deterministic detectors (no summed_member signal, no
+    safety net) on connector templates."""
+    if cell is None:
         return None
-    v = effective_value(cell)
+    v = effective_value(cell)   # cached display value for formula cells
     if isinstance(v, str):
         t = v.strip()
         if t and not t.startswith("="):
@@ -831,6 +835,37 @@ def detect_and_persist(template_id: str) -> dict:
         sb.replace_extensible_regions(version_id, payload)
         logger.info("extensible regions: %d persisted, %d skipped for version %s",
                     len(payload), len(skipped), version_id)
+
+        # ONBOARDING QUESTION per configurable list (owner ruling): the template
+        # pre-populates adjustment/KPI lines whose names vary company-by-company —
+        # ask ONCE whether these exact lines are demanded or adjustable; the
+        # answer persists (content-addressed item_key) and steers both mapping
+        # context and the additions path on every future run.
+        q_items = []
+        try:
+            from app.review.items import make_item
+            for r in payload:
+                if r.get("kind") not in ("kpi_list", "custom_rows", "adjustment_rows"):
+                    continue
+                labels = [s.get("current_label") for s in (r.get("slots") or [])
+                          if isinstance(s, dict) and s.get("current_label")]
+                what = ", ".join(labels[:6]) + ("…" if len(labels) > 6 else "")
+                q_items.append(make_item(
+                    source="onboarding-regions", kind="judgment",
+                    question=(f"'{r.get('sheet_name')}' rows {r.get('row_start')}-{r.get('row_end')} "
+                              f"is a configurable {r.get('kind')} ({what or 'blank slots'}) — does the "
+                              "template demand these exact lines, or may they be renamed/adjusted "
+                              "per company?"),
+                    why="Pre-populated list names vary by portfolio company; your answer steers "
+                        "renames and additions on every future run.",
+                    affected={"sheet": r.get("sheet_name"),
+                              "rows": [r.get("row_start"), r.get("row_end")]},
+                    suggested_answer="adjustable — lines may be renamed per company",
+                ))
+            if q_items:
+                sb.insert_review_items(version_id, q_items)
+        except Exception as e:  # noqa: BLE001 — questions are best-effort, never fatal
+            logger.warning("could not file configurable-list questions: %s", e)
         return {"template_version_id": version_id, "regions": payload,
                 "count": len(payload), "skipped": skipped}
     finally:

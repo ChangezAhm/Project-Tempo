@@ -33,6 +33,8 @@ def reconstruct_workbook_from_snapshot(snap: dict) -> ParsedWorkbook:
         ps.print_area = sd.get("print_area")
         ps.was_truncated = sd.get("was_truncated", False)
         ps.row_group_levels = {int(k): v for k, v in (sd.get("row_group_levels") or {}).items()}
+        ps.hidden_rows = list(sd.get("hidden_rows") or [])
+        ps.hidden_cols = list(sd.get("hidden_cols") or [])
         ps.cells = [CellInfo.model_validate(c) for c in sd.get("cells", [])]
         ps.regions = [DetectedRegion.model_validate(r) for r in sd.get("regions", [])]
 

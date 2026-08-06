@@ -97,3 +97,30 @@ def test_source_format_decisions_apply_only_to_their_family(monkeypatch):
     assert same == {"arr": {"source_unit": "USD '000", "rollup": "end"}}
     other = load_decisions("v1", fingerprint="ffffffffffffffff")
     assert other == {"arr": {"rollup": "end"}}   # the unit answer stays home
+
+
+def test_write_mode_is_user_only():
+    # write_mode = writability, derived from claim + constraint; enrichment must
+    # never flip it (label-matched patches on look-alike rows), a user may.
+    f = {"sheet_name": "S", "metric_label": "Capex", "category": "sourced",
+         "category_source": "llm:input_field", "write_mode": "type_over",
+         "scenario": "unknown", "basis": "unknown"}
+    facts, _, _ = apply_corrections(
+        [dict(f)], [{"id": "c1", "created_by": "llm-enrichment",
+                     "match": {"metric_label": "Capex"}, "patch": {"write_mode": None}}])
+    assert facts[0]["write_mode"] == "type_over"          # LLM refused
+    facts, _, _ = apply_corrections(
+        [dict(f)], [{"id": "c2", "created_by": "user",
+                     "match": {"metric_label": "Capex"}, "patch": {"write_mode": None}}])
+    assert facts[0]["write_mode"] is None                  # user wins
+
+
+def test_enrichment_cannot_flip_inversion_categories():
+    # llm:input_field / topology:push are NOT lexicon priors — enrichment's
+    # category override must not touch them.
+    f = {"sheet_name": "S", "metric_label": "Capex", "category": "sourced",
+         "category_source": "topology:push", "scenario": "unknown", "basis": "unknown"}
+    facts, _, _ = apply_corrections(
+        [dict(f)], [{"id": "c3", "created_by": "llm-enrichment",
+                     "match": {"metric_label": "Capex"}, "patch": {"category": "config"}}])
+    assert facts[0]["category"] == "sourced"

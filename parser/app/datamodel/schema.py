@@ -78,9 +78,16 @@ class DataPoint(_Model):
     category: str = "data"
     # WHO decided the category: None = factual (formula/connector/role/blank);
     # "lexicon:<kind>" = a label-lexicon PRIOR (overridable by LLM enrichment and
-    # by user corrections — the Fill-Plan authority model); "llm" / "user" after
-    # an override.
+    # by user corrections — the Fill-Plan authority model); "llm:input_field" /
+    # "topology:push" = the write-semantics inversion; "llm" / "user" after an
+    # override.
     category_source: str | None = None
+    # HOW population may write the cell: None = plain write into a blank/literal;
+    # "type_over" = the cell holds a DEFAULT FORMULA the fill overwrites (the
+    # claimed front of a connector template, or a push-backed entry cell).
+    # Decided by claim + the multi-input constraint; only USER corrections may
+    # re-decide it (merge gates LLM patches).
+    write_mode: str | None = None
     # --- provenance / audit ---
     scenario_source: Provenance
     basis_source: Provenance

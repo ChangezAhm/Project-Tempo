@@ -75,11 +75,25 @@ def _hints(snap: dict, sheet_name: str) -> str:
     sheet = next((s for s in snap["sheets"] if s["name"] == sheet_name), {})
     reads_from, read_by = _cross_sheet_counts(snap, sheet_name)
     top = lambda d: dict(sorted(d.items(), key=lambda kv: -kv[1])[:8])
+    # PUSH topology: cells a CX_PUSH formula READS are entry cells by the
+    # workbook's own declaration — and the push formulas usually sit beyond the
+    # grid's column cap, so this hint is how the model learns of them.
+    push_line = ""
+    try:
+        from app.datamodel.topology import push_entry_summary
+        cf = {(sheet_name, c["row"], c["col"]): c["formula"]
+              for c in sheet.get("cells", []) if c.get("formula")}
+        ps = push_entry_summary(cf, sheet_name)
+        if ps:
+            push_line = (f"\nPUSH-ENTRY cells (a CX_PUSH formula pushes what is typed "
+                         f"there — user data-entry area): {ps}")
+    except Exception:  # noqa: BLE001 — hints are best-effort
+        pass
     return (
         f"formula-graph input cells on this sheet ({len(inputs)}): "
         f"{inputs[:80]}{' …' if len(inputs) > 80 else ''}\n"
         f"named ranges on this sheet: {nr_here[:40]}\n"
         f"detected regions on this sheet: {len(sheet.get('regions', []))}\n"
         f"cross-sheet — this sheet READS FROM: {top(reads_from)}\n"
-        f"cross-sheet — this sheet is READ BY: {top(read_by)}"
+        f"cross-sheet — this sheet is READ BY: {top(read_by)}" + push_line
     )

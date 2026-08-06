@@ -31,6 +31,8 @@ def _sheet_to_dict(s: ParsedSheet) -> dict:
         "was_truncated": s.was_truncated,
         "narrow_columns": s.narrow_columns,
         "row_group_levels": {str(k): v for k, v in s.row_group_levels.items()},
+        "hidden_rows": s.hidden_rows,
+        "hidden_cols": s.hidden_cols,
         "cells": [c.model_dump(mode="json") for c in s.cells],
         "merged_ranges": [m.model_dump(mode="json") for m in s.merged_ranges],
         "regions": [r.model_dump(mode="json") for r in s.regions],

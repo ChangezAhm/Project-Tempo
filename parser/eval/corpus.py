@@ -51,7 +51,10 @@ def _connector_case() -> Case:
         cell("A4", value="Manual KPI"), cell("B4", value=12.0),
         cell("A5", value="Growth"),     cell("B5", formula="=B2*2", cached=191.0),
     ]
-    ifields = [input_field("Manual KPI", ["B4"]), input_field("Growth", ["B5"])]
+    # B5 is deliberately UNCLAIMED: under the write-semantics authority model a
+    # CLAIMED single-ref formula becomes a type-over input (see test_type_over),
+    # so "plain formula → computed" only holds for unclaimed cells.
+    ifields = [input_field("Manual KPI", ["B4"])]
     und = build("Flash", cells, input_fields=ifields)
     # B3 (status) is not emitted at all → absent from expected inputs.
     expected = {("Flash", "B2"): "sourced", ("Flash", "B4"): "data",

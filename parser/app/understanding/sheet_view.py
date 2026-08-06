@@ -220,6 +220,12 @@ def build_text_grid(sheet: dict, max_rows: int | None = None, max_cols: int | No
                       f"(sheet reaches {column_letter(max_seen_col)}).")
 
     grp = sheet.get("row_group_levels", {})  # keys are strings (JSON)
+    hidden_rows = {int(r) for r in (sheet.get("hidden_rows") or [])}
+    hidden_cols = sorted(int(c) for c in (sheet.get("hidden_cols") or []))
+    if hidden_cols:
+        header.append("# NOTE: hidden columns (staging, not user-facing): "
+                      + ", ".join(column_letter(c) for c in hidden_cols[:40])
+                      + (" …" if len(hidden_cols) > 40 else ""))
     lines: list[str] = []
     for r in rows_sorted:
         entries = sorted(by_row[r], key=lambda e: (e[1]["col"] if e[0] == "cell" else e[1][1]))
@@ -228,7 +234,8 @@ def build_text_grid(sheet: dict, max_rows: int | None = None, max_cols: int | No
             for kind, data in entries
         ]
         g = grp.get(str(r))
-        prefix = f"r{r}[grp:{g}]: " if g else f"r{r}: "
+        tags = (f"[grp:{g}]" if g else "") + ("[hid]" if r in hidden_rows else "")
+        prefix = f"r{r}{tags}: "
         lines.append(prefix + " | ".join(toks))
 
     return "\n".join(header) + "\n" + "\n".join(lines)

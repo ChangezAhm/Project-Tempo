@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from aspose.cells import Workbook
 
 from app.datamodel.derive import _CONNECTOR
+from app.datamodel.topology import is_multi_input
 
 
 @dataclass
@@ -29,30 +30,9 @@ class LabelSet:
 
 
 def ingest_pair(normal_path: str, classified_path: str) -> LabelSet:
-    from app.datamodel.passthrough import find_passthrough_inputs
-
     wn = Workbook(normal_path)
     wc = Workbook(classified_path)
     norm = {s.name: s for s in wn.worksheets}
-
-    # A front formula that merely DISPLAYS a single backend input point (a connector
-    # behind an FX/blank wrapper) is a real input a human overwrites — the owner
-    # marks it, so ground truth must keep it, not disregard it as "computed". Mirror
-    # derive.py's defaulted-input detection over the whole NORMAL workbook.
-    cell_formula: dict[tuple[str, int, int], str] = {}
-    cell_val: dict[tuple[str, int, int], object] = {}
-    for name, ws in norm.items():
-        mr, mc = ws.cells.max_data_row, ws.cells.max_data_column
-        for r in range(mr + 1):
-            for c in range(mc + 1):
-                cell = ws.cells.get(r, c)
-                if cell.formula:
-                    cell_formula[(name, r, c)] = cell.formula
-                else:
-                    val = cell.value
-                    if val is not None and val != "":
-                        cell_val[(name, r, c)] = val
-    passthrough_inputs, _ = find_passthrough_inputs(list(norm), cell_formula, cell_val)
 
     out = LabelSet()
     for ws in wc.worksheets:
@@ -68,10 +48,11 @@ def ingest_pair(normal_path: str, classified_path: str) -> LabelSet:
                 n = wsn.cells.get(r, c)
                 if n.formula:
                     # A CONNECTOR formula (CX_GET …) FETCHES an external value, and a
-                    # DEFAULTED-INPUT passthrough displays one — both are inputs a new
-                    # upload replaces, so keep the mark. Any other calculated formula
-                    # (derives from other cells) → disregard.
-                    keep = _CONNECTOR.search(n.formula) or (ws.name, r, c) in passthrough_inputs
+                    # single-input display/transform wrapper is a TYPE-OVER default —
+                    # both are inputs a fill replaces, so keep the mark. A MULTI-INPUT
+                    # formula (range, ≥2 cells, aggregation) is the template's own
+                    # computation → disregard (the shared write-semantics constraint).
+                    keep = _CONNECTOR.search(n.formula) or not is_multi_input(n.formula)
                     if not keep:
                         out.disregarded_formula += 1
                         continue

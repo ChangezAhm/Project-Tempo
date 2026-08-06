@@ -334,3 +334,18 @@ Phase 2 (full migration + deletions) is next. Nothing else until its gate passes
 **Gate:** 340 offline tests; live Meridian 113 fills / 9-of-9 verified correct / 0 wrong / 0 bad fills through a v13 re-derivation, with the pre-migration fallback exercised live. PE-flash stable at 72 fills.
 
 **Still open (needs the owner):** apply migration 0011; onboard the "Templates for testing/" ground-truth files and run the 1/2-label accuracy eval (the full Phase-3 gate — LLM input-identification quality can only be measured against those labels); exercise the one-tap answer flow in the UI end-to-end.
+
+---
+
+## 14. Write-Semantics Authority Fix (2026-08-06)
+
+The PROD ground-truth eval exposed the onboarding-side authority violation: the understanding CORRECTLY claimed formula cells as inputs (type-over fronts of a connector template, incl. Dec-22, and the renameable company-account label column) — derive's absolute `formula → computed` rule discarded the claims, and the July `passthrough.py` workaround was silently resolving the WRONG cells (0-based refs against 1-based maps: everything one row up, one column left — the "Dec-22 cliff").
+
+**Shipped (plan: `~/.claude/plans/replicated-leaping-curry.md`):**
+- `app/datamodel/topology.py` (new): 1-based ref extraction; `is_multi_input` — THE structural constraint (a formula reading a range or ≥2 cells is a computation, never converted; catches ratios/AVERAGE that `_is_aggregation` alone misses — design-validator catch); CX_PUSH inventory (`push_targets`, call-shape regex) — entry cells by the workbook's own declaration.
+- **Inversion in `_emit`**: claimed formula cell (or push-read cell) + not multi-input → `sourced`, `write_mode="type_over"`, `category_source="llm:input_field"|"topology:push"`. Blank push-read cells beat the sheet-role prior. Hidden rows/cols (now captured in the parse) beat writability: `staging`, `geometry:hidden`. All stamped + review-flagged + user-correctable.
+- **DELETED**: `passthrough.py`, its derive pass + backing checks, its tests (3 semantic invariants ported to `tests/test_type_over.py` incl. the ratio tripwire). eval/label_ingest aligned to the shared constraint.
+- Parser fact repairs: shape text extracted for real (no more `<FontSettingCollection>` reprs; group shapes recursed) — the user guide reaches the model; hidden_rows/hidden_cols in the snapshot; `[hid]` grid marker + hidden-cols note; PUSH-ENTRY hint line (the push columns sit beyond the 80-col grid cap). Sheet cache v9.
+- Plumbing: `DataPoint.write_mode` + migration **0012** (apply with 0011); `replace_data_points` strip fallback generalized to all optional columns; merge: `write_mode` is user-only; reset guard extended (unfilled type-over cells keep their default formula). DERIVATION_VERSION=14.
+
+**Owner actions:** apply `supabase/migrations/0012_write_mode.sql` (with 0011); re-run Understand on the three test templates when convenient (cache v9 — picks up guide text, [hid], PUSH-ENTRY hints; the inversion itself works on the STORED understanding immediately). Remaining stages tracked: usage brief injection (Stage 3), renameable-label writes + configurable-list onboarding questions + flash Budget-rows defect (Stage 4), eval consolidation (Stage 5).

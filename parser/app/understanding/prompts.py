@@ -40,6 +40,9 @@ editable (unlocked) — a strong input signal, even when sheet protection is off
 titles and period headers visually span the whole range
    - `r{row}[grp:N]` BEFORE the colon is the row's Excel outline/grouping level N — \
 author-encoded hierarchy; when present, trust it over indentation
+   - `r{row}[hid]` BEFORE the colon: the row is HIDDEN in the sheet view — a \
+staging/config area, not a user-facing data-entry surface (hidden columns are \
+listed in a header NOTE)
    - A token with no value (e.g. `E=[in]` or `E=[unlocked]`) is an EMPTY cell the \
 author flagged as an input — input-style fill, unlocked, or in a data-validation \
 range — a prime input-field candidate

@@ -211,7 +211,18 @@ def understand_sheet(
     client = get_client()
     messages = [{"role": "user", "content": content}]
 
-    msg, text = _call(client, messages, max_tokens, sheet["name"], model)
+    try:
+        msg, text = _call(client, messages, max_tokens, sheet["name"], model)
+    except RuntimeError as e:
+        # Truncation = the sheet's map genuinely doesn't fit the answer budget
+        # (a dense Input-Summary can exceed 16k output tokens). One retry with a
+        # doubled budget beats dropping the whole sheet from the understanding.
+        if "truncated at max_tokens" not in str(e):
+            raise
+        bigger = min(max_tokens * 2, 64000)
+        logger.warning("%s truncated at max_tokens=%d — retrying once at %d",
+                       sheet["name"], max_tokens, bigger)
+        msg, text = _call(client, messages, bigger, sheet["name"], model)
     try:
         result = SheetUnderstanding.model_validate(json.loads(_extract_json(text)))
     except Exception as e:  # one corrective retry

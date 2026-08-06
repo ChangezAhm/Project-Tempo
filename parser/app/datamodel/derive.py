@@ -30,6 +30,7 @@ from app.datamodel.schema import Basis, DataModelResult, DataPoint, DetectedDime
 from app.pipeline import get_structure
 from app.population.periods import parse_any_date
 from app.population.units import CCY_TOKENS
+from app.datamodel.topology import is_multi_input, push_targets
 from app.priors import is_placeholder_label as _is_placeholder_label
 from app.raw_extraction.column_utils import column_index, column_letter
 from app.raw_extraction.workbook_parser import parse_workbook
@@ -41,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 13   # v13: strict placeholder bank (bare 'Other' is data); junk_label_connector stamped + counted apart
+DERIVATION_VERSION = 14   # v14: write-semantics inversion (claimed/push-backed formulas = type-over inputs); passthrough deleted
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -619,18 +620,19 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 if fmt:
                     cell_fmt[(nm, rc[1], rc[0])] = fmt
 
-    # Defaulted-input detection: a front formula cell that merely DISPLAYS a single
-    # backend input point (a connector, or a blank in a connector-fed column) is the
-    # real input a human overwrites — the naive "formula = computed" rule discards
-    # it. Resolve over the understood sheets (targets may sit on hidden backend
-    # sheets, which the snapshot still carries); the backend cells these display are
-    # suppressed below so population writes the FRONT cell, not the backend (a
-    # back-write only surfaces on recalc, which breaks connector templates).
-    from app.datamodel.passthrough import find_passthrough_inputs
-    _und_sheets = [s.get("sheet_name") for s in und.get("sheets", [])]
-    passthrough_inputs, passthrough_backing = find_passthrough_inputs(
-        _und_sheets, cell_formula, cell_val)
-    passthrough_count = 0
+    # PUSH TOPOLOGY (facts): cells a CX_PUSH formula reads are the workbook's own
+    # declaration of its entry cells — evidence that stands without any LLM claim.
+    push_cells = push_targets(cell_formula)
+    # HIDDEN GEOMETRY (facts): a hidden row/column is not a user-facing entry
+    # surface — facts there are staged, whatever a claim says (the view state is
+    # the author's own declaration; a user correction can still re-open a cell).
+    hidden_row_set = {(s["name"], int(r)) for s in snap.get("sheets", [])
+                      for r in (s.get("hidden_rows") or [])}
+    hidden_col_set = {(s["name"], int(c)) for s in snap.get("sheets", [])
+                      for c in (s.get("hidden_cols") or [])}
+    hidden_staged = 0
+    type_over_claimed = 0
+    push_evidence = 0
 
     period_idx: dict[str, dict[int, dict]] = {}     # L2 parsed_date by (sheet, col)
     for p in structure.get("periods", []):
@@ -768,7 +770,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
             """Create one DataPoint for an input cell. ``llm_field`` carries the
             LLM's semantics when the cell came from understanding; None for a
             cell found purely by the deterministic metadata detector."""
-            nonlocal orphan_cells, passthrough_count, junk_connector_kept
+            nonlocal orphan_cells, type_over_claimed, push_evidence, junk_connector_kept, hidden_staged
             cell = f"{column_letter(col)}{row}"
             if (sheet, cell) in seen:
                 return
@@ -816,12 +818,34 @@ def derive_data_model(template_id: str) -> DataModelResult:
             # Per-cell category (see _classify_category for the full cascade + rules).
             category, cfg_kind = _classify_category(
                 metric_label, formula, sec_cat, role, sheet, input_surface)
-            # A defaulted-input passthrough (a front formula displaying one backend
-            # input point) is a replaceable input, not the computed output its
-            # formula would otherwise imply.
-            if category == "computed" and (sheet, row, col) in passthrough_inputs:
-                category, cfg_kind = "sourced", None
-                passthrough_count += 1
+            # WRITE-SEMANTICS INVERSION (authority model): a formula cell the
+            # understanding CLAIMS as an input — or one the workbook's own
+            # CX_PUSH topology proves is an entry cell — is a TYPE-OVER DEFAULT,
+            # not a computed output. The one structural CONSTRAINT: a formula
+            # reading a range or ≥2 cells is a computation (subtotals, ratios)
+            # and is never converted, whatever the claim.
+            write_mode = None
+            category_source = None
+            if category == "computed" and not is_multi_input(formula):
+                if llm_field is not None:
+                    category, cfg_kind = "sourced", None
+                    write_mode, category_source = "type_over", "llm:input_field"
+                    type_over_claimed += 1
+                elif (sheet, row, col) in push_cells:
+                    category, cfg_kind = "sourced", None
+                    write_mode, category_source = "type_over", "topology:push"
+                    push_evidence += 1
+            elif category == "staging" and (sheet, row, col) in push_cells:
+                # a blank push-read entry cell beats the sheet-role PRIOR (fact > prior)
+                category, category_source = "data", "topology:push"
+                push_evidence += 1
+            # HIDDEN geometry beats everything writable: a hidden row/col is the
+            # author's own "not user-facing" declaration (stamped + counted;
+            # a user correction re-opens it).
+            if (category in ("data", "sourced")
+                    and ((sheet, row) in hidden_row_set or (sheet, col) in hidden_col_set)):
+                category, category_source, write_mode = "staging", "geometry:hidden", None
+                hidden_staged += 1
             if cfg_kind == "junk_label_connector":
                 junk_connector_kept += 1   # 'sourced', not config — its own counter/flag
             elif cfg_kind:
@@ -849,10 +873,13 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 period_label=(period or {}).get("label"), parsed_date=(period or {}).get("parsed_date"),
                 period_type=(period or {}).get("period_type"),
                 scenario=scenario, basis=basis, category=category,
-                # every cfg_kind is a label-lexicon PRIOR (config kinds AND the
-                # junk_label_connector 'sourced' keep) — stamped so enrichment /
-                # user corrections can reclassify it.
-                category_source=(f"lexicon:{cfg_kind}" if cfg_kind else None),
+                # WHO decided: inversion stamps (llm:input_field / topology:push)
+                # first; else every cfg_kind is a label-lexicon PRIOR (config
+                # kinds AND the junk_label_connector 'sourced' keep) — stamped so
+                # enrichment / user corrections can reclassify it.
+                category_source=(category_source
+                                 or (f"lexicon:{cfg_kind}" if cfg_kind else None)),
+                write_mode=write_mode,
                 entity=None, unit=unit, currency=_currency(unit, l2mr.get("number_format")),
                 value_role=l3m.get("value_role"), sign_convention=l3m.get("sign_convention"),
                 qualification_criteria=l3m.get("qualification_criteria"),
@@ -892,8 +919,6 @@ def derive_data_model(template_id: str) -> DataModelResult:
         for (nm, r, c), fml in cell_formula.items():
             if nm != sheet or not _CONNECTOR.search(fml):
                 continue
-            if (nm, r, c) in passthrough_backing:
-                continue    # a front passthrough displays this — write the front, not here
             cv = cell_cached.get((sheet, r, c), cell_val.get((sheet, r, c)))
             if not _numeric(cv):
                 continue
@@ -904,10 +929,10 @@ def derive_data_model(template_id: str) -> DataModelResult:
             _emit(c, r, None)
             connector_inputs += 1
 
-        # 4) Defaulted-input passthroughs on this sheet (see passthrough.py): emit
-        #    the front cell; _emit's cascade upgrades it computed→sourced. Backing
-        #    cells were suppressed in pass 3, so no double-count.
-        for (pnm, pr, pc) in passthrough_inputs:
+        # 4) PUSH-read cells on this sheet the other passes missed: a blank entry
+        #    cell a CX_PUSH reads is an input by the workbook's own declaration —
+        #    _emit's inversion/staging handling classifies it.
+        for (pnm, pr, pc) in push_cells:
             if pnm == sheet and (sheet, f"{column_letter(pc)}{pr}") not in seen:
                 _emit(pc, pr, None)
 
@@ -946,11 +971,22 @@ def derive_data_model(template_id: str) -> DataModelResult:
             "as sourced — verify (the connector formula, a fact, beat the junk-label prior; "
             "a correction or enrichment can reclassify via category_source)."
         )
-    if passthrough_count:
+    if type_over_claimed:
         flags.append(
-            f"{passthrough_count} defaulted-input cells (a front formula displaying a single "
-            "backend input point) enumerated as replaceable inputs ('sourced') — population "
-            "writes the front cell directly; the backend cell it displays is suppressed."
+            f"{type_over_claimed} formula cells the understanding claims as inputs converted "
+            "to TYPE-OVER defaults ('sourced', write_mode=type_over) — population writes over "
+            "the formula on the filled copy; the template master is never modified."
+        )
+    if push_evidence:
+        flags.append(
+            f"{push_evidence} cells enumerated/reclassified from CX_PUSH topology (the "
+            "template pushes what is typed there — entry cells by the workbook's own "
+            "declaration; category_source=topology:push)."
+        )
+    if hidden_staged:
+        flags.append(
+            f"{hidden_staged} input-looking cells sit on HIDDEN rows/columns — staged, not "
+            "user-facing (category_source=geometry:hidden; a correction re-opens a cell)."
         )
     if config_by_kind:
         detail = ", ".join(f"{k}: {n}" for k, n in sorted(config_by_kind.items()))

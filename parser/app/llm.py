@@ -20,7 +20,16 @@ from functools import lru_cache
 
 import anthropic
 
+try:
+    from langsmith import traceable as _traceable
+except ImportError:  # pragma: no cover - langsmith optional
+    _traceable = None
+
 logger = logging.getLogger(__name__)
+
+if _traceable is None and os.environ.get("LANGSMITH_TRACING", "").lower() == "true":
+    logger.error("LANGSMITH_TRACING=true but the langsmith package is missing — "
+                 "LLM calls are running UNTRACED. Install/repair langsmith.")
 
 # Model routing by task difficulty (not everything needs Opus):
 #   SMART — genuine reasoning over layout/meaning (onboarding "understanding").
@@ -104,21 +113,26 @@ def guarded_stream(*, model: str, system: str, content=None, messages: list[dict
     elif temperature is not None:
         kwargs["temperature"] = temperature
 
-    client, wrapped = get_client_info()
-    if wrapped:
+    client = get_client()
+
+    def _invoke(prompt=None):  # ``prompt`` exists so the TRACE shows the real prompt
+        with client.messages.stream(**kwargs) as stream:
+            return stream.get_final_message()
+
+    # Explicit LLM-level trace. wrap_anthropic does not hook the .stream()
+    # context-manager path, so without this the AI call never appeared as its
+    # own run — only the outer @traceable function with raw args. This records
+    # a named child run whose Input IS the prompt (image tiles replaced by
+    # placeholders so the payload stays under LangSmith's cap and renders fast).
+    if _traceable is not None and os.environ.get("LANGSMITH_TRACING", "").lower() == "true":
         meta = dict(get_llm_context() or {})
+        meta["model"] = model
         if site:
             meta["site"] = site
-        kwargs["langsmith_extra"] = {"name": site or "llm_call", "metadata": meta}
-    try:
-        with client.messages.stream(**kwargs) as stream:
-            msg = stream.get_final_message()
-    except TypeError:
-        # Older langsmith wrapper without langsmith_extra support — degrade to an
-        # unnamed trace rather than failing the call.
-        kwargs.pop("langsmith_extra", None)
-        with client.messages.stream(**kwargs) as stream:
-            msg = stream.get_final_message()
+        traced = _traceable(run_type="llm", name=site or "llm_call")(_invoke)
+        msg = traced(_display_prompt(system, messages), langsmith_extra={"metadata": meta})
+    else:
+        msg = _invoke()
     if guard is not None and getattr(msg, "usage", None) is not None:
         guard.record_actual(model, msg.usage.input_tokens, msg.usage.output_tokens)
     if msg.stop_reason == "max_tokens":
@@ -128,24 +142,30 @@ def guarded_stream(*, model: str, system: str, content=None, messages: list[dict
     return msg, next((b.text for b in msg.content if b.type == "text"), "")
 
 
+def _display_prompt(system: str, messages: list[dict]) -> list[dict]:
+    """The prompt as recorded in the trace: verbatim text, but image tiles
+    replaced by small placeholders (megabytes of base64 would blow LangSmith's
+    payload cap and hide the whole input)."""
+    out: list[dict] = [{"role": "system", "content": system}]
+    for m in messages:
+        c = m.get("content")
+        if not isinstance(c, list):
+            out.append(m)
+            continue
+        blocks = []
+        for b in c:
+            if isinstance(b, dict) and b.get("type") == "image":
+                kb = len(((b.get("source") or {}).get("data") or "")) // 1024
+                blocks.append({"type": "text", "text": f"[image tile omitted — ~{kb} KB base64]"})
+            else:
+                blocks.append(b)
+        out.append({**m, "content": blocks})
+    return out
+
+
 @lru_cache(maxsize=1)
-def get_client_info() -> tuple[anthropic.Anthropic, bool]:
-    """(client, is_langsmith_wrapped). Reads ANTHROPIC_API_KEY from the
-    environment (loaded from parser/.env by app.config)."""
-    base = anthropic.Anthropic()
-    try:
-        from langsmith.wrappers import wrap_anthropic
-
-        return wrap_anthropic(base), True
-    except Exception as e:  # pragma: no cover - langsmith optional
-        if os.environ.get("LANGSMITH_TRACING", "").lower() == "true":
-            logger.error(
-                "LANGSMITH_TRACING=true but tracing could NOT be enabled (%s) — "
-                "LLM calls are running UNTRACED. Install/repair the langsmith package.", e)
-        else:
-            logger.info("LangSmith tracing not active (%s); using raw Anthropic client", e)
-        return base, False
-
-
 def get_client() -> anthropic.Anthropic:
-    return get_client_info()[0]
+    """Raw Anthropic client (ANTHROPIC_API_KEY from env, loaded from parser/.env
+    by app.config). Tracing is done explicitly in guarded_stream — the
+    wrap_anthropic client wrapper is NOT used (it misses .stream() calls)."""
+    return anthropic.Anthropic()

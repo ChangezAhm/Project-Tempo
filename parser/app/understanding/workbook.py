@@ -60,7 +60,7 @@ _SYNTH_SCHEMA = to_strict_schema(WorkbookUnderstanding)
 # key includes the template version, so a re-uploaded template never reuses old
 # results. Bump this constant whenever prompts.SYSTEM or the SheetUnderstanding
 # schema changes shape — that invalidates every cached result built under them.
-_SHEET_CACHE_VERSION = 8   # v8: grid gains [fill] marker (non-input solid fills visible)
+_SHEET_CACHE_VERSION = 9   # v9: PUSH-ENTRY hint line (CX_PUSH topology reaches the model)
 
 # Light sheets are cheap (Sonnet, text-only, no tiles) and don't consume the
 # deep max_sheets cap — but bound them anyway so a pathological workbook can't

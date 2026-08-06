@@ -172,9 +172,9 @@ def render_filled(template_workbook_path, filled, clear_facts=(), *, reset: str 
         ws = ws_by_name.get(f.get("sheet_name"))
         if ws is None or not f.get("cell"):
             continue
-        if (f.get("category") == "sourced"
+        if ((f.get("category") == "sourced" or f.get("write_mode") == "type_over")
                 and (f.get("sheet_name"), f["cell"]) not in fill_targets):
-            continue
+            continue   # an unfilled sourced/type-over cell keeps its default (formula or value)
         cell = ws.cells.get(f["cell"])
         if _is_clearable_value(cell.value, cell.is_formula):
             ws.cells.clear_contents(cell.row, cell.column, cell.row, cell.column)

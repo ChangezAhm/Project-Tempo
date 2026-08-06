@@ -229,33 +229,41 @@ def replace_rows(table: str, version_id: str, rows: list[dict], chunk: int = 500
         sb.table(table).insert(rows[i:i + chunk]).execute()
 
 
+# Fact columns added by later migrations. A database that hasn't applied them
+# rejects the insert (PostgREST PGRST204) AFTER the delete has already run —
+# which would wipe the version's facts — so the insert retries once with these
+# stripped (loudly). Add new optional DataPoint columns here WITH their migration.
+_OPTIONAL_FACT_COLS = ("category_source", "write_mode")   # 0011, 0012
+
+
 def replace_data_points(version_id: str, rows: list[dict], chunk: int = 500) -> None:
-    """replace_rows for template_data_points, with a pre-migration-0011 fallback.
-    Databases lacking the category_source column reject the insert (PostgREST
-    PGRST204) AFTER the delete has already run — which would wipe the version's
-    facts — so the insert is retried once with the new field stripped (logged
-    loudly), same pattern as replace_extensible_regions' pre-0010 fallback."""
+    """replace_rows for template_data_points, with a pre-migration fallback for
+    the optional columns above (same pattern as replace_extensible_regions'
+    pre-0010 fallback)."""
     sb = get_client()
+
+    def _stripped(batch: list[dict]) -> list[dict]:
+        return [{k: v for k, v in r.items() if k not in _OPTIONAL_FACT_COLS} for r in batch]
+
     sb.table("template_data_points").delete().eq("template_version_id", version_id).execute()
     strip = False
     for i in range(0, len(rows), chunk):
         batch = rows[i:i + chunk]
         if strip:
-            batch = [{k: v for k, v in r.items() if k != "category_source"} for r in batch]
+            batch = _stripped(batch)
         try:
             sb.table("template_data_points").insert(batch).execute()
-        except Exception as e:  # noqa: BLE001 — likely the missing 0011 column
+        except Exception as e:  # noqa: BLE001 — likely a missing optional column
             msg = str(e)
-            if strip or ("category_source" not in msg and "PGRST204" not in msg):
+            optional_missing = "PGRST204" in msg or any(c in msg for c in _OPTIONAL_FACT_COLS)
+            if strip or not optional_missing:
                 raise
             logger.warning(
-                "data-point insert failed (%s) — retrying WITHOUT the migration-0011 "
-                "column (category_source). Apply supabase/migrations/"
-                "0011_category_source.sql to persist category provenance.", e)
+                "data-point insert failed (%s) — retrying WITHOUT the optional "
+                "columns %s. Apply supabase/migrations/0011_category_source.sql "
+                "and 0012_write_mode.sql to persist them.", e, _OPTIONAL_FACT_COLS)
             strip = True
-            sb.table("template_data_points").insert(
-                [{k: v for k, v in r.items() if k != "category_source"} for r in batch]
-            ).execute()
+            sb.table("template_data_points").insert(_stripped(batch)).execute()
 
 
 

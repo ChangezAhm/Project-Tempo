@@ -41,7 +41,12 @@ def _llm_may_write(field: str, fact: dict) -> bool:
     """Where an LLM-enrichment patch may land (Fill-Plan authority model):
     empty/default values always; and a category decided by a label LEXICON —
     that is a PRIOR, not a fact, so the model's judgment may override it
-    (a user correction still beats both)."""
+    (a user correction still beats both). write_mode (type-over writability) is
+    derived from claim + the multi-input constraint — only USER corrections may
+    re-decide it; enrichment matches by normalized labels and could flip
+    writability on look-alike rows."""
+    if field == "write_mode":
+        return False
     value = fact.get(field)
     if value in _EMPTY or (field == "category" and value == "data"):
         return True

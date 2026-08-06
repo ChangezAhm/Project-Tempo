@@ -88,6 +88,11 @@ class ParsedSheet:
         self.print_area: str | None = None
         self.narrow_columns: list[int] = []
         self.row_group_levels: dict[int, int] = {}  # 1-based row -> Excel outline/group level
+        # Hidden GEOMETRY (author-staged areas): 1-based rows/cols hidden in the
+        # sheet view. A hidden row is not a data-entry surface — downstream
+        # classification treats facts there as staging, and the grid marks them.
+        self.hidden_rows: list[int] = []
+        self.hidden_cols: list[int] = []
         self.row_count: int = 0
         self.col_count: int = 0
         # Aspose-detected used range (Excel's Ctrl+End equivalent) — recorded
@@ -432,28 +437,41 @@ def _extract_text_boxes(
     if shapes is None:
         return out
 
+    def _shape_text(shape) -> str:
+        """The shape's real text, or ''. NEVER str(obj) — a textless shape's
+        text_body is a truthy FontSettingCollection whose repr once replaced the
+        entire user guide with '<…object at 0x…>' garbage (and the junk notes
+        ate the downstream annotations cap). Group shapes carry their text on
+        the CHILD shapes — recurse."""
+        try:
+            t = shape.text
+            if isinstance(t, str) and t.strip():
+                return t.strip()
+        except Exception:
+            pass
+        for attr in ("text_body", "html_text"):
+            try:
+                v = getattr(shape, attr, None)
+                t = getattr(v, "text", None) if v is not None else None
+                if isinstance(t, str) and t.strip():
+                    return t.strip()
+            except Exception:
+                continue
+        try:
+            children = shape.get_grouped_shapes()
+        except Exception:
+            children = None
+        if children:
+            parts = [_shape_text(ch) for ch in children]
+            return "\n".join(p for p in parts if p).strip()
+        return ""
+
     for shape in shapes:
         try:
             if _shape_has_chart(shape):
                 # Chart titles/axes go through _extract_chart_captions.
                 continue
-            text = ""
-            try:
-                text = (shape.text or "").strip()
-            except Exception:
-                text = ""
-            if not text:
-                # Some shape kinds expose text via text_body / html_text only.
-                for attr in ("text_body", "html_text"):
-                    try:
-                        v = getattr(shape, attr, None)
-                        if v:
-                            t = getattr(v, "text", None) or str(v)
-                            if t and t.strip():
-                                text = t.strip()
-                                break
-                    except Exception:
-                        continue
+            text = _shape_text(shape)
             if not text:
                 continue
 
@@ -1112,15 +1130,28 @@ def parse_workbook(file_path: Path) -> ParsedWorkbook:
         parsed_sheet.print_area = _extract_print_area(ws)
         parsed_sheet.narrow_columns = _extract_narrow_columns(ws, max_col)
 
-        # Excel row outline/grouping levels — author-encoded hierarchy. Only
-        # instantiated rows are yielded; we keep rows with a non-zero level.
+        # Excel row outline/grouping levels — author-encoded hierarchy — and
+        # hidden-row state. Only instantiated rows are yielded; we keep rows
+        # with a non-zero level / hidden flag.
         try:
             for row_obj in ws.cells.rows:
+                r1 = row_obj.index + 1
+                if r1 > max_row:
+                    continue
                 gl = int(getattr(row_obj, "group_level", 0) or 0)
-                if gl and (row_obj.index + 1) <= max_row:
-                    parsed_sheet.row_group_levels[row_obj.index + 1] = gl
+                if gl:
+                    parsed_sheet.row_group_levels[r1] = gl
+                if getattr(row_obj, "is_hidden", False):
+                    parsed_sheet.hidden_rows.append(r1)
         except Exception as e:
             logger.debug(f"row-group extract failed for '{sheet_name}': {e}")
+        try:
+            parsed_sheet.hidden_cols = [
+                c + 1 for c in range(min(max_col, ws.cells.max_data_column + 1))
+                if ws.cells.is_column_hidden(c)
+            ]
+        except Exception as e:
+            logger.debug(f"hidden-col extract failed for '{sheet_name}': {e}")
 
         try:
             # is_protected reflects whether sheet protection is on; the

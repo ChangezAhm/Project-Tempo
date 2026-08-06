@@ -501,10 +501,20 @@ def _detect(digest: str, model: str, tiles: list[tuple[str, bytes]] = ()) -> Reg
     after the retry fails — the caller decides whether that skips the sheet."""
     from app.population.source_understanding import _build_content
     content, n_images = _build_content(digest, list(tiles or []))
-    _, text = guarded_stream(model=model, system=_SYSTEM, content=content,
-                             max_tokens=_MAX_TOKENS,
-                             est_input_chars=len(_SYSTEM) + len(digest),
-                             n_images=n_images, site="region_detection")
+    try:
+        _, text = guarded_stream(model=model, system=_SYSTEM, content=content,
+                                 max_tokens=_MAX_TOKENS,
+                                 est_input_chars=len(_SYSTEM) + len(digest),
+                                 n_images=n_images, site="region_detection")
+    except RuntimeError as e:
+        if "truncated at max_tokens" not in str(e):
+            raise
+        # a dense sheet's region JSON genuinely doesn't fit — one doubled-budget
+        # retry beats losing the sheet's regions (mirrors understand_sheet).
+        _, text = guarded_stream(model=model, system=_SYSTEM, content=content,
+                                 max_tokens=_MAX_TOKENS * 2,
+                                 est_input_chars=len(_SYSTEM) + len(digest),
+                                 n_images=n_images, site="region_detection")
     try:
         return _parse(text)
     except Exception as e:  # noqa: BLE001 — malformed JSON from the model
@@ -768,6 +778,13 @@ def detect_and_persist(template_id: str) -> dict:
     wb_tmp: Path | None = None
     try:
         dm = get_data_model(template_id, limit=30000)
+        if not dm.get("available"):
+            # Fresh template: /understand runs this BEFORE any populate has
+            # derived a model — derive on demand (deterministic, no LLM) instead
+            # of silently losing region kinds + the configurable-list questions.
+            from app.datamodel.persist import derive_and_persist
+            derive_and_persist(template_id)
+            dm = get_data_model(template_id, limit=30000)
         if not dm.get("available"):
             raise RuntimeError("No data model for this template yet — derive it first.")
         version_id = dm["template_version_id"]

@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
-import { Agent } from "undici";
+import { request } from "undici";
 
 // Excel add-in populate proxy. The task pane is HTTPS and same-origin with the
 // site; the parser is plain HTTP on localhost — proxying here avoids both
-// mixed-content blocking and CORS. A populate run can hold the connection for
-// many minutes, so the default undici header timeout (5 min) is disabled.
-const PARSER_URL = process.env.PARSER_SERVICE_URL ?? "http://localhost:8000";
+// mixed-content blocking and CORS. Uses undici.request directly (NOT the
+// Next-patched global fetch, which rejects a foreign undici Agent) with
+// timeouts disabled: a populate run can hold the connection for many minutes.
+// localhost is pinned to IPv4 — uvicorn binds 127.0.0.1, not ::1.
+const PARSER_URL = (process.env.PARSER_SERVICE_URL ?? "http://localhost:8000")
+  .replace("//localhost", "//127.0.0.1");
 const PARSER_API_KEY = process.env.PARSER_API_KEY ?? "";
-
-const longRun = new Agent({ headersTimeout: 0, bodyTimeout: 0 });
 
 export async function POST(
   req: Request,
@@ -17,20 +18,19 @@ export async function POST(
   const { id } = await params;
   const body = await req.text();
   try {
-    const res = await fetch(`${PARSER_URL}/populate-workbook/${id}`, {
+    const res = await request(`${PARSER_URL}/populate-workbook/${id}`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        ...(PARSER_API_KEY ? { "X-API-Key": PARSER_API_KEY } : {}),
+        "content-type": "application/json",
+        ...(PARSER_API_KEY ? { "x-api-key": PARSER_API_KEY } : {}),
       },
       body,
-      cache: "no-store",
-      // @ts-expect-error undici dispatcher is a Node-fetch extension
-      dispatcher: longRun,
+      headersTimeout: 0,
+      bodyTimeout: 0,
     });
-    const text = await res.text();
+    const text = await res.body.text();
     return new NextResponse(text, {
-      status: res.status,
+      status: res.statusCode,
       headers: { "Content-Type": "application/json" },
     });
   } catch (e) {

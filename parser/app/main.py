@@ -305,6 +305,13 @@ def enrich_route(template_id: str) -> dict:
 # as a template. LLM maps the source to the template's data-model inputs, then
 # deterministic apply reads the real values + renders a filled workbook
 # (download URL). Long-running (LLM) → offloaded to a worker thread.
+@app.get("/populate-progress/{target_template_id}", dependencies=[Depends(require_api_key)])
+def populate_progress(target_template_id: str) -> dict:
+    """Live stage of an in-flight populate run (add-in pane polls this)."""
+    from app.population.progress import get_stage
+    return get_stage(target_template_id) or {"stage": None}
+
+
 @app.post("/populate/{target_template_id}", dependencies=[Depends(require_api_key)])
 async def populate_route(
     target_template_id: str,
@@ -343,6 +350,9 @@ async def populate_route(
     except Exception as e:  # noqa: BLE001
         logger.exception("Population failed")
         raise HTTPException(500, f"Population failed: {e}")
+    finally:
+        from app.population.progress import clear as _progress_clear
+        _progress_clear(target_template_id)
 
 
 @app.get("/datamodel/{template_id}", dependencies=[Depends(require_api_key)])
@@ -432,6 +442,9 @@ async def populate_workbook_route(target_template_id: str, payload: dict = Body(
     except Exception as e:  # noqa: BLE001
         logger.exception("Snapshot population failed")
         raise HTTPException(500, f"Population failed: {e}")
+    finally:
+        from app.population.progress import clear as _progress_clear
+        _progress_clear(target_template_id)
 
 
 @app.post("/authoring/regions/{template_id}", dependencies=[Depends(require_api_key)])

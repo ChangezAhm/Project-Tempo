@@ -391,17 +391,27 @@ function OpenQuestionsPanel({
             ) : null}
             <div className="mt-2 flex flex-wrap gap-2">
               {q.suggested_answer ? (
-                <Button
-                  variant="positive"
-                  size="xs"
-                  onClick={() => void answer(q.id, q.suggested_answer!)}
-                  disabled={busy === q.id}
-                >
-                  {busy === q.id ? "Saving…" : "Yes — confirm"}
-                </Button>
+                <>
+                  <Button
+                    variant="positive"
+                    size="xs"
+                    onClick={() => void answer(q.id, q.suggested_answer!)}
+                    disabled={busy === q.id}
+                  >
+                    {busy === q.id ? "Saving…" : "Yes"}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="xs"
+                    onClick={() => void answer(q.id, "no")}
+                    disabled={busy === q.id}
+                  >
+                    No
+                  </Button>
+                </>
               ) : null}
               <LinkButton href={`/template/${templateId}/contract`} variant="secondary" size="xs">
-                {q.suggested_answer ? "No / different…" : "Answer…"}
+                {q.suggested_answer ? "More…" : "Answer…"}
               </LinkButton>
             </div>
           </li>

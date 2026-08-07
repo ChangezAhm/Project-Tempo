@@ -44,14 +44,22 @@ type OpenState = "idle" | "opening" | "opened" | "failed";
 
 const OFFICE_JS = "https://appsforoffice.microsoft.com/lib/1/hosted/office.js";
 
-// Elapsed-driven stages for the (single-shot) populate call — honest about
-// what the engine is doing, unmistakable that work is happening.
-const STAGES: { at: number; label: string }[] = [
-  { at: 0, label: "Reading your workbook" },
-  { at: 4, label: "Understanding your data" },
-  { at: 100, label: "Mapping series onto the template" },
-  { at: 200, label: "Verifying and writing the file" },
-];
+// REAL stages: the parser stamps its current stage (app/population/progress.py)
+// and the pane polls /api/v1/populate-progress while a fill is running.
+const STAGE_ORDER = [
+  "reading",
+  "understanding",
+  "planning",
+  "verifying",
+  "writing",
+] as const;
+const STAGE_LABELS: Record<(typeof STAGE_ORDER)[number], string> = {
+  reading: "Reading your workbook",
+  understanding: "Understanding your data",
+  planning: "Mapping series onto the template",
+  verifying: "Verifying the plan",
+  writing: "Writing the filled file",
+};
 
 function useNow(active: boolean) {
   const [now, setNow] = useState(() => Date.now());
@@ -212,6 +220,39 @@ export default function AddinPage() {
   const busy = phase.kind === "reading" || phase.kind === "filling";
   const now = useNow(busy);
 
+  // Poll the engine's real stage while a fill is in flight.
+  const [serverStage, setServerStage] = useState<{
+    stage: string | null;
+    detail: string | null;
+  }>({ stage: null, detail: null });
+  const fillingId = phase.kind === "filling" ? phase.template.id : null;
+  useEffect(() => {
+    if (!fillingId) {
+      setServerStage({ stage: null, detail: null });
+      return;
+    }
+    let stop = false;
+    const poll = async () => {
+      try {
+        const r = await fetch(`/api/v1/populate-progress/${fillingId}`, {
+          cache: "no-store",
+        });
+        const j = (await r.json()) as { stage?: string; detail?: string };
+        if (!stop) {
+          setServerStage({ stage: j.stage ?? null, detail: j.detail ?? null });
+        }
+      } catch {
+        /* keep last known stage */
+      }
+    };
+    poll();
+    const t = setInterval(poll, 2500);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [fillingId]);
+
   // ---- busy: full-pane staged progress ----
   if (busy) {
     const startedAt = phase.startedAt;
@@ -221,7 +262,12 @@ export default function AddinPage() {
     const activeIdx =
       phase.kind === "reading"
         ? 0
-        : STAGES.reduce((acc, s, i) => (secs >= s.at ? i : acc), 0);
+        : Math.max(
+            1,
+            STAGE_ORDER.indexOf(
+              (serverStage.stage ?? "understanding") as (typeof STAGE_ORDER)[number]
+            )
+          );
     return (
       <main className="px-4 py-5">
         <p className="truncate text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">
@@ -239,10 +285,10 @@ export default function AddinPage() {
         </div>
 
         <ol className="mt-5 space-y-3.5">
-          {STAGES.map((s, i) => {
+          {STAGE_ORDER.map((key, i) => {
             const state = i < activeIdx ? "done" : i === activeIdx ? "active" : "todo";
             return (
-              <li key={s.label} className="flex items-center gap-2.5">
+              <li key={key} className="flex items-center gap-2.5">
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center">
                   {state === "done" ? (
                     <Check />
@@ -261,7 +307,12 @@ export default function AddinPage() {
                         : "text-[13px] text-neutral-500"
                   }
                 >
-                  {s.label}
+                  {STAGE_LABELS[key]}
+                  {state === "active" && serverStage.detail ? (
+                    <span className="ml-1.5 text-[11px] font-normal text-neutral-400">
+                      {serverStage.detail}
+                    </span>
+                  ) : null}
                 </span>
               </li>
             );

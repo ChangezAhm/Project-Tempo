@@ -23,6 +23,7 @@ from app.population.catalogue import build_catalogue, catalogue_from_understandi
 from app.population.periods import parse_any_date, sheet_grains
 from app.population.schema import metric_key
 from app.population.cost import SpendCapExceeded, SpendGuard, default_cap_usd, set_guard
+from app.population import progress
 from app.population.context import load_context
 from app.population.mapping import estimate_mapping_usd, map_metrics
 from app.population.source_understanding import (
@@ -416,6 +417,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     # Arm the spend firewall for this run (TEMPO_MAX_RUN_USD): source-understanding
     # + mapping. Every LLM call inside checks against it and aborts before breaching.
     set_guard(SpendGuard(default_cap_usd()))
+    progress.set_stage(target_template_id, "understanding")
 
     demand, target_inputs = build_demand(target_template_id, as_of_date)
     # as-of is the pack's reporting vintage / timeline anchor only — it does NOT
@@ -515,6 +517,8 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         # the planner sees the SLOT FACTS (per-sheet grain, date range, emptiness)
         # so grain/rollup/unit judgments rest on reality, not guesses.
         _attach_slot_facts(demand["metrics"], target_inputs, template_context)
+        progress.set_stage(target_template_id, "planning",
+                           f"{len(demand['metrics'])} metrics")
         metric_maps, mapping_failed = map_metrics(demand["metrics"], catalogue, context=biz_context)
         if mapping_failed:
             # LOUD: name the affected metrics and file a durable review item —
@@ -581,6 +585,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         n_dec = apply_decisions(metric_maps, decisions)
         if n_dec:
             routing["contract_decisions_applied"] = n_dec
+        progress.set_stage(target_template_id, "verifying")
         issues = verify_plan(metric_maps, catalogue, target_inputs, demand,
                              template_context, agg_membership)
         repairable: dict[str, list] = {}
@@ -705,19 +710,29 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         if reconciled_metrics or open_questions:
             try:
                 from app.review.items import make_item
-                items = [make_item(
-                    source="populate", kind="judgment",
-                    question=(f"'{r['metric']}' has no exact source match — I reconciled it: "
-                              f"{r['assumption']}. Confirm this, or tell me how to map it."),
-                    why="Source and template use different breakdowns, so this fill is a provisional assumption.",
-                    affected={"metrics": [r["metric"]]},
-                    suggested_answer=(r["assumption"] or None),
-                ) for r in reconciled_metrics]
+                items = []
+                if reconciled_metrics:
+                    # ONE tap, not N: the reconciles are one judgment call ("fill
+                    # close matches rather than leave blanks"); per-metric detail
+                    # lives in `why`, granular remaps stay possible on the
+                    # contract page.
+                    names = [r["metric"] for r in reconciled_metrics]
+                    listed = ", ".join(names[:6]) + ("…" if len(names) > 6 else "")
+                    items.append(make_item(
+                        source="populate", kind="judgment",
+                        question=(f"{len(names)} line(s) filled from closest matches "
+                                  f"({listed}) — keep them?"),
+                        why=chr(10).join(f"{r['metric']}: {r['assumption']}"
+                                         for r in reconciled_metrics),
+                        affected={"metrics": names},
+                        suggested_answer="yes — keep them",
+                    ))
                 items += [make_item(
                     source="populate", kind="judgment",
-                    question=f"'{q['metric']}' — {q['question']}",
+                    question=f"{q['metric']}: {(q['question'] or 'needs your mapping decision').rstrip('.')}?",
                     why="The source has related data but the mapping needs your decision; left blank until you choose.",
                     affected={"metrics": [q["metric"]]},
+                    suggested_answer="leave it blank",
                 ) for q in open_questions]
                 sb.insert_review_items(t_vid, items)
             except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
@@ -775,8 +790,9 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                             else "populate-plan")
                 plan_q_items.append(make_item(
                     source=item_src, kind="judgment",
-                    question=f"'{label}' — {i.detail}. How should this fill?",
-                    why=why, affected={"metrics": [i.metric], "cells": i.cells[:12]},
+                    question=f"{label}: use the suggested answer?",
+                    why=f"{i.detail}. {why}",
+                    affected={"metrics": [i.metric], "cells": i.cells[:12]},
                     suggested_answer=i.suggested_resolution, check_spec=spec))
             if plan_q_items:
                 try:
@@ -795,10 +811,10 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 names = ", ".join(unused_source_series[:15]) + ("…" if len(unused_source_series) > 15 else "")
                 sb.insert_review_items(t_vid, [make_item(
                     source="populate-plan", kind="judgment",
-                    question=(f"{len(unused_source_series)} source series were not used by any "
-                              f"template line ({names}) — should any of them feed the template?"),
+                    question=(f"{len(unused_source_series)} source series went unused "
+                              f"({names}) — is that expected?"),
+                    suggested_answer="yes — nothing missing",
                     why="Unused source data can mean under-counting (a cost line left out of a reconciled total).",
-                    suggested_answer="no — they are not needed",
                 )])
             except Exception as e:  # noqa: BLE001
                 logger.warning("could not file unused-series item: %s", e)
@@ -847,6 +863,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                         a = (c.get("address") or "").upper()
                         if a:
                             sval[(s["name"], a)] = effective_value(c)
+            progress.set_stage(target_template_id, "writing")
             filled_bytes, clear_stats, additions_applied, additions_skipped, check_results = render_filled(
                 tgt_tmp, result.filled, target_inputs, reset=reset,
                 additions=(writable_proposals or None), sval=sval,

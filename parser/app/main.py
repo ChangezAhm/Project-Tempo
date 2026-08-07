@@ -32,7 +32,7 @@ from app.pipeline import (
 from app.datamodel.dimensions_llm import enrich_and_persist
 from app.datamodel.persist import derive_and_persist, get_contract, get_contract_fields, get_data_model
 from app.population.cost import SpendCapExceeded
-from app.population.run import populate_from_bytes
+from app.population.run import populate_from_bytes, populate_from_snapshot
 from app.supabase_client import TemplateNotFound
 from app.understanding.persist import get_understanding, understand_and_persist
 
@@ -396,6 +396,44 @@ def contract_fields_route(template_id: str) -> dict:
 # Detect the areas a template INVITES additions (blank KPI rows, 'Other…'
 # blocks) and persist them. Cheap (Sonnet, text-only), guarded by the populate
 # spend cap. Prerequisite for add-line-item population and the full reset.
+@app.post("/populate-workbook/{target_template_id}", dependencies=[Depends(require_api_key)])
+async def populate_workbook_route(target_template_id: str, payload: dict = Body(...)) -> dict:
+    """Excel add-in path: populate from a CLIENT-SERIALIZED snapshot of the
+    user's open workbook (Office.js reads it in place — no file upload).
+    Body: {filename, as_of_date?, snapshot: {sheets: [...]}, options?}."""
+    if not settings.configured:
+        raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
+    snapshot = payload.get("snapshot")
+    if not isinstance(snapshot, dict) or not snapshot.get("sheets"):
+        raise HTTPException(400, "Body must include snapshot.sheets")
+    opts = payload.get("options") or {}
+    reset = opts.get("reset", "values")
+    add_lines = opts.get("add_lines", "apply")
+    if reset not in ("values", "full"):
+        raise HTTPException(422, "reset must be 'values' or 'full'")
+    if add_lines not in ("off", "propose", "apply"):
+        raise HTTPException(422, "add_lines must be 'off', 'propose' or 'apply'")
+    try:
+        with _single_run("populate", target_template_id):
+            return await run_in_threadpool(
+                partial(populate_from_snapshot, target_template_id,
+                        payload.get("filename") or "workbook", snapshot,
+                        payload.get("as_of_date"),
+                        display_unit=opts.get("display_unit"), reset=reset,
+                        add_lines=add_lines, dry_run=bool(opts.get("dry_run")),
+                        deep_rescue=opts.get("deep_rescue", True))
+            )
+    except SpendCapExceeded as e:
+        raise HTTPException(402, str(e))
+    except TemplateNotFound as e:
+        raise HTTPException(404, str(e))
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Snapshot population failed")
+        raise HTTPException(500, f"Population failed: {e}")
+
+
 @app.post("/authoring/regions/{template_id}", dependencies=[Depends(require_api_key)])
 def detect_regions_route(template_id: str) -> dict:
     if not settings.configured:

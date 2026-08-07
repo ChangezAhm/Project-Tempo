@@ -969,6 +969,28 @@ def _detect_source_periods(parsed) -> dict[str, list[dict]]:
     return out
 
 
+def populate_from_snapshot(target_template_id: str, source_filename: str, snapshot: dict,
+                           as_of_date: str | None = None, *, display_unit: str | None = None,
+                           reset: str = "values", add_lines: str = "apply",
+                           dry_run: bool = False, deep_rescue: bool = True) -> dict:
+    """Populate from a CLIENT-SERIALIZED workbook snapshot — the Excel add-in
+    path: the user's open workbook is read in place via Office.js (values,
+    formulas, number formats) and posted as JSON; no file ever leaves Excel.
+    Reconstructing a ParsedWorkbook from the snapshot reuses the exact same
+    deterministic period detection as the upload path."""
+    from app.reconstruct import reconstruct_workbook_from_snapshot
+
+    parsed = reconstruct_workbook_from_snapshot(snapshot)
+    source_periods = _detect_source_periods(parsed)
+    ch = source_cache.content_hash(
+        json.dumps(snapshot, sort_keys=True, default=str).encode())
+    return _run_population(target_template_id, snapshot, source_periods,
+                           source_filename or "workbook", as_of_date,
+                           content_hash=ch, source_path=None,
+                           display_unit=display_unit, reset=reset,
+                           add_lines=add_lines, dry_run=dry_run, deep_rescue=deep_rescue)
+
+
 def populate_from_bytes(target_template_id: str, source_filename: str, source_bytes: bytes,
                         as_of_date: str | None = None, *, display_unit: str | None = None,
                         reset: str = "values", add_lines: str = "apply",

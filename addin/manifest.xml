@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+
+  <Id>c380da6d-c704-4ae3-b5c7-a742eb3668a8</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Tempo</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Tempo"/>
+  <Description DefaultValue="Fill an onboarded Tempo template from the workbook you have open."/>
+  <IconUrl DefaultValue="https://localhost:3000/addin/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/addin/icon-80.png"/>
+  <SupportUrl DefaultValue="https://localhost:3000"/>
+
+  <AppDomains>
+    <AppDomain>https://localhost:3000</AppDomain>
+  </AppDomains>
+
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+
+  <Requirements>
+    <Sets DefaultMinVersion="1.8">
+      <Set Name="ExcelApi" MinVersion="1.8"/>
+    </Sets>
+  </Requirements>
+
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:3000/addin"/>
+  </DefaultSettings>
+
+  <Permissions>ReadWriteDocument</Permissions>
+
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <DesktopFormFactor>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="Tempo.Group">
+                <Label resid="Tempo.GroupLabel"/>
+                <Icon>
+                  <bt:Image size="16" resid="Tempo.Icon16"/>
+                  <bt:Image size="32" resid="Tempo.Icon32"/>
+                  <bt:Image size="80" resid="Tempo.Icon80"/>
+                </Icon>
+                <Control xsi:type="Button" id="Tempo.OpenPane">
+                  <Label resid="Tempo.ButtonLabel"/>
+                  <Supertip>
+                    <Title resid="Tempo.ButtonLabel"/>
+                    <Description resid="Tempo.ButtonTip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Tempo.Icon16"/>
+                    <bt:Image size="32" resid="Tempo.Icon32"/>
+                    <bt:Image size="80" resid="Tempo.Icon80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>Tempo.Pane</TaskpaneId>
+                    <SourceLocation resid="Tempo.PaneUrl"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Tempo.Icon16" DefaultValue="https://localhost:3000/addin/icon-16.png"/>
+        <bt:Image id="Tempo.Icon32" DefaultValue="https://localhost:3000/addin/icon-32.png"/>
+        <bt:Image id="Tempo.Icon80" DefaultValue="https://localhost:3000/addin/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Tempo.PaneUrl" DefaultValue="https://localhost:3000/addin"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="Tempo.GroupLabel" DefaultValue="Tempo"/>
+        <bt:String id="Tempo.ButtonLabel" DefaultValue="Open Tempo"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="Tempo.ButtonTip" DefaultValue="Fill an onboarded template from this workbook."/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

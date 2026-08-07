@@ -40,6 +40,8 @@ type Phase =
   | { kind: "done"; template: TemplateCard; result: PopulateResult }
   | { kind: "error"; message: string };
 
+type OpenState = "idle" | "opening" | "opened" | "failed";
+
 const OFFICE_JS = "https://appsforoffice.microsoft.com/lib/1/hosted/office.js";
 
 // Elapsed-driven stages for the (single-shot) populate call — honest about
@@ -78,7 +80,7 @@ function Check() {
 export default function AddinPage() {
   const [phase, setPhase] = useState<Phase>({ kind: "boot" });
   const [templates, setTemplates] = useState<TemplateCard[] | null>(null);
-  const [opening, setOpening] = useState(false);
+  const [openState, setOpenState] = useState<OpenState>("idle");
   const officeHost = useRef(false);
 
   useEffect(() => {
@@ -120,6 +122,8 @@ export default function AddinPage() {
 
   const run = useCallback(async (template: TemplateCard) => {
     const startedAt = Date.now();
+    setOpenState("idle");
+    autoOpened.current = null;
     try {
       setPhase({ kind: "reading", template, startedAt });
       const snapshot = await serializeWorkbook();
@@ -150,25 +154,60 @@ export default function AddinPage() {
     }
   }, []);
 
-  const openFilled = useCallback(async (result: PopulateResult) => {
-    if (!result.filled_url) return;
-    setOpening(true);
-    try {
-      const res = await fetch(
-        `/api/v1/filled-file?url=${encodeURIComponent(result.filled_url)}`
-      );
-      if (!res.ok) throw new Error(`Download failed (${res.status})`);
-      const buf = await res.arrayBuffer();
-      await openWorkbookFromBase64(bufferToBase64(buf));
-    } catch (e) {
-      setPhase({
-        kind: "error",
-        message: e instanceof Error ? e.message : "Could not open the filled workbook.",
-      });
-    } finally {
-      setOpening(false);
-    }
-  }, []);
+  // "Take me to the Excel": three tiers, most-native first.
+  //   1. Excel.createWorkbook — new workbook opens & focuses inside Excel.
+  //   2. /api/v1/open-local — the dev server downloads the file and launches
+  //      Excel on it natively (createWorkbook rejects very large payloads).
+  //   3. window.open on the signed URL — plain browser download.
+  const openFilled = useCallback(
+    async (result: PopulateResult, template?: TemplateCard) => {
+      if (!result.filled_url) return;
+      setOpenState("opening");
+      try {
+        const res = await fetch(
+          `/api/v1/filled-file?url=${encodeURIComponent(result.filled_url)}`
+        );
+        if (!res.ok) throw new Error(`Download failed (${res.status})`);
+        const buf = await res.arrayBuffer();
+        await openWorkbookFromBase64(bufferToBase64(buf));
+        setOpenState("opened");
+        return;
+      } catch {
+        // tier 2: native local open
+      }
+      try {
+        const res = await fetch("/api/v1/open-local", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: result.filled_url,
+            name: `${template?.name ?? "template"} — filled.xlsx`,
+          }),
+        });
+        if (!res.ok) throw new Error(`Local open failed (${res.status})`);
+        setOpenState("opened");
+        return;
+      } catch {
+        // tier 3: browser download
+      }
+      try {
+        window.open(result.filled_url, "_blank");
+        setOpenState("opened");
+      } catch {
+        setOpenState("failed");
+      }
+    },
+    []
+  );
+
+  // Auto-open the filled workbook the moment the run completes.
+  const autoOpened = useRef<string | null>(null);
+  useEffect(() => {
+    if (phase.kind !== "done" || !phase.result.filled_url) return;
+    if (autoOpened.current === phase.result.filled_url) return;
+    autoOpened.current = phase.result.filled_url;
+    openFilled(phase.result, phase.template);
+  }, [phase, openFilled]);
 
   const busy = phase.kind === "reading" || phase.kind === "filling";
   const now = useNow(busy);
@@ -273,12 +312,30 @@ export default function AddinPage() {
         </div>
 
         <button
-          onClick={() => openFilled(r)}
-          disabled={!r.filled_url || opening}
+          onClick={() => openFilled(r, phase.template)}
+          disabled={!r.filled_url || openState === "opening"}
           className="mt-4 w-full rounded-lg bg-ink px-3 py-2.5 text-[13px] font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50"
         >
-          {opening ? "Opening…" : "Open filled workbook"}
+          {openState === "opening"
+            ? "Opening in Excel…"
+            : openState === "opened"
+              ? "Open again"
+              : "Open filled workbook"}
         </button>
+        {openState === "opened" && (
+          <p className="mt-2 text-center text-[11px] text-neutral-400">
+            The filled workbook opened in a new Excel window.
+          </p>
+        )}
+        {openState === "failed" && (
+          <p className="mt-2 break-words text-center text-[11px] text-red-700">
+            Could not open automatically —{" "}
+            <a href={r.filled_url ?? "#"} target="_blank" className="underline">
+              download it here
+            </a>
+            .
+          </p>
+        )}
 
         <div className="mt-3 flex items-center justify-between text-[12px]">
           <a

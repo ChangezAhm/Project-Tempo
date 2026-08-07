@@ -26,7 +26,7 @@ function SheetGrid({ sheet, scenario }: { sheet: TimeseriesSheet; scenario: stri
   const metrics = sheet.metrics ?? [];
   const hasScenario = (sheet.scenarios ?? []).includes(scenario);
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white">
+    <section className="panel overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-4 py-3">
         <h3 className="font-medium">{sheet.sheet}</h3>
         <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500">
@@ -144,9 +144,9 @@ export default function TimeseriesPage() {
     <div>
       <Link
         href={`/template/${id}`}
-        className="text-sm text-neutral-500 transition hover:text-neutral-800"
+        className="inline-flex items-center gap-1 text-sm text-neutral-400 transition hover:text-ink"
       >
-        ← Template
+        <span aria-hidden>←</span> Template
       </Link>
 
       <header className="mt-4 flex flex-wrap items-center gap-3">

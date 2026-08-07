@@ -1,10 +1,15 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Inter, Source_Serif_4 } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+});
+
+const serif = Source_Serif_4({
+  variable: "--font-serif",
   subsets: ["latin"],
 });
 
@@ -14,8 +19,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Project Tempo",
-  description: "Upload, manage, and standardise sponsor reporting templates.",
+  title: "Tempo",
+  description: "Template intelligence for sponsor reporting.",
 };
 
 export default function RootLayout({
@@ -26,26 +31,45 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${serif.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-neutral-50 text-neutral-900">
-        <header className="border-b border-neutral-200 bg-white">
-          <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
-            <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-neutral-900 text-xs font-bold text-white">
-                T
+      <body className="flex min-h-full flex-col">
+        <header className="sticky top-0 z-40 border-b border-neutral-200/80 bg-paper/85 backdrop-blur-md">
+          <div className="mx-auto flex h-15 max-w-6xl items-center gap-8 px-6">
+            <Link href="/" className="flex items-baseline gap-2">
+              <span
+                className="text-[1.35rem] font-semibold tracking-tight text-ink"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                Tempo
               </span>
-              Project Tempo
+              <span className="hidden text-[11px] font-medium uppercase tracking-[0.18em] text-neutral-400 sm:inline">
+                Template intelligence
+              </span>
             </Link>
-            <Link
-              href="/upload"
-              className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-neutral-700"
-            >
-              Upload template
-            </Link>
+            <nav className="ml-auto flex items-center gap-1">
+              <Link
+                href="/"
+                className="rounded-md px-3 py-1.5 text-sm text-neutral-600 transition hover:bg-neutral-100 hover:text-ink"
+              >
+                Library
+              </Link>
+              <Link
+                href="/upload"
+                className="ml-2 rounded-md bg-ink px-3.5 py-1.5 text-sm font-medium text-neutral-50 shadow-sm transition hover:bg-neutral-700"
+              >
+                New template
+              </Link>
+            </nav>
           </div>
         </header>
-        <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">{children}</main>
+        <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-10">{children}</main>
+        <footer className="border-t border-neutral-200/70">
+          <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5 text-xs text-neutral-400">
+            <span>Tempo</span>
+            <span>Sponsor reporting, understood.</span>
+          </div>
+        </footer>
       </body>
     </html>
   );

@@ -16,6 +16,12 @@ export type Template = {
   fileName: string;
   sizeBytes: number;
   uploadedAt: string; // ISO string
+  // Onboarding surface for the library cards: the first sheet screenshot
+  // captured by the understanding pass, plus headline understanding facts.
+  thumbnailUrl: string | null;
+  archetype: string | null;
+  understood: boolean;
+  understoodSheetCount: number;
 };
 
 export async function getTemplates(): Promise<Template[]> {
@@ -113,13 +119,46 @@ export type CriticalInput = {
   snippet_url: string | null;
 };
 
+// The full per-sheet understanding rides in a jsonb payload; the anatomy view
+// only needs the structural counts, so the type stays deliberately loose.
+export type SheetUnderstandingDetail = {
+  input_fields?: { label?: string; cells?: string[] }[];
+  metric_rows?: unknown[];
+  sections?: { title?: string; section_type?: string }[];
+  periods?: unknown[];
+} | null;
+
 export type SheetUnderstanding = {
   id: string;
   sheet_name: string;
   role: string | null;
   summary: string | null;
   snippet_url: string | null;
+  understanding?: SheetUnderstandingDetail;
 };
+
+export type DataFlowEdge = {
+  from_sheet: string;
+  to_sheet: string;
+  what: string;
+  confidence?: number;
+  graph_supported?: boolean | null;
+};
+
+export type ImpactChain = {
+  name: string;
+  start: string;
+  flows_to: string[];
+  significance: string;
+  confidence?: number;
+  graph_supported?: boolean | null;
+};
+
+export type WorkbookUnderstandingDetail = {
+  sheet_roles?: { sheet: string; role: string; one_line: string }[];
+  data_flow?: DataFlowEdge[];
+  impact_chains?: ImpactChain[];
+} | null;
 
 export type WorkbookUnderstanding = {
   archetype: string | null;
@@ -128,6 +167,7 @@ export type WorkbookUnderstanding = {
   summary: string | null;
   input_surface_sheets: string[];
   review_flags: string[];
+  understanding?: WorkbookUnderstandingDetail;
 };
 
 export type Understanding = {

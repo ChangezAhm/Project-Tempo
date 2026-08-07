@@ -9,114 +9,28 @@ import {
   getRegions,
   getReviewItems,
   getUnderstanding,
+  parseTemplate,
   populateTemplate,
   understandTemplate,
   verifyReviewItem,
-  type CriticalInput,
   type ExtensibleRegion,
   type PopulateResult,
-  type SheetUnderstanding,
   type Understanding,
 } from "@/lib/templates";
+import {
+  BackLink,
+  Badge,
+  Button,
+  EmptyState,
+  ErrorNote,
+  LinkButton,
+  Panel,
+  SectionHeader,
+  cx,
+} from "@/app/components/ui";
+import { AnatomyView, OnboardingLive } from "./anatomy";
 
-const SOURCE_STYLE: Record<string, string> = {
-  template_stated: "bg-emerald-50 text-emerald-700",
-  model_knowledge: "bg-amber-50 text-amber-700",
-  inferred: "bg-sky-50 text-sky-700",
-};
-
-const SOURCE_LABEL: Record<string, string> = {
-  template_stated: "stated in template",
-  model_knowledge: "domain knowledge",
-  inferred: "inferred from formulas",
-};
-
-function InputCard({ ci }: { ci: CriticalInput }) {
-  return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-3">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium leading-snug">{ci.label}</p>
-        {ci.needs_value ? (
-          <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-            needs value
-          </span>
-        ) : null}
-      </div>
-      <p className="mt-1 font-mono text-[11px] text-neutral-400">
-        {ci.cells.join(", ")}
-        {ci.unit ? ` · ${ci.unit}` : ""}
-      </p>
-      {ci.definition ? (
-        <p className="mt-2 text-xs text-neutral-600">{ci.definition}</p>
-      ) : null}
-      {ci.qualification_criteria ? (
-        <p className="mt-1.5 text-xs text-neutral-500">
-          <span className="font-medium text-neutral-600">Qualifies: </span>
-          {ci.qualification_criteria}
-        </p>
-      ) : null}
-      {ci.expected_source ? (
-        <p className="mt-1.5 text-xs text-neutral-500">
-          <span className="font-medium text-neutral-600">Source: </span>
-          {ci.expected_source}
-        </p>
-      ) : null}
-      {ci.interpretation_source ? (
-        <span
-          className={`mt-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
-            SOURCE_STYLE[ci.interpretation_source] ?? "bg-neutral-100 text-neutral-600"
-          }`}
-        >
-          {SOURCE_LABEL[ci.interpretation_source] ?? ci.interpretation_source}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-function SheetPanel({
-  sheet,
-  inputs,
-}: {
-  sheet: SheetUnderstanding;
-  inputs: CriticalInput[];
-}) {
-  return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <h3 className="font-medium">{sheet.sheet_name}</h3>
-        {sheet.role ? (
-          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500">
-            {sheet.role}
-          </span>
-        ) : null}
-      </div>
-      {sheet.summary ? (
-        <p className="mb-3 text-sm text-neutral-600">{sheet.summary}</p>
-      ) : null}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {sheet.snippet_url ? (
-          <a href={sheet.snippet_url} target="_blank" rel="noreferrer" className="block">
-            <img
-              src={sheet.snippet_url}
-              alt={`${sheet.sheet_name} input area`}
-              className="w-full rounded-lg border border-neutral-200 bg-neutral-50"
-            />
-          </a>
-        ) : null}
-        {inputs.length > 0 ? (
-          <div className="space-y-2.5">
-            {inputs.map((ci) => (
-              <InputCard key={ci.id} ci={ci} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-neutral-400">No distinct input areas captured for this sheet.</p>
-        )}
-      </div>
-    </section>
-  );
-}
+/* --- Populate --------------------------------------------------------------- */
 
 function PopulatePanel({ templateId }: { templateId: string }) {
   const [asOf, setAsOf] = useState("");
@@ -158,41 +72,39 @@ function PopulatePanel({ templateId }: { templateId: string }) {
   }
 
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-4">
+    <Panel className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-medium">Populate this template</h2>
-          <p className="mt-1 text-xs text-neutral-500">
-            Drop a portfolio company’s data file and it fills this template’s inputs. The file isn’t saved as a template.
-          </p>
-        </div>
+        <SectionHeader
+          title="Populate"
+          hint="Drop a portfolio company's data file — Tempo fills this template's inputs."
+        />
         <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs text-neutral-600">
-            As-of date (optional)
+          <label className="text-xs text-neutral-500">
+            As-of date
             <input
               type="date"
               value={asOf}
               onChange={(e) => setAsOf(e.target.value)}
-              className="mt-1 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="mt-1 block rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm"
             />
           </label>
-          <label className="text-xs text-neutral-600">
+          <label className="text-xs text-neutral-500">
             Refresh
             <select
               value={reset}
               onChange={(e) => setReset(e.target.value as "values" | "full")}
-              className="mt-1 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="mt-1 block rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm"
             >
               <option value="values">Standard clear</option>
               <option value="full">Full reset</option>
             </select>
           </label>
-          <label className="text-xs text-neutral-600">
+          <label className="text-xs text-neutral-500">
             New line items
             <select
               value={addLines}
               onChange={(e) => setAddLines(e.target.value as "off" | "propose" | "apply")}
-              className="mt-1 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              className="mt-1 block rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm"
             >
               <option value="propose">Propose only</option>
               <option value="apply">Apply</option>
@@ -215,11 +127,13 @@ function PopulatePanel({ templateId }: { templateId: string }) {
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
-        className={`mt-3 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition ${
+        className={cx(
+          "mt-4 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition",
           dragging
-            ? "border-neutral-900 bg-neutral-50"
-            : "border-neutral-300 hover:border-neutral-400 hover:bg-neutral-50/50"
-        } ${running ? "pointer-events-none opacity-60" : ""}`}
+            ? "border-ink bg-neutral-50"
+            : "border-neutral-300 hover:border-neutral-400 hover:bg-neutral-50/60",
+          running && "pointer-events-none opacity-60"
+        )}
       >
         <input
           ref={inputRef}
@@ -235,17 +149,19 @@ function PopulatePanel({ templateId }: { templateId: string }) {
         {running ? (
           <>
             <p className="text-sm font-medium text-neutral-700">Populating from {fileName}…</p>
-            <p className="mt-1 text-xs text-neutral-500">Reading the file and matching it to this template — a few minutes.</p>
+            <p className="mt-1 text-xs text-neutral-500">
+              Matching the file to this template — a few minutes.
+            </p>
           </>
         ) : (
           <>
             <p className="text-sm font-medium text-neutral-700">Drop an Excel file here</p>
-            <p className="mt-1 text-xs text-neutral-500">or click to choose · .xlsx, .xlsm, .xls</p>
+            <p className="mt-1 text-xs text-neutral-400">or click to choose · .xlsx, .xlsm, .xls</p>
           </>
         )}
       </div>
 
-      {error ? <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p> : null}
+      {error ? <div className="mt-3"><ErrorNote>{error}</ErrorNote></div> : null}
 
       {result ? (
         <div className="mt-4 space-y-3">
@@ -253,7 +169,7 @@ function PopulatePanel({ templateId }: { templateId: string }) {
             <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">{result.routing.hint}</p>
           ) : null}
           {result.additions_applied?.length ? (
-            <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            <p className="rounded-md bg-role-input-soft px-3 py-2 text-sm text-role-input">
               {result.additions_applied.length} new line item{result.additions_applied.length === 1 ? "" : "s"} written:{" "}
               {result.additions_applied
                 .map((a) => `${a.sheet_name} row ${a.row} — ${a.label} (${a.cells_written} cells)`)
@@ -264,7 +180,7 @@ function PopulatePanel({ templateId }: { templateId: string }) {
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               <p className="font-medium">
                 {result.rule_violations.length} fill{result.rule_violations.length === 1 ? "" : "s"} contradict the
-                template&apos;s sign conventions (written, flagged for review — also filed as questions):
+                template&apos;s sign conventions (written, flagged for review):
               </p>
               <ul className="mt-1 space-y-0.5 text-xs">
                 {result.rule_violations.slice(0, 8).map((v, i) => (
@@ -276,39 +192,39 @@ function PopulatePanel({ templateId }: { templateId: string }) {
               </ul>
             </div>
           ) : null}
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">{result.summary.filled} filled</span>
-            <span className="rounded bg-amber-50 px-2 py-1 text-amber-700">{result.cleared_count} cleared</span>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Badge tone="green" className="px-2.5 py-1 text-xs">{result.summary.filled} filled</Badge>
+            <Badge tone="warn" className="px-2.5 py-1 text-xs">{result.cleared_count} cleared</Badge>
             {result.cleared_values != null ? (
-              <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.cleared_values} values cleared</span>
+              <Badge className="px-2.5 py-1 text-xs">{result.cleared_values} values cleared</Badge>
             ) : null}
             {result.cleared_formulas != null ? (
-              <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.cleared_formulas} formulas cleared</span>
+              <Badge className="px-2.5 py-1 text-xs">{result.cleared_formulas} formulas cleared</Badge>
             ) : null}
-            <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.unmatched_count} unmatched</span>
-            <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.skipped_count} skipped</span>
-            <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-600">{result.links_count} links</span>
+            <Badge className="px-2.5 py-1 text-xs">{result.unmatched_count} unmatched</Badge>
+            <Badge className="px-2.5 py-1 text-xs">{result.skipped_count} skipped</Badge>
+            <Badge className="px-2.5 py-1 text-xs">{result.links_count} links</Badge>
             {result.filled_url ? (
-              <a href={result.filled_url} className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700">
+              <a href={result.filled_url} className="ml-auto rounded-md bg-ink px-3 py-1.5 text-xs font-medium text-neutral-50 transition hover:bg-neutral-700">
                 Download filled workbook
               </a>
             ) : null}
             {result.audit_url ? (
-              <a href={result.audit_url} className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
-                Download audit (JSON)
+              <a href={result.audit_url} className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50">
+                Audit (JSON)
               </a>
             ) : null}
           </div>
           {result.filled.length > 0 ? (
-            <div className="max-h-80 overflow-auto rounded-md border border-neutral-200">
+            <div className="tempo-scroll max-h-80 overflow-auto rounded-md border border-neutral-200">
               <table className="w-full text-left text-xs">
                 <thead className="sticky top-0 bg-neutral-50 text-neutral-500">
                   <tr>
-                    <th className="px-2 py-1">template cell</th>
-                    <th className="px-2 py-1">← source</th>
-                    <th className="px-2 py-1">value</th>
-                    <th className="px-2 py-1">metric</th>
-                    <th className="px-2 py-1">period · scenario</th>
+                    <th className="px-2 py-1.5 font-medium">template cell</th>
+                    <th className="px-2 py-1.5 font-medium">← source</th>
+                    <th className="px-2 py-1.5 font-medium">value</th>
+                    <th className="px-2 py-1.5 font-medium">metric</th>
+                    <th className="px-2 py-1.5 font-medium">period · scenario</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -325,7 +241,9 @@ function PopulatePanel({ templateId }: { templateId: string }) {
               </table>
             </div>
           ) : (
-            <p className="text-sm text-neutral-500">Nothing matched — check the source has the metrics this template needs.</p>
+            <p className="text-sm text-neutral-500">
+              Nothing matched — check the source has the metrics this template needs.
+            </p>
           )}
           {result.proposed_additions?.length ? (
             <div className="rounded-md border border-neutral-200">
@@ -335,11 +253,11 @@ function PopulatePanel({ templateId }: { templateId: string }) {
               <table className="w-full text-left text-xs">
                 <thead className="text-neutral-500">
                   <tr>
-                    <th className="px-2 py-1">Sheet</th>
-                    <th className="px-2 py-1">Row</th>
-                    <th className="px-2 py-1">Label</th>
-                    <th className="px-2 py-1">Unit</th>
-                    <th className="px-2 py-1">#values</th>
+                    <th className="px-2 py-1 font-medium">Sheet</th>
+                    <th className="px-2 py-1 font-medium">Row</th>
+                    <th className="px-2 py-1 font-medium">Label</th>
+                    <th className="px-2 py-1 font-medium">Unit</th>
+                    <th className="px-2 py-1 font-medium">#values</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -372,7 +290,7 @@ function PopulatePanel({ templateId }: { templateId: string }) {
               {result.unmapped_metrics?.length ? (
                 <p className="mt-2 text-xs text-neutral-500">
                   <span className="font-medium text-neutral-600">
-                    This source has no data for {result.unmapped_metrics.length} template metric
+                    No source data for {result.unmapped_metrics.length} template metric
                     {result.unmapped_metrics.length === 1 ? "" : "s"}:{" "}
                   </span>
                   {result.unmapped_metrics.slice(0, 20).join(" · ")}
@@ -383,14 +301,15 @@ function PopulatePanel({ templateId }: { templateId: string }) {
           ) : null}
         </div>
       ) : null}
-    </section>
+    </Panel>
   );
 }
 
-// Inline one-tap clarification panel — the questions appear HERE, right after
-// understanding finishes, instead of hiding behind a chip → second screen →
-// free-text box. Machine-checkable items are auto-verified on load so only
-// human-judgment questions remain. Best-effort: hidden on any load failure.
+/* --- Open questions --------------------------------------------------------- */
+
+// Inline one-tap clarification panel — machine-checkable items are
+// auto-verified on load so only human-judgment questions remain.
+// Best-effort: hidden on any load failure.
 function OpenQuestionsPanel({
   templateId,
   refreshKey,
@@ -450,55 +369,52 @@ function OpenQuestionsPanel({
   if (!items || items.length === 0) return null;
   const shown = items.slice(0, 5);
   return (
-    <section className="rounded-xl border border-amber-200 bg-amber-50/40 p-4">
-      <div className="flex items-center gap-2">
-        <h2 className="text-sm font-semibold text-amber-900">
+    <Panel className="border-role-calc/25 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-base">
           {items.length} question{items.length === 1 ? "" : "s"} for you
         </h2>
-        <p className="text-xs text-amber-700">One tap each — answers persist and improve every future run.</p>
+        <p className="text-xs text-neutral-400">Answers persist and improve every future run.</p>
         <Link
           href={`/template/${templateId}/contract`}
-          className="ml-auto text-xs font-medium text-amber-800 underline hover:text-amber-900"
+          className="ml-auto text-xs font-medium text-neutral-500 underline decoration-neutral-300 underline-offset-2 transition hover:text-ink"
         >
           See all →
         </Link>
       </div>
-      <ul className="mt-3 space-y-2">
+      <ul className="mt-3 grid gap-2 lg:grid-cols-2">
         {shown.map((q) => (
-          <li key={q.id} className="rounded-lg border border-amber-200/70 bg-white p-3">
+          <li key={q.id} className="rounded-lg border border-neutral-200 bg-neutral-50/60 p-3">
             <p className="text-sm leading-snug">{q.question}</p>
             {q.suggested_answer ? (
               <p className="mt-1 text-xs text-neutral-500">Suggested: {q.suggested_answer}</p>
             ) : null}
             <div className="mt-2 flex flex-wrap gap-2">
               {q.suggested_answer ? (
-                <button
+                <Button
+                  variant="positive"
+                  size="xs"
                   onClick={() => void answer(q.id, q.suggested_answer!)}
                   disabled={busy === q.id}
-                  className="rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-emerald-500 disabled:opacity-50"
                 >
                   {busy === q.id ? "Saving…" : "Yes — confirm"}
-                </button>
+                </Button>
               ) : null}
-              <Link
-                href={`/template/${templateId}/contract`}
-                className="rounded-md border border-neutral-300 px-2.5 py-1 text-[11px] font-medium text-neutral-600 transition hover:bg-neutral-50"
-              >
+              <LinkButton href={`/template/${templateId}/contract`} variant="secondary" size="xs">
                 {q.suggested_answer ? "No / different…" : "Answer…"}
-              </Link>
+              </LinkButton>
             </div>
           </li>
         ))}
       </ul>
       {items.length > shown.length ? (
-        <p className="mt-2 text-xs text-amber-700">+{items.length - shown.length} more in the inbox.</p>
+        <p className="mt-2 text-xs text-neutral-400">+{items.length - shown.length} more in the inbox.</p>
       ) : null}
-    </section>
+    </Panel>
   );
 }
 
-// Small header chip linking to the contract page's Questions inbox. Hidden
-// silently when the count can't load — no error noise on the main page.
+// Small header chip linking to the contract page's Questions inbox.
 function OpenQuestionsChip({ templateId }: { templateId: string }) {
   const [openCount, setOpenCount] = useState<number | null>(null);
 
@@ -516,14 +432,15 @@ function OpenQuestionsChip({ templateId }: { templateId: string }) {
 
   if (!openCount) return null;
   return (
-    <Link
-      href={`/template/${templateId}/contract`}
-      className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 transition hover:bg-amber-100"
-    >
-      {openCount} open question{openCount === 1 ? "" : "s"}
+    <Link href={`/template/${templateId}/contract`}>
+      <Badge tone="warn" className="px-2.5 py-1 text-xs transition hover:bg-amber-100">
+        {openCount} open question{openCount === 1 ? "" : "s"}
+      </Badge>
     </Link>
   );
 }
+
+/* --- Extensible regions ----------------------------------------------------- */
 
 function formatRules(rules: unknown): string | null {
   if (rules == null) return null;
@@ -570,34 +487,25 @@ function RegionsPanel({ templateId }: { templateId: string }) {
   }
 
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-medium">Extensible regions</h2>
-          <p className="mt-1 text-xs text-neutral-500">
-            Areas of the template where new line items can be inserted during population.
-          </p>
-        </div>
-        <button
-          onClick={handleDetect}
-          disabled={detecting}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
-        >
+    <Panel className="p-5">
+      <SectionHeader
+        title="Extensible regions"
+        hint="Where new line items may be inserted during population."
+      >
+        <Button variant="secondary" onClick={handleDetect} disabled={detecting}>
           {detecting
             ? "Detecting… (may take a minute)"
             : regions?.length
-              ? "Re-detect regions"
-              : "Detect extensible regions"}
-        </button>
-      </div>
+              ? "Re-detect"
+              : "Detect regions"}
+        </Button>
+      </SectionHeader>
 
-      {error ? (
-        <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
-      ) : null}
+      {error ? <div className="mt-3"><ErrorNote>{error}</ErrorNote></div> : null}
 
       {loadError ? (
         <p className="mt-3 text-sm text-neutral-500">
-          Couldn’t load regions ({loadError}).{" "}
+          Couldn&apos;t load regions ({loadError}).{" "}
           <button onClick={() => void load()} className="font-medium text-neutral-700 underline">
             Retry
           </button>
@@ -605,9 +513,7 @@ function RegionsPanel({ templateId }: { templateId: string }) {
       ) : regions === null ? (
         <p className="mt-3 text-sm text-neutral-400">Loading…</p>
       ) : regions.length === 0 ? (
-        <p className="mt-3 text-sm text-neutral-400">
-          No extensible regions detected yet — run detection to find them.
-        </p>
+        <p className="mt-3 text-sm text-neutral-400">None detected yet.</p>
       ) : (
         <ul className="mt-3 space-y-2">
           {regions.map((r, i) => {
@@ -623,11 +529,7 @@ function RegionsPanel({ templateId }: { templateId: string }) {
               <li key={r.id ?? i} className="rounded-lg border border-neutral-200 p-3">
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="font-medium">{r.sheet_name}</span>
-                  {r.kind ? (
-                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500">
-                      {r.kind}
-                    </span>
-                  ) : null}
+                  {r.kind ? <Badge>{r.kind}</Badge> : null}
                   <span className="font-mono text-xs text-neutral-400">
                     rows {r.row_start}–{r.row_end}
                   </span>
@@ -658,9 +560,11 @@ function RegionsPanel({ templateId }: { templateId: string }) {
           })}
         </ul>
       )}
-    </section>
+    </Panel>
   );
 }
+
+/* --- Page ------------------------------------------------------------------- */
 
 export default function TemplatePage() {
   const { id } = useParams<{ id: string }>();
@@ -672,6 +576,13 @@ export default function TemplatePage() {
   const [running, setRunning] = useState(false);
   const [ready, setReady] = useState(false);
   const [questionsRefresh, setQuestionsRefresh] = useState(0);
+  // Live-onboarding state: sheet names from the fast structural parse, and
+  // whether the anatomy should play its build-in animation (run just landed).
+  const [parsedSheets, setParsedSheets] = useState<string[] | null>(null);
+  const [startedAt, setStartedAt] = useState(0);
+  const [buildAnimation, setBuildAnimation] = useState(false);
+  const finishedRef = useRef(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -686,6 +597,9 @@ export default function TemplatePage() {
 
   useEffect(() => {
     void load();
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, [load]);
 
   function handleRetryLoad() {
@@ -697,146 +611,145 @@ export default function TemplatePage() {
   async function handleRun() {
     setRunning(true);
     setError(null);
+    setBuildAnimation(false);
+    setStartedAt(Date.now());
+    finishedRef.current = false;
+
+    const firstRun = !data?.available;
+
+    // Fast structural parse → real sheet names for the reading state.
+    parseTemplate(id)
+      .then((s) =>
+        setParsedSheets(s.sheets.filter((x) => !x.is_hidden).map((x) => x.name))
+      )
+      .catch(() => setParsedSheets(null));
+
+    // The understanding persists at the END of the long call. On a first run we
+    // also poll — if the held connection drops, the result still lands.
+    const finish = async () => {
+      if (finishedRef.current) return;
+      finishedRef.current = true;
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      await load();
+      setBuildAnimation(true); // animate the real structure building in
+      setRunning(false);
+      setQuestionsRefresh((k) => k + 1);
+    };
+
+    if (firstRun) {
+      pollRef.current = setInterval(async () => {
+        try {
+          const probe = await getUnderstanding(id);
+          if (probe.available) void finish();
+        } catch {
+          /* keep polling */
+        }
+      }, 10_000);
+    }
+
     try {
       await understandTemplate(id);
-      await load();
-      setQuestionsRefresh((k) => k + 1);   // surface fresh questions immediately
+      await finish();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Understanding failed");
-    } finally {
-      setRunning(false);
+      if (!finishedRef.current) {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+        setError(e instanceof Error ? e.message : "Understanding failed");
+        setRunning(false);
+      }
     }
   }
 
   const wb = data?.workbook;
-  const inputsBySheet = (data?.critical_inputs ?? []).reduce<Record<string, CriticalInput[]>>(
-    (acc, ci) => {
-      (acc[ci.sheet_name] ??= []).push(ci);
-      return acc;
-    },
-    {}
-  );
-  // Sheets with content first (input surface, then those with captured inputs).
-  const sheets = [...(data?.sheets ?? [])].sort((a, b) => {
-    const aw = (inputsBySheet[a.sheet_name]?.length ?? 0) > 0 ? 0 : 1;
-    const bw = (inputsBySheet[b.sheet_name]?.length ?? 0) > 0 ? 0 : 1;
-    return aw - bw;
-  });
 
   return (
     <div>
-      <Link href="/" className="text-sm text-neutral-500 transition hover:text-neutral-800">
-        ← Template library
-      </Link>
+      <BackLink href="/">Library</BackLink>
 
-      {error ? (
-        <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
-      ) : null}
+      {error ? <div className="mt-4"><ErrorNote>{error}</ErrorNote></div> : null}
 
       {!ready ? (
-        <p className="mt-8 text-sm text-neutral-400">Loading…</p>
+        <div className="mt-8 space-y-4">
+          <div className="shimmer h-8 w-72 rounded" />
+          <div className="shimmer h-40 w-full rounded-xl" />
+        </div>
+      ) : running ? (
+        <div className="mt-6">
+          <header className="mb-6 flex items-center gap-3">
+            <h1 className="text-[1.9rem] leading-tight">Onboarding this template</h1>
+          </header>
+          <OnboardingLive sheetNames={parsedSheets} startedAt={startedAt} />
+        </div>
       ) : loadError ? (
-        <div className="mt-8 flex flex-col items-center justify-center rounded-xl border border-dashed border-red-200 bg-white px-6 py-16 text-center">
-          <h2 className="text-base font-medium">Couldn’t reach the analysis service</h2>
-          <p className="mt-1 max-w-md text-sm text-neutral-500">
-            The template’s understanding couldn’t be loaded — the analysis service may be down.
-            This doesn’t mean the template hasn’t been analysed.
-          </p>
-          <p className="mt-2 max-w-md text-xs text-neutral-400">{loadError}</p>
-          <button
-            onClick={handleRetryLoad}
-            className="mt-5 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700"
+        <div className="mt-8">
+          <EmptyState
+            title="Couldn't reach the analysis service"
+            body="The template's understanding couldn't be loaded — the analysis service may be down. This doesn't mean the template hasn't been analysed."
           >
-            Retry
-          </button>
+            <p className="mb-4 text-xs text-neutral-400">{loadError}</p>
+            <Button variant="primary" size="md" onClick={handleRetryLoad}>
+              Retry
+            </Button>
+          </EmptyState>
         </div>
       ) : !data?.available ? (
-        <div className="mt-8 flex flex-col items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-white px-6 py-16 text-center">
-          <h2 className="text-base font-medium">Not analysed yet</h2>
-          <p className="mt-1 max-w-md text-sm text-neutral-500">
-            Run the understanding pass to extract this template’s purpose, its critical input
-            areas, and snippets of where the portfolio company fills in data. Takes a few minutes.
+        <div className="mt-16 flex flex-col items-center text-center">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-neutral-400">
+            New template
           </p>
-          <button
+          <h1 className="mt-2 max-w-xl text-[2.1rem] leading-tight">
+            Let Tempo read this workbook
+          </h1>
+          <p className="mt-3 max-w-md text-sm text-neutral-500">
+            Every sheet studied, inputs and calculations mapped, structure built. A few minutes.
+          </p>
+          <Button
+            variant="primary"
+            size="md"
+            className="mt-7 px-6"
             onClick={handleRun}
             disabled={running}
-            className="mt-5 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50"
           >
-            {running ? "Analysing… (a few minutes)" : "Understand template"}
-          </button>
+            Begin onboarding
+          </Button>
         </div>
       ) : (
         <div className="mt-4 space-y-6">
-          <header>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">
-                {wb?.archetype ?? "Template understanding"}
-              </h1>
-              <div className="ml-auto flex items-center gap-2">
-                <OpenQuestionsChip templateId={id} />
-                <Link
-                  href={`/template/${id}/timeseries`}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50"
-                >
-                  Time series →
-                </Link>
-                <Link
-                  href={`/template/${id}/contract`}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50"
-                >
-                  Review contract →
-                </Link>
-                <button
-                  onClick={handleRun}
-                  disabled={running}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
-                >
-                  {running ? "Re-analysing…" : "Re-run"}
-                </button>
-              </div>
-            </div>
-            {wb?.purpose ? <p className="mt-1 text-sm text-neutral-600">{wb.purpose}</p> : null}
-            {wb?.audience ? (
-              <p className="mt-0.5 text-xs text-neutral-400">Audience: {wb.audience}</p>
-            ) : null}
-            {wb?.summary ? (
-              <p className="mt-3 max-w-3xl text-sm leading-relaxed text-neutral-700">{wb.summary}</p>
-            ) : null}
-            {wb?.input_surface_sheets?.length ? (
-              <p className="mt-3 text-xs text-neutral-500">
-                <span className="font-medium text-neutral-600">Input sheets: </span>
-                {wb.input_surface_sheets.join(", ")}
+          <header className="flex flex-wrap items-end gap-3">
+            <div className="min-w-0">
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">
+                Template
               </p>
-            ) : null}
+              <h1 className="text-[1.9rem] leading-tight">
+                {wb?.archetype ?? "Workbook"}
+              </h1>
+            </div>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <OpenQuestionsChip templateId={id} />
+              <LinkButton href={`/template/${id}/timeseries`} variant="secondary">
+                Time series
+              </LinkButton>
+              <LinkButton href={`/template/${id}/contract`} variant="secondary">
+                Contract
+              </LinkButton>
+              <Button variant="ghost" onClick={handleRun} disabled={running}>
+                Re-run
+              </Button>
+            </div>
           </header>
 
           <OpenQuestionsPanel templateId={id} refreshKey={questionsRefresh} />
 
+          <AnatomyView data={data} animate={buildAnimation} />
+
           <PopulatePanel templateId={id} />
 
-          {wb?.review_flags?.length ? (
-            <section className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-              <h2 className="text-sm font-semibold text-amber-800">Needs human review</h2>
-              <ul className="mt-2 space-y-1.5">
-                {wb.review_flags.map((f, i) => (
-                  <li key={i} className="text-xs text-amber-700">
-                    • {f}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-
           <RegionsPanel templateId={id} />
-
-          <div>
-            <h2 className="mb-3 text-lg font-medium">Critical input areas</h2>
-            <div className="space-y-4">
-              {sheets.map((s) => (
-                <SheetPanel key={s.id} sheet={s} inputs={inputsBySheet[s.sheet_name] ?? []} />
-              ))}
-            </div>
-          </div>
         </div>
       )}
     </div>

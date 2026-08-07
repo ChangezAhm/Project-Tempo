@@ -1,26 +1,205 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ---------------------------------------------------------------------------
+   Tempo design system — restrained ink/ivory palette (Harvey/Legora register).
+   The neutral scale is overridden with warm stone-ink values so every page
+   (including ones styled with stock `neutral-*` classes) sits in the same
+   palette. Display type is a quality serif; body/UI is Inter.
+--------------------------------------------------------------------------- */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@theme {
+  /* Warm ink/ivory neutrals (replaces Tailwind's cool neutral scale) */
+  --color-neutral-50: #faf9f5;
+  --color-neutral-100: #f2f0e9;
+  --color-neutral-200: #e7e3d8;
+  --color-neutral-300: #d4cfc0;
+  --color-neutral-400: #a8a294;
+  --color-neutral-500: #7c766a;
+  --color-neutral-600: #5c564b;
+  --color-neutral-700: #443f37;
+  --color-neutral-800: #2d2a24;
+  --color-neutral-900: #1c1915;
+  --color-neutral-950: #131110;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-paper: #f6f4ee;
+  --color-ink: #1c1915;
+
+  /* Sheet-role accents (dependency graph, badges) — muted, editorial */
+  --color-role-input: #3e6b51;
+  --color-role-input-soft: #e9f0e9;
+  --color-role-calc: #8a6a35;
+  --color-role-calc-soft: #f4ecda;
+  --color-role-output: #47567e;
+  --color-role-output-soft: #e9ecf4;
+  --color-role-ref: #857e70;
+  --color-role-ref-soft: #efece4;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-serif), ui-serif, Georgia, serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --shadow-card: 0 1px 2px rgb(28 25 21 / 0.04), 0 1px 1px rgb(28 25 21 / 0.03);
+  --shadow-lift: 0 6px 24px -8px rgb(28 25 21 / 0.14), 0 2px 6px rgb(28 25 21 / 0.05);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Editorial display type for all page + section headings. */
+h1,
+h2 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+::selection {
+  background: #e7e3d8;
+}
+
+/* ---------------------------------------------------------------------------
+   Motion — subtle, professional. Everything respects reduced-motion.
+--------------------------------------------------------------------------- */
+
+@keyframes tempo-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tempo-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tempo-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes tempo-shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* SVG edge draw-in: paths use pathLength=1 so dash math is uniform. */
+@keyframes tempo-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Continuous directional flow along an edge (dashed overlay). */
+@keyframes tempo-flow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes tempo-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+.animate-fade-up {
+  animation: tempo-fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-fade-in {
+  animation: tempo-fade-in 0.5s ease both;
+}
+
+.animate-scale-in {
+  animation: tempo-scale-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-breathe {
+  animation: tempo-breathe 2.4s ease-in-out infinite;
+}
+
+.edge-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: tempo-draw 0.9s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.edge-flow {
+  stroke-dasharray: 3 5;
+  animation: tempo-flow 1.4s linear infinite;
+}
+
+/* Reading shimmer for skeletons while the workbook is being studied. */
+.shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--color-neutral-100) 40%,
+    #ffffff 50%,
+    var(--color-neutral-100) 60%
+  );
+  background-size: 200% 100%;
+  animation: tempo-shimmer 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .animate-fade-in,
+  .animate-scale-in,
+  .animate-breathe,
+  .edge-draw,
+  .edge-flow,
+  .shimmer {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Shared chrome
+--------------------------------------------------------------------------- */
+
+.panel {
+  background: #ffffff;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: 0.85rem;
+  box-shadow: var(--shadow-card);
+}
+
+/* Thin, warm scrollbars for internal scrollers */
+.tempo-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-neutral-300) transparent;
 }

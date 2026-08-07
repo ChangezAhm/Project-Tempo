@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { formatSize, uploadTemplate } from "@/lib/templates";
+import { BackLink, Button, ErrorNote, cx } from "@/app/components/ui";
 
 const ACCEPT = ".xlsx,.xls,.xlsm";
 
@@ -49,14 +50,14 @@ export default function UploadPage() {
 
   return (
     <div className="mx-auto max-w-xl">
-      <Link href="/" className="text-sm text-neutral-400 transition hover:text-neutral-700">
-        ← Back to library
-      </Link>
+      <BackLink href="/">Library</BackLink>
 
-      <h1 className="mt-4 text-2xl font-semibold tracking-tight">Upload template</h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        Add a sponsor Excel template to the library.
-      </p>
+      <div className="mt-6">
+        <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">
+          New template
+        </p>
+        <h1 className="text-[1.9rem] leading-tight">Upload a template</h1>
+      </div>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-6">
         <div
@@ -67,11 +68,12 @@ export default function UploadPage() {
           }}
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
-          className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-12 text-center transition ${
+          className={cx(
+            "flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-12 text-center transition",
             dragging
-              ? "border-neutral-900 bg-neutral-100"
+              ? "border-ink bg-neutral-100"
               : "border-neutral-300 bg-white hover:border-neutral-400"
-          }`}
+          )}
         >
           <input
             ref={inputRef}
@@ -82,7 +84,7 @@ export default function UploadPage() {
           />
           {file ? (
             <>
-              <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-sm font-semibold text-emerald-600">
+              <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-role-input-soft text-xs font-semibold text-role-input">
                 XLS
               </div>
               <p className="mt-3 font-medium">{file.name}</p>
@@ -110,7 +112,7 @@ export default function UploadPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Monthly Flash Report"
-            className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-neutral-900"
+            className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-ink"
           />
         </div>
 
@@ -124,25 +126,19 @@ export default function UploadPage() {
             onChange={(e) => setNote(e.target.value)}
             rows={3}
             placeholder="Notes the system should remember about this template…"
-            className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-neutral-900"
+            className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-ink"
           />
         </div>
 
-        {error ? (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
-        ) : null}
+        {error ? <ErrorNote>{error}</ErrorNote> : null}
 
         <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={!file || uploading}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
-          >
+          <Button type="submit" variant="primary" size="md" disabled={!file || uploading}>
             {uploading ? "Uploading…" : "Add to library"}
-          </button>
+          </Button>
           <Link
             href="/"
-            className="rounded-md px-4 py-2 text-sm font-medium text-neutral-500 transition hover:text-neutral-900"
+            className="rounded-md px-4 py-2 text-sm font-medium text-neutral-500 transition hover:text-ink"
           >
             Cancel
           </Link>

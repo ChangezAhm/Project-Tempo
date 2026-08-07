@@ -6,6 +6,8 @@ import { createAdminClient } from "@/utils/supabase/admin";
 // key so RLS can be locked down (supabase/migrations/0007_lock_rls.sql).
 
 const BUCKET = "template-files";
+// Sheet screenshots rendered by the understanding pass live here (private).
+const SNIPPET_BUCKET = "template-snippets";
 
 // Shape of the nested select we read back from Supabase.
 type RawTemplateRow = {
@@ -21,8 +23,29 @@ type RawTemplateRow = {
       size_bytes: number;
       created_at: string;
     }[];
+    // one-to-one embed (unique FK): PostgREST returns an object, but be
+    // tolerant of the array shape too.
+    template_understanding:
+      | { archetype: string | null }
+      | { archetype: string | null }[]
+      | null;
+    template_sheet_understanding: {
+      sheet_name: string;
+      role: string | null;
+      snippet_path: string | null;
+    }[];
   }[];
 };
+
+// Pick the sheet whose screenshot fronts the library card: the first input
+// sheet with a snippet, falling back to any sheet with one.
+function thumbnailPath(
+  sheets: RawTemplateRow["template_versions"][number]["template_sheet_understanding"]
+): string | null {
+  const withSnippet = sheets.filter((s) => s.snippet_path);
+  const input = withSnippet.find((s) => s.role === "input");
+  return (input ?? withSnippet[0])?.snippet_path ?? null;
+}
 
 function sanitizeKey(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -41,7 +64,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("templates")
     .select(
-      "id, name, sponsor_name, note, created_at, template_versions(version_number, template_files(original_filename, size_bytes, created_at))"
+      "id, name, sponsor_name, note, created_at, template_versions(version_number, template_files(original_filename, size_bytes, created_at), template_understanding(archetype), template_sheet_understanding(sheet_name, role, snippet_path))"
     )
     .order("created_at", { ascending: false });
 
@@ -49,11 +72,12 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const templates = ((data as RawTemplateRow[] | null) ?? []).map((row) => {
+  const rows = ((data as RawTemplateRow[] | null) ?? []).map((row) => {
     const latestVersion = [...row.template_versions].sort(
       (a, b) => b.version_number - a.version_number
     )[0];
     const file = latestVersion?.template_files?.[0];
+    const sheets = latestVersion?.template_sheet_understanding ?? [];
     return {
       id: row.id,
       name: row.name,
@@ -62,8 +86,32 @@ export async function GET() {
       fileName: file?.original_filename ?? "—",
       sizeBytes: file?.size_bytes ?? 0,
       uploadedAt: file?.created_at ?? row.created_at,
+      archetype: (() => {
+        const u = latestVersion?.template_understanding;
+        return (Array.isArray(u) ? u[0]?.archetype : u?.archetype) ?? null;
+      })(),
+      understood: sheets.length > 0,
+      understoodSheetCount: sheets.length,
+      snippetPath: thumbnailPath(sheets),
     };
   });
+
+  // Sign every card thumbnail in one round trip (private bucket).
+  const paths = [...new Set(rows.map((r) => r.snippetPath).filter((p): p is string => !!p))];
+  const signed = new Map<string, string>();
+  if (paths.length > 0) {
+    const { data: urls } = await supabase.storage
+      .from(SNIPPET_BUCKET)
+      .createSignedUrls(paths, 3600);
+    for (const u of urls ?? []) {
+      if (u.path && u.signedUrl && !u.error) signed.set(u.path, u.signedUrl);
+    }
+  }
+
+  const templates = rows.map(({ snippetPath, ...rest }) => ({
+    ...rest,
+    thumbnailUrl: snippetPath ? signed.get(snippetPath) ?? null : null,
+  }));
 
   return NextResponse.json(templates);
 }

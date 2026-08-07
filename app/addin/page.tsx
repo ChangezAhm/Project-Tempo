@@ -3,6 +3,7 @@
 // Tempo task pane — runs inside Excel (sideloaded manifest points here).
 // Flow: pick an onboarded template → the OPEN workbook is serialized in place
 // via Office.js → parser populates → the filled workbook opens as a new file.
+// Designed for a ~320px pane: row list, truncation everywhere, staged progress.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -26,7 +27,6 @@ type PopulateResult = {
   reconciled_count: number;
   open_questions_count: number;
   review_count: number;
-  additions_applied?: unknown[];
   filled_url: string | null;
   error?: string;
 };
@@ -35,28 +35,49 @@ type Phase =
   | { kind: "boot" }
   | { kind: "no-office" }
   | { kind: "ready" }
-  | { kind: "reading"; template: TemplateCard }
+  | { kind: "reading"; template: TemplateCard; startedAt: number }
   | { kind: "filling"; template: TemplateCard; startedAt: number }
   | { kind: "done"; template: TemplateCard; result: PopulateResult }
   | { kind: "error"; message: string };
 
 const OFFICE_JS = "https://appsforoffice.microsoft.com/lib/1/hosted/office.js";
 
-function useElapsed(active: boolean, since: number | null) {
+// Elapsed-driven stages for the (single-shot) populate call — honest about
+// what the engine is doing, unmistakable that work is happening.
+const STAGES: { at: number; label: string }[] = [
+  { at: 0, label: "Reading your workbook" },
+  { at: 4, label: "Understanding your data" },
+  { at: 100, label: "Mapping series onto the template" },
+  { at: 200, label: "Verifying and writing the file" },
+];
+
+function useNow(active: boolean) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!active) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [active]);
-  if (!active || since === null) return "";
-  const s = Math.max(0, Math.floor((now - since) / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  return now;
+}
+
+function Spinner() {
+  return (
+    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-[2px] border-neutral-300 border-t-ink" />
+  );
+}
+
+function Check() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-ink" fill="none">
+      <path d="M3 8.5l3.2 3L13 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 export default function AddinPage() {
   const [phase, setPhase] = useState<Phase>({ kind: "boot" });
-  const [templates, setTemplates] = useState<TemplateCard[]>([]);
+  const [templates, setTemplates] = useState<TemplateCard[] | null>(null);
   const [opening, setOpening] = useState(false);
   const officeHost = useRef(false);
 
@@ -85,26 +106,28 @@ export default function AddinPage() {
     fetch("/api/v1/templates")
       .then((r) => r.json())
       .then((rows: TemplateCard[]) => {
-        if (!cancelled && Array.isArray(rows)) {
-          setTemplates(rows.filter((t) => t.understood));
+        if (!cancelled) {
+          setTemplates(Array.isArray(rows) ? rows.filter((t) => t.understood) : []);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setTemplates([]);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
   const run = useCallback(async (template: TemplateCard) => {
+    const startedAt = Date.now();
     try {
-      setPhase({ kind: "reading", template });
+      setPhase({ kind: "reading", template, startedAt });
       const snapshot = await serializeWorkbook();
-      const nonEmpty = snapshot.sheets.filter((s) => s.cells.length > 0);
-      if (nonEmpty.length === 0) {
+      if (!snapshot.sheets.some((s) => s.cells.length > 0)) {
         setPhase({ kind: "error", message: "The open workbook has no data to read." });
         return;
       }
-      setPhase({ kind: "filling", template, startedAt: Date.now() });
+      setPhase({ kind: "filling", template, startedAt });
       const res = await fetch(`/api/v1/populate-workbook/${template.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -148,147 +171,214 @@ export default function AddinPage() {
   }, []);
 
   const busy = phase.kind === "reading" || phase.kind === "filling";
-  const elapsed = useElapsed(
-    phase.kind === "filling",
-    phase.kind === "filling" ? phase.startedAt : null
-  );
+  const now = useNow(busy);
 
+  // ---- busy: full-pane staged progress ----
+  if (busy) {
+    const startedAt = phase.startedAt;
+    const secs = Math.max(0, Math.floor((now - startedAt) / 1000));
+    const mm = Math.floor(secs / 60);
+    const ss = String(secs % 60).padStart(2, "0");
+    const activeIdx =
+      phase.kind === "reading"
+        ? 0
+        : STAGES.reduce((acc, s, i) => (secs >= s.at ? i : acc), 0);
+    return (
+      <main className="px-4 py-5">
+        <p className="truncate text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">
+          Filling
+        </p>
+        <h1
+          className="mt-0.5 truncate text-[17px] font-semibold text-ink"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
+          {phase.template.name}
+        </h1>
+
+        <div className="mt-4 h-1 overflow-hidden rounded-full bg-neutral-200">
+          <div className="h-full w-1/3 animate-[pane-slide_1.6s_ease-in-out_infinite] rounded-full bg-ink" />
+        </div>
+
+        <ol className="mt-5 space-y-3.5">
+          {STAGES.map((s, i) => {
+            const state = i < activeIdx ? "done" : i === activeIdx ? "active" : "todo";
+            return (
+              <li key={s.label} className="flex items-center gap-2.5">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                  {state === "done" ? (
+                    <Check />
+                  ) : state === "active" ? (
+                    <Spinner />
+                  ) : (
+                    <span className="h-1.5 w-1.5 rounded-full bg-neutral-300" />
+                  )}
+                </span>
+                <span
+                  className={
+                    state === "todo"
+                      ? "text-[13px] text-neutral-400"
+                      : state === "active"
+                        ? "text-[13px] font-medium text-ink"
+                        : "text-[13px] text-neutral-500"
+                  }
+                >
+                  {s.label}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+
+        <div className="mt-6 flex items-center justify-between border-t border-neutral-200/80 pt-3">
+          <span className="text-[12px] text-neutral-400">
+            First run on new data takes a few minutes
+          </span>
+          <span className="font-mono text-[12px] tabular-nums text-neutral-500">
+            {mm}:{ss}
+          </span>
+        </div>
+        <style>{`@keyframes pane-slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }`}</style>
+      </main>
+    );
+  }
+
+  // ---- done: result card ----
+  if (phase.kind === "done") {
+    const r = phase.result;
+    return (
+      <main className="px-4 py-5">
+        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-neutral-400">
+          Complete
+        </p>
+        <h1
+          className="mt-0.5 truncate text-[17px] font-semibold text-ink"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
+          {phase.template.name}
+        </h1>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="rounded-lg border border-neutral-200 bg-white px-3 py-2.5">
+            <div className="text-[20px] font-semibold leading-tight text-ink">
+              {r.links_count}
+            </div>
+            <div className="mt-0.5 text-[11px] text-neutral-500">cells filled</div>
+          </div>
+          <div className="rounded-lg border border-neutral-200 bg-white px-3 py-2.5">
+            <div className="text-[20px] font-semibold leading-tight text-ink">
+              {r.open_questions_count + r.review_count}
+            </div>
+            <div className="mt-0.5 text-[11px] text-neutral-500">to review</div>
+          </div>
+        </div>
+
+        <button
+          onClick={() => openFilled(r)}
+          disabled={!r.filled_url || opening}
+          className="mt-4 w-full rounded-lg bg-ink px-3 py-2.5 text-[13px] font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50"
+        >
+          {opening ? "Opening…" : "Open filled workbook"}
+        </button>
+
+        <div className="mt-3 flex items-center justify-between text-[12px]">
+          <a
+            href={`/template/${phase.template.id}`}
+            target="_blank"
+            className="text-neutral-500 underline-offset-2 hover:text-ink hover:underline"
+          >
+            Review in Tempo
+          </a>
+          <button
+            onClick={() => setPhase({ kind: "ready" })}
+            className="text-neutral-500 underline-offset-2 hover:text-ink hover:underline"
+          >
+            Fill another
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  // ---- picker (default) ----
   return (
-    <main className="mx-auto w-full max-w-md px-4 py-5">
-      <h1
-        className="text-xl font-semibold tracking-tight text-ink"
-        style={{ fontFamily: "var(--font-display)" }}
-      >
-        Fill a template
-      </h1>
-      <p className="mt-1 text-[13px] leading-relaxed text-neutral-500">
-        Your open workbook is read in place — nothing is uploaded as a file.
-        Pick where the data should go.
+    <main className="px-4 py-4">
+      <h1 className="text-[13px] font-medium text-ink">Fill a template</h1>
+      <p className="mt-0.5 text-[12px] leading-snug text-neutral-500">
+        Reads the open workbook in place — nothing is uploaded.
       </p>
 
       {phase.kind === "no-office" && (
-        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-[13px] text-amber-900">
-          This page is the Tempo Excel task pane. Open it from inside Excel
-          (Home&nbsp;→ Tempo) to read the active workbook.
+        <div className="mt-3 rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2.5 text-[12px] leading-snug text-amber-900">
+          Open this pane from inside Excel (Home → Open Tempo) to read the
+          active workbook.
         </div>
       )}
 
       {phase.kind === "error" && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3.5 py-3 text-[13px] text-red-900">
-          {phase.message}
+        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
+          <p className="break-words text-[12px] leading-snug text-red-900">
+            {phase.message}
+          </p>
           <button
             onClick={() => setPhase({ kind: "ready" })}
-            className="mt-2 block rounded-md bg-ink px-3 py-1.5 text-[12px] font-medium text-white"
+            className="mt-2 rounded-md bg-ink px-2.5 py-1 text-[11px] font-medium text-white"
           >
             Try again
           </button>
         </div>
       )}
 
-      {phase.kind === "done" && (
-        <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-          <div className="text-[13px] font-medium text-ink">
-            {phase.template.name}
-          </div>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-neutral-600">
-            <div className="rounded-md bg-neutral-50 px-2.5 py-2">
-              <span className="block text-lg font-semibold text-ink">
-                {phase.result.links_count}
-              </span>
-              cells filled
-            </div>
-            <div className="rounded-md bg-neutral-50 px-2.5 py-2">
-              <span className="block text-lg font-semibold text-ink">
-                {phase.result.open_questions_count + phase.result.review_count}
-              </span>
-              to review
-            </div>
-          </div>
-          <button
-            onClick={() => openFilled(phase.result)}
-            disabled={!phase.result.filled_url || opening}
-            className="mt-3 w-full rounded-md bg-ink px-3 py-2 text-[13px] font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50"
-          >
-            {opening ? "Opening…" : "Open filled workbook"}
-          </button>
-          <div className="mt-2 flex items-center justify-between text-[12px]">
-            <a
-              href={`/template/${phase.template.id}`}
-              target="_blank"
-              className="text-neutral-500 underline-offset-2 hover:underline"
-            >
-              Review questions in Tempo
-            </a>
-            <button
-              onClick={() => setPhase({ kind: "ready" })}
-              className="text-neutral-500 underline-offset-2 hover:underline"
-            >
-              Fill another
-            </button>
-          </div>
-        </div>
-      )}
-
-      {busy && (
-        <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2.5">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-ink" />
-            <span className="text-[13px] text-ink">
-              {phase.kind === "reading"
-                ? "Reading the open workbook…"
-                : `Filling ${"template" in phase ? phase.template.name : ""}…`}
-            </span>
-            {elapsed && (
-              <span className="ml-auto font-mono text-[12px] text-neutral-400">
-                {elapsed}
-              </span>
-            )}
-          </div>
-          {phase.kind === "filling" && (
-            <p className="mt-2 text-[12px] leading-relaxed text-neutral-500">
-              Mapping your series onto the template, verifying, and writing the
-              filled file. This can take a few minutes on first run.
-            </p>
-          )}
-        </div>
-      )}
-
-      {(phase.kind === "ready" || phase.kind === "boot") && (
-        <ul className="mt-4 space-y-2.5">
-          {templates.map((t) => (
-            <li key={t.id}>
-              <button
-                onClick={() => run(t)}
-                disabled={busy || phase.kind === "boot"}
-                className="group w-full overflow-hidden rounded-lg border border-neutral-200 bg-white text-left shadow-sm transition hover:border-neutral-300 hover:shadow disabled:opacity-60"
-              >
-                {t.thumbnailUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={t.thumbnailUrl}
-                    alt=""
-                    className="h-20 w-full border-b border-neutral-100 object-cover object-left-top"
-                  />
-                )}
-                <div className="px-3.5 py-2.5">
-                  <div className="text-[13px] font-medium text-ink">{t.name}</div>
-                  <div className="mt-0.5 flex items-center justify-between text-[11px] text-neutral-400">
-                    <span>{t.archetype ?? "Template"}</span>
-                    <span className="font-medium text-ink opacity-0 transition group-hover:opacity-100">
-                      Fill →
-                    </span>
-                  </div>
-                </div>
-              </button>
+      <ul className="mt-3 divide-y divide-neutral-100 overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        {templates === null &&
+          [0, 1, 2].map((i) => (
+            <li key={i} className="flex animate-pulse items-center gap-3 px-3 py-2.5">
+              <span className="h-9 w-9 shrink-0 rounded-md bg-neutral-100" />
+              <span className="h-3 w-2/3 rounded bg-neutral-100" />
             </li>
           ))}
-          {templates.length === 0 && phase.kind === "ready" && (
-            <li className="rounded-lg border border-dashed border-neutral-300 px-3.5 py-4 text-center text-[12px] text-neutral-400">
-              No onboarded templates yet — add one in Tempo first.
-            </li>
-          )}
-        </ul>
-      )}
+        {(templates ?? []).map((t) => (
+          <li key={t.id}>
+            <button
+              onClick={() => run(t)}
+              disabled={phase.kind === "boot"}
+              className="group flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-neutral-50 disabled:opacity-60"
+            >
+              {t.thumbnailUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={t.thumbnailUrl}
+                  alt=""
+                  className="h-9 w-9 shrink-0 rounded-md border border-neutral-200 object-cover object-left-top"
+                />
+              ) : (
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-neutral-200 bg-neutral-50 text-[11px] font-semibold text-neutral-400">
+                  {t.name.slice(0, 1).toUpperCase()}
+                </span>
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-ink">
+                  {t.name}
+                </span>
+                <span className="block truncate text-[11px] text-neutral-400">
+                  {t.archetype ?? "Template"}
+                </span>
+              </span>
+              <svg
+                viewBox="0 0 16 16"
+                className="h-3.5 w-3.5 shrink-0 text-neutral-300 transition group-hover:text-ink"
+                fill="none"
+              >
+                <path d="M6 3.5L10.5 8L6 12.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </li>
+        ))}
+        {templates !== null && templates.length === 0 && (
+          <li className="px-3 py-4 text-center text-[12px] text-neutral-400">
+            No onboarded templates yet — add one in Tempo first.
+          </li>
+        )}
+      </ul>
     </main>
   );
 }

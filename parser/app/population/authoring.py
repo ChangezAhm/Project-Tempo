@@ -286,8 +286,12 @@ def apply_additions(ws_by_name: dict, proposals: list[dict], sval: dict
             if label_cell.value not in (None, ""):
                 _skip(f"label cell {label_addr} is not empty")
                 continue
-        else:   # placeholder / editable_label — destructive, so approval-gated
-            if p.get("approved") is not True:
+        else:   # placeholder / editable_label
+            # PLACEHOLDER labels ('Custom KPI 1', 'TBD') are throwaway by
+            # definition — the area's designed invitation — so they write
+            # WITHOUT approval (logged + filed as a reversible "keep it?" item).
+            # editable_label = a REAL label; replacing it stays approval-gated.
+            if mode != "placeholder" and p.get("approved") is not True:
                 _skip(f"{mode} slot needs approval before its label can be replaced")
                 continue
             live = str(label_cell.value).strip() if label_cell.value not in (None, "") else ""

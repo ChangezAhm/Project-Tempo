@@ -628,8 +628,18 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         # Never silently drop source data: any source series no mapping used at all —
         # this is how UNDER-counting (e.g. G&A left out of a reconciled opex line)
         # surfaces instead of hiding. A real-but-unused cost line is a red flag.
-        used_series = ({m.series_id for m in metric_maps if m.series_id}
-                       | {sid for m in metric_maps for sid in (m.also_series_ids or [])})
+        # USED = produced at least one real link. A series claimed by a mapping
+        # that never executed (e.g. a derived-math reconcile the executor can't
+        # run) is still AVAILABLE — counting it used once masked the entire
+        # revenue block sitting empty while 'Total turnover' fed an unexecutable
+        # growth metric.
+        filled_metric_keys = {metric_key(f) for f in target_inputs
+                              if (f.get("sheet_name"), (f.get("cell") or "").upper())
+                              in {(lk.template_sheet, (lk.template_cell or "").upper()) for lk in links}}
+        used_series = ({m.series_id for m in metric_maps
+                        if m.series_id and m.metric in filled_metric_keys}
+                       | {sid for m in metric_maps if m.metric in filled_metric_keys
+                          for sid in (m.also_series_ids or [])})
         unused_source_series = sorted(s.label for sid, s in catalogue.items() if sid not in used_series)
         # No silent narrowing of COVERAGE either: name the source sheets the
         # densest-N selection never sent to understanding — a sparse but critical
@@ -816,7 +826,12 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                 add_notes = [f"add-line proposals unavailable: {e}"]
 
         def _writable(p: dict) -> bool:
-            return (p.get("slot_mode") or "blank") == "blank" or p.get("approved") is True
+            # blank slots and PLACEHOLDER slots write immediately — a throwaway
+            # label ('Custom KPI 1') is the area's designed invitation, and
+            # every write is logged + filed as a reversible "keep it?" item.
+            # Only REAL labels (editable_label) stay approval-gated.
+            return ((p.get("slot_mode") or "blank") in ("blank", "placeholder")
+                    or p.get("approved") is True)
 
         writable_proposals = [p for p in proposals if _writable(p)] if add_lines == "apply" else []
         pending_overwrites = [p for p in proposals if not _writable(p)]

@@ -33,7 +33,8 @@ from aspose.cells import Workbook  # noqa: E402
 BASE = Path("C:/Users/chang/Project Tempo/Templates for testing")
 
 CASES = [
-    # flash/saas removed from the workspace 2026-08-06 — re-add ids after re-upload
+    # flash removed from the workspace 2026-08-06 — re-add after re-upload
+    ("2026-07-13-saas-financial-model", "a05cf69d-38c8-456b-82b9-b158d6fa97b4"),
     ("Flash Collection_MasterTemplate_2.1.6_PROD", "a8c073b1-ecac-4e2c-b456-e1a45c92d6a7"),
 ]
 

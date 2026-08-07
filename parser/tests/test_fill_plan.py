@@ -208,3 +208,50 @@ def test_declared_scale_contradicting_template_evidence_asks():
     assert scale is None and code == "SCALE_CONFLICT" and "anchored" in flag
     scale, flag, code = _resolve_scale(fill, ser, [9_800_000], [], raw, tpl_target_base=1.0)
     assert scale == 1.0 and flag is None and code is None   # corroborated
+
+
+def test_anchor_unfilled_triggers_repair_issue():
+    # The saas revenue disaster: a template TOTAL whose feeders are ALL unmapped
+    # while source series sit unused must raise ANCHOR_UNFILLED (repair tier) —
+    # never a silent empty statement.
+    cat = build_catalogue(_kpi_source(), _kpi_periods())     # SaaS!r5 (ARR), r6 unused
+    facts = [_fact("subscription", "D5", 4, 5, 0, "EUR m"),
+             _fact("services", "D6", 4, 6, 0, "EUR m")]
+    plan = [MetricMap(metric="subscription", status="unavailable"),
+            MetricMap(metric="services", status="unavailable")]
+    demand = {"period_count": 4, "period_grain": "monthly",
+              "period_count_by_sheet": {"KPI": 4},
+              "metrics": [{"metric": "subscription"}, {"metric": "services"}]}
+    membership = {"subscription": frozenset({("KPI", 10)}), "services": frozenset({("KPI", 10)})}
+    issues = verify_plan(plan, cat, facts, demand, _ctx(), membership)
+    anchor = [i for i in issues if i.code == "ANCHOR_UNFILLED"]
+    assert anchor and anchor[0].severity == "repair"
+    assert "UNUSED source series" in anchor[0].detail
+    # a partially-mapped total is NOT starved
+    plan2 = [MetricMap(metric="subscription", series_id="SaaS!r5", confidence=0.9, rollup="end"),
+             MetricMap(metric="services", status="unavailable")]
+    issues2 = verify_plan(plan2, cat, facts, demand, _ctx(), membership)
+    assert not [i for i in issues2 if i.code == "ANCHOR_UNFILLED"]
+
+
+def test_anchor_rescues_low_confidence_only_hope_as_reconcile():
+    # The saas revenue chain: the planner maps the anchor's only feeder at 0.40 —
+    # holding it at the floor means an empty statement, so the ladder fills it as
+    # a FLAGGED reconcile (visible, questioned) instead.
+    cat = build_catalogue(_kpi_source(), _kpi_periods())
+    facts = [_fact("subscription", "D5", 4, 5, 0, "EUR m")]
+    plan = [MetricMap(metric="subscription", series_id="SaaS!r5", confidence=0.4,
+                      rollup="end", source_unit="USD'000", target_unit="USD m")]
+    demand = {"period_count": 4, "period_grain": "monthly",
+              "period_count_by_sheet": {"KPI": 4}, "metrics": [{"metric": "subscription"}]}
+    membership = {"subscription": frozenset({("KPI", 10)})}
+    issues = verify_plan(plan, cat, facts, demand, _ctx(), membership)
+    assert plan[0].status == "reconcile" and plan[0].assumption      # rescued + flagged
+    assert not [i for i in issues if i.code == "LOW_CONFIDENCE"]     # hold lifted
+    rescue = [i for i in issues if i.code == "ANCHOR_UNFILLED" and i.severity == "default"]
+    assert rescue and rescue[0].resolution
+    assert "subscription" not in blocked_metrics(issues)
+    links, unmatched, _ = execute_plan(facts, cat, plan, demand,
+                                       template_context=_ctx(),
+                                       blocked=blocked_metrics(issues))
+    assert links and "reconciled" in (links[0].note or "")           # it FILLS, flagged

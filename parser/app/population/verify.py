@@ -129,6 +129,72 @@ def verify_plan(fills: list[MetricMap], catalogue: dict[str, Series], facts: lis
                         suggested_resolution="declare the metric's rollup semantics"))
                     break
 
+    # ANCHOR_UNFILLED (structural, no lexicons): a template TOTAL whose leaf
+    # input rows are ALL unmapped while source series sit unused is a starved
+    # statement anchor — the saas run left the whole revenue block empty (and GP
+    # cascading wrong) while the geo-split turnover series went unused, with no
+    # question asked. Severity 'repair': the planner gets one focused retry with
+    # the total, its feeders, and the unused series in hand; unrepaired, it
+    # becomes a question. Guarded (unused series must exist; capped) so a source
+    # missing a whole statement doesn't flood the repair round.
+    if agg_membership:
+        floor_held = {mk for mk, m in by_metric.items()
+                      if m.series_id and m.confidence < confidence_floor
+                      and m.status in ("direct", "aggregate")}
+        used_ids = {sid for m in by_metric.values() if m.series_id
+                    for sid in ([m.series_id] + list(m.also_series_ids or []))}
+        unused = [s.label for sid, s in catalogue.items() if sid not in used_ids]
+        feeders_of: dict = {}
+        for mk, totals in agg_membership.items():
+            for t in totals:
+                feeders_of.setdefault(t, set()).add(mk)
+        starved = []
+        for total, feeders in feeders_of.items():
+            in_demand = [mk for mk in feeders if mk in demanded]
+            # a feeder counts as effectively-unfilled when it has no series OR
+            # its fill would be held at the confidence floor
+            if in_demand and all((not (by_metric.get(mk) and by_metric[mk].series_id))
+                                 or mk in floor_held for mk in in_demand):
+                starved.append((total, in_demand))
+        starved.sort(key=lambda tf: -len(tf[1]))
+        for total, feeder_keys in starved[:6]:
+            # RESOLUTION LADDER, tier 2: when the starved anchor's ONLY hope is a
+            # mapped-but-below-floor fill, holding it means an empty statement —
+            # fill it as a FLAGGED RECONCILE instead (visible, filed as a
+            # question, user-reversible). The floor stays intact everywhere else.
+            rescued = [mk for mk in feeder_keys if mk in floor_held]
+            for mk in rescued:
+                m = by_metric[mk]
+                m.status = "reconcile"
+                if not m.assumption:
+                    m.assumption = (f"anchor reconstruction at confidence {m.confidence:.2f} — "
+                                    "filled to prevent an empty statement block; confirm or remap")
+                issues.append(PlanIssue(
+                    metric=mk, code="ANCHOR_UNFILLED", severity="default",
+                    detail=(f"'{mk}' is the only mapped feeder of template total "
+                            f"{total[0]}!r{total[1]} and sat below the confidence floor"),
+                    resolution="filled as flagged reconcile instead of held (empty anchor beats floor)"))
+            if rescued:
+                continue
+            if not unused:
+                continue
+            detail = (f"template total {total[0]}!r{total[1]} sums "
+                      f"{', '.join(map(str, feeder_keys[:6]))} — ALL unmapped, so the "
+                      f"total computes empty/zero and everything downstream is wrong. "
+                      f"UNUSED source series: {', '.join(unused[:8])}")
+            for mk in feeder_keys:
+                issues.append(PlanIssue(
+                    metric=mk, code="ANCHOR_UNFILLED", severity="repair",
+                    detail=detail,
+                    suggested_resolution=("reconcile the corresponding source total onto the "
+                                          "dominant component, or aggregate the unused component "
+                                          "series, or needs_decision — never all-unavailable")))
+        # rescued metrics must not ALSO carry a LOW_CONFIDENCE hold
+        rescued_all = {i.metric for i in issues
+                       if i.code == "ANCHOR_UNFILLED" and i.severity == "default"}
+        issues = [i for i in issues
+                  if not (i.code == "LOW_CONFIDENCE" and i.metric in rescued_all)]
+
     # DOUBLE_COUNT: same claim/priority logic as the legacy binder, expressed as
     # typed issues. Two metrics conflict over a shared series only when their
     # template totals intersect (formula-graph scoped); no graph -> global block.

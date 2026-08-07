@@ -289,13 +289,22 @@ def test_apply_overwrites_approved_placeholder_when_live_label_matches():
     assert applied[0]["overwrote_label"] == {"from": "Custom KPI 1", "to": "Churn"}
 
 
-def test_apply_placeholder_without_approval_is_gated():
+def test_apply_placeholder_writes_without_approval_editable_stays_gated():
+    # Owner ruling 2026-08-06: a placeholder label ('Custom KPI 1') is throwaway
+    # by definition — writes immediately (logged + reversible). A REAL label
+    # (editable_label) still needs approval.
     ws = FakeWs()
     ws.cells.get("B10").put_value("Custom KPI 1")
     p = _proposal(slot_mode="placeholder", expected_label="Custom KPI 1")   # no approved
     applied, skipped = apply_additions({"KPIs": ws}, [p], {("Src", "AB7"): 9.0})
-    assert applied == [] and "approval" in skipped[0]["reason"]
-    assert ws.cells.get("B10").value == "Custom KPI 1"                       # untouched
+    assert applied and applied[0].get("overwrote_label")
+    assert ws.cells.get("B10").value != "Custom KPI 1"                       # renamed
+    ws2 = FakeWs()
+    ws2.cells.get("B10").put_value("Net Debt")
+    p2 = _proposal(slot_mode="editable_label", expected_label="Net Debt")    # no approved
+    applied2, skipped2 = apply_additions({"KPIs": ws2}, [p2], {("Src", "AB7"): 9.0})
+    assert applied2 == [] and "approval" in skipped2[0]["reason"]
+    assert ws2.cells.get("B10").value == "Net Debt"                          # untouched
 
 
 def test_apply_skips_when_live_label_drifted_since_detection():
@@ -323,3 +332,46 @@ def test_style_failure_never_loses_the_written_value():
     assert applied[0]["cells_written"] == 1
     assert ws.cells.get("B10").value == "Churn" and ws.cells.get("C10").value == 5.0
     assert ws.styles_set == {}   # styling failed silently, values survived
+
+
+def test_placeholder_slots_apply_without_approval():
+    # Owner ruling: 'Custom KPI 1'-style throwaway labels are the area's designed
+    # invitation — write immediately (logged, reversible); REAL labels stay gated.
+    from app.population.run import render_filled  # noqa: F401 (env sanity)
+    from app.population.authoring import apply_additions
+
+    class _Cell:
+        def __init__(self):
+            self.value = "Custom KPI 1"
+            self.is_formula = False
+            self.row, self.column = 16, 1
+            self.style = None
+        def put_value(self, v):
+            self.value = v
+        def get_style(self):
+            return self.style
+        def set_style(self, s):
+            self.style = s
+
+    class _Cells(dict):
+        def get(self, *a):
+            key = a[0] if len(a) == 1 else a
+            return self.setdefault(str(key), _Cell())
+        def clear_contents(self, *a):
+            pass
+
+    class _WS:
+        def __init__(self):
+            self.cells = _Cells()
+
+    ws = _WS()
+    p = {"sheet_name": "KPI", "row": 17, "label_col": 1, "slot_mode": "placeholder",
+         "expected_label": "Custom KPI 1", "label": "Turnover – APAC",
+         "row_start": 17, "total_row": None, "values": []}
+    applied, skipped = apply_additions({"KPI": ws}, [p], {})
+    assert applied and applied[0].get("overwrote_label")
+    # editable_label without approval still refuses
+    p2 = {**p, "slot_mode": "editable_label", "expected_label": "Net Debt"}
+    ws2 = _WS()
+    applied2, skipped2 = apply_additions({"KPI": ws2}, [p2], {})
+    assert not applied2 and skipped2

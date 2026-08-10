@@ -40,6 +40,9 @@ COLORS = {
                "MISSED — invisible to the system (no fact, no region)"),
     "formula": ("ORANGE", Color.from_argb(0xFF, 0xFF, 0xA5, 0x00),
                 "marked but holds a FORMULA — system never writes formulas"),
+    "mirror": ("CYAN", Color.from_argb(0xFF, 0x9E, 0xE5, 0xE5),
+               "pure display mirror (=X of another cell) — the write target is the "
+               "chain front; refusing to write here is CORRECT"),
     "region": ("BLUE", Color.from_argb(0xFF, 0x9D, 0xC3, 0xE6),
                "recognized as extensible-region slot (add-line path)"),
     "config": ("PURPLE", Color.from_argb(0xFF, 0xC9, 0xA0, 0xDC),
@@ -54,14 +57,15 @@ COLORS = {
 }
 
 
-def normal_formulas(stem: str) -> set[tuple[str, str]]:
+def normal_formulas(stem: str) -> dict[tuple[str, str], str]:
     wb = Workbook(str(BASE / f"{stem} (NORMAL).xlsx"))
-    out: set[tuple[str, str]] = set()
+    out: dict[tuple[str, str], str] = {}
     for s in wb.worksheets:
         for r in range(s.cells.max_data_row + 1):
             for c in range(s.cells.max_data_column + 1):
-                if s.cells.get(r, c).formula:
-                    out.add((s.name, a1(r, c)))
+                f = s.cells.get(r, c).formula
+                if f:
+                    out[(s.name, a1(r, c))] = f
     return out
 
 
@@ -87,11 +91,14 @@ def ambiguous_cells(stem: str) -> set[tuple[str, str]]:
     return out
 
 
-def bucket_for(mark_cell, fact, is_formula, in_rgn) -> str:
+def bucket_for(mark_cell, fact, formula, in_rgn) -> str:
+    from eval_classification import MIRROR_RE
     cat = (fact or {}).get("category")
     if cat in ("data", "sourced"):
         return "agree"
-    if is_formula:
+    if formula and MIRROR_RE.match(formula):
+        return "mirror"
+    if formula:
         return "formula"
     if in_rgn:
         return "region"
@@ -125,7 +132,7 @@ def build_report(stem: str, template_id: str) -> None:
             continue
         col0 = sum((ord(ch) - 64) * 26 ** i for i, ch in enumerate(reversed(m.group(1)))) - 1
         row0 = int(m.group(2)) - 1
-        b = bucket_for(mark, facts.get((sheet, cell)), (sheet, cell) in formulas,
+        b = bucket_for(mark, facts.get((sheet, cell)), formulas.get((sheet, cell)),
                        in_region(sheet, cell, regions))
         counts[b] += 1
         paint(ws, row0, col0, COLORS[b][1])

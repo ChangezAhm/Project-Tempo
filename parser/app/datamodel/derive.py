@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 14   # v14: write-semantics inversion (claimed/push-backed formulas = type-over inputs); passthrough deleted
+DERIVATION_VERSION = 15   # v15: claims ratchet (prior committed claims persist) + push/ratchet facts beat config lexicon
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -588,6 +588,24 @@ def _load_snapshot(version_id: str, template_id: str) -> dict:
             p.unlink(missing_ok=True)
 
 
+_RATCHET_PREFIXES = ("llm:", "topology:push", "ratchet:")
+
+
+def _load_prior_claims(version_id: str) -> set[tuple[str, int, int]]:
+    """The version's committed input claims from the LAST derive — the ledger
+    the claims ratchet holds onto. Empty on first derive / any fetch failure."""
+    try:
+        rows = (sb.get_client().table("template_data_points")
+                .select("sheet_name,row,col,category,category_source")
+                .eq("template_version_id", version_id)
+                .in_("category", ["data", "sourced"]).limit(30000).execute().data or [])
+        return {(r["sheet_name"], int(r["row"]), int(r["col"])) for r in rows
+                if (r.get("category_source") or "").startswith(_RATCHET_PREFIXES)}
+    except Exception as e:  # noqa: BLE001 — no prior model is normal on first derive
+        logger.debug("claims ratchet: no prior model loaded (%s)", e)
+        return set()
+
+
 def derive_data_model(template_id: str) -> DataModelResult:
     und = get_understanding(template_id)
     if not und.get("available"):
@@ -623,6 +641,15 @@ def derive_data_model(template_id: str) -> DataModelResult:
     # PUSH TOPOLOGY (facts): cells a CX_PUSH formula reads are the workbook's own
     # declaration of its entry cells — evidence that stands without any LLM claim.
     push_cells = push_targets(cell_formula)
+    # CLAIMS RATCHET (contract memory): a cell ANY previous derive of this
+    # version committed as an LLM-claimed / push-proved / ratchet-kept input
+    # stays an input, whatever this run's understanding happened to claim —
+    # onboarding becomes monotonic instead of stochastic (the ~600-cell
+    # run-to-run claim variance on PROD). Structural constraints still win
+    # every run (multi-input formulas, hidden geometry), and user corrections
+    # outrank the ratchet in merge. Scoped to the version: a new upload starts
+    # a fresh ledger.
+    prior_claims = _load_prior_claims(version_id)
     # HIDDEN GEOMETRY (facts): a hidden row/column is not a user-facing entry
     # surface — facts there are staged, whatever a claim says (the view state is
     # the author's own declaration; a user correction can still re-open a cell).
@@ -633,6 +660,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
     hidden_staged = 0
     type_over_claimed = 0
     push_evidence = 0
+    ratchet_kept = 0
 
     period_idx: dict[str, dict[int, dict]] = {}     # L2 parsed_date by (sheet, col)
     for p in structure.get("periods", []):
@@ -772,7 +800,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
             """Create one DataPoint for an input cell. ``llm_field`` carries the
             LLM's semantics when the cell came from understanding; None for a
             cell found purely by the deterministic metadata detector."""
-            nonlocal orphan_cells, type_over_claimed, push_evidence, junk_connector_kept, hidden_staged
+            nonlocal orphan_cells, type_over_claimed, push_evidence, junk_connector_kept, hidden_staged, ratchet_kept
             cell = f"{column_letter(col)}{row}"
             if (sheet, cell) in seen:
                 return
@@ -837,6 +865,24 @@ def derive_data_model(template_id: str) -> DataModelResult:
                     category, cfg_kind = "sourced", None
                     write_mode, category_source = "type_over", "topology:push"
                     push_evidence += 1
+                elif (sheet, row, col) in prior_claims:
+                    category, cfg_kind = "sourced", None
+                    write_mode, category_source = "type_over", "ratchet:prior_claim"
+                    ratchet_kept += 1
+            elif (category == "config" and cfg_kind != "junk_label_connector"
+                  and not is_multi_input(formula)
+                  and ((sheet, row, col) in push_cells or (sheet, row, col) in prior_claims)):
+                # FACTS/MEMORY beat label-lexicon PRIORS: the workbook's own push
+                # topology (or a previously committed claim) proves this is an
+                # entry cell — a lexicon guess must not gate it.
+                if (sheet, row, col) in push_cells:
+                    category_source = "topology:push"
+                    push_evidence += 1
+                else:
+                    category_source = "ratchet:prior_claim"
+                    ratchet_kept += 1
+                category, cfg_kind = "sourced", None
+                write_mode = "type_over"
             elif category == "staging" and (sheet, row, col) in push_cells:
                 # a blank push-read entry cell beats the sheet-role PRIOR (fact > prior)
                 category, category_source = "data", "topology:push"
@@ -961,6 +1007,13 @@ def derive_data_model(template_id: str) -> DataModelResult:
             if pnm == sheet and (sheet, f"{column_letter(pc)}{pr}") not in seen:
                 _emit(pc, pr, None)
 
+        # 5) RATCHET pass: prior-claimed cells on this sheet that no pass emitted
+        #    this run — a thinner claim set from a re-run must not silently
+        #    shrink the model (cells re-enter via the ratchet branch in _emit).
+        for (rnm, rr, rcol) in prior_claims:
+            if rnm == sheet and (sheet, f"{column_letter(rcol)}{rr}") not in seen:
+                _emit(rcol, rr, None)
+
     if orphan_cells:
         flags.append(f"{orphan_cells} input cells got no period (no header row above them) — review period detection.")
 
@@ -996,6 +1049,10 @@ def derive_data_model(template_id: str) -> DataModelResult:
             "as sourced — verify (the connector formula, a fact, beat the junk-label prior; "
             "a correction or enrichment can reclassify via category_source)."
         )
+    if ratchet_kept:
+        flags.append(
+            f"{ratchet_kept} cells kept as inputs by the claims ratchet (previously committed "
+            "claims this run's understanding did not repeat; category_source=ratchet:prior_claim).")
     if type_over_claimed:
         flags.append(
             f"{type_over_claimed} formula cells the understanding claims as inputs converted "

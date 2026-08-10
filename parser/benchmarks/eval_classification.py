@@ -48,6 +48,27 @@ def a1(row0: int, col0: int) -> str:
     return f"{letters}{row0 + 1}"
 
 
+# A pure DISPLAY MIRROR: the whole formula is one bare cell reference
+# (optionally sheet-qualified) — '=Y20', "='_PL'!AD20", '=BS!$C$7'. The write
+# target is the chain's front cell, so the system's refusal to write the
+# mirror is CORRECT, not a miss.
+import re as _re
+MIRROR_RE = _re.compile(r"^=\s*(?:'[^']*'!|[A-Za-z_][A-Za-z0-9_.]*!)?\$?[A-Z]{1,3}\$?[0-9]+\s*$")
+
+
+def normal_formula_map(stem: str) -> dict[tuple[str, str], str]:
+    """{(sheet, A1) -> formula text} for every formula cell in the NORMAL file."""
+    wb = Workbook(str(BASE / f"{stem} (NORMAL).xlsx"))
+    out: dict[tuple[str, str], str] = {}
+    for s in wb.worksheets:
+        for r in range(s.cells.max_data_row + 1):
+            for c in range(s.cells.max_data_column + 1):
+                f = s.cells.get(r, c).formula
+                if f:
+                    out[(s.name, a1(r, c))] = f
+    return out
+
+
 def ground_truth(stem: str) -> dict[tuple[str, str], int]:
     """{(sheet, A1) -> 1|2} from the CLASSIFIED/NORMAL pair."""
     wc = Workbook(str(BASE / f"{stem} (CLASSIFIED).xlsx"))
@@ -114,6 +135,7 @@ def main() -> None:
     for stem, tid in CASES:
         labels = ground_truth(stem)
         facts, regions = system_view(tid)
+        formulas = normal_formula_map(stem)
         print(f"\n{'=' * 70}\n{stem}\n  marked cells: {len(labels)} "
               f"(1s: {sum(1 for v in labels.values() if v == 1)}, "
               f"2s: {sum(1 for v in labels.values() if v == 2)}) | system facts: {len(facts)} "
@@ -136,9 +158,13 @@ def main() -> None:
                 bucket = "computed"
             else:
                 bucket = f"other:{cat}"
+            # pure display mirrors are correct refusals, not misses
+            if bucket in ("absent", "computed", "found_config") and MIRROR_RE.match(
+                    formulas.get((sheet, cell), "")):
+                bucket = "mirror"
             tally[(mark, bucket)] += 1
             grand[(mark, bucket)] += 1
-            if bucket in ("absent", "computed") or (mark == 1 and bucket not in ("found_input",)):
+            if bucket in ("absent", "computed") or (mark == 1 and bucket not in ("found_input", "mirror")):
                 if len(misses) < 30:
                     label = (f or {}).get("metric_label") or ""
                     misses.append(f"    [{mark}] {sheet}!{cell} -> {bucket} {label[:40]!r}")

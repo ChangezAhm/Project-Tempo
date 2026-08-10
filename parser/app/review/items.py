@@ -45,6 +45,71 @@ def make_item(
     }
 
 
+# ---------------------------------------------------------------------------
+# THE single gate for filing questions (owner rule: FEW, BINARY, CURRENT).
+# Per-family caps keep the whole inbox at <= ~15 open questions per template;
+# every question must be one-tap answerable; a new run SUPERSEDES the previous
+# run's unanswered questions instead of piling on top of them.
+MAX_OPEN_TOTAL = 15
+_FAMILY_CAPS = {"populate": 10, "onboarding-regions": 3, "understanding": 2}
+
+
+def file_questions(version_id: str, items: list[dict], *, family: str,
+                   cap: int | None = None) -> dict:
+    """File this run's questions through the budgeted gate.
+
+    - dedupes by item_key; DROPS any item without a suggested_answer (a
+      question the user can't one-tap is a defect, not a question)
+    - supersedes still-open questions of the same family that this run did
+      not re-ask (stale phrasings never accumulate across runs)
+    - answered questions are never re-asked (insert skips existing keys)
+    - enforces the family cap, keeping highest-priority items (sort key:
+      transient "_priority", lower = more important, default 5)
+    """
+    cap = cap if cap is not None else _FAMILY_CAPS.get(family, 3)
+    seen: set = set()
+    deduped: list[dict] = []
+    for it in items:
+        k = it.get("item_key")
+        if k and k not in seen:
+            seen.add(k)
+            deduped.append(it)
+    binary = [it for it in deduped if it.get("suggested_answer")]
+    binary.sort(key=lambda it: it.get("_priority", 5))
+    for it in binary:
+        it.pop("_priority", None)
+
+    existing = sb.list_review_items(version_id)
+    open_family = [e for e in existing if e.get("status") == "open"
+                   and (e.get("source") or "").startswith(family)]
+    existing_keys = {e.get("item_key") for e in existing}
+    new_keys = {it["item_key"] for it in binary}
+
+    superseded = 0
+    for e in open_family:
+        if e.get("item_key") not in new_keys:
+            try:
+                sb.update_review_item(e["id"], {"status": "superseded"})
+                superseded += 1
+            except Exception:  # noqa: BLE001 — best effort; a stale extra never blocks
+                pass
+
+    kept_open = sum(1 for e in open_family if e.get("item_key") in new_keys)
+    budget = max(0, cap - kept_open)
+    to_file = []
+    for it in binary:
+        if it["item_key"] in existing_keys:
+            continue
+        if len(to_file) >= budget:
+            break
+        to_file.append(it)
+    filed = sb.insert_review_items(version_id, to_file) if to_file else 0
+    return {"filed": filed, "superseded": superseded, "kept_open": kept_open,
+            "dropped_over_cap": max(0, len(binary) - len(to_file)
+                                    - sum(1 for it in binary if it["item_key"] in existing_keys)),
+            "dropped_nonbinary": len(deduped) - len(binary)}
+
+
 def _sheet_of(target: str) -> str:
     """'Sheet!A1' or \"'My Sheet'!A1\" or bare 'Sheet' → the sheet name."""
     t = str(target).strip()
@@ -174,7 +239,11 @@ def build_and_persist(template_id: str) -> dict:
                 "items built from review_flags only")
 
     items = build_items_from_understanding(workbook)
-    added = sb.insert_review_items(version_id, items)
+    for it in items:
+        if not it.get("suggested_answer"):
+            it["suggested_answer"] = "yes — this reading is right"
+    stats = file_questions(version_id, items, family="understanding")
+    added = stats["filed"]
     out = {
         "template_version_id": version_id,
         "added": added,

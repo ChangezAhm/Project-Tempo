@@ -419,6 +419,16 @@ def _run_population(target_template_id: str, source_snapshot: dict,
     set_guard(SpendGuard(default_cap_usd()))
     progress.set_stage(target_template_id, "understanding")
 
+    # ALL review questions for this run collect here and are filed ONCE at the
+    # end through the budgeted gate (review.items.file_questions): few, binary,
+    # current — a new run supersedes the previous run's unanswered questions.
+    pending_q: list[dict] = []
+
+    def _q(items: list[dict], priority: int = 5) -> None:
+        for it in items:
+            it["_priority"] = priority
+        pending_q.extend(items)
+
     demand, target_inputs = build_demand(target_template_id, as_of_date)
     # as-of is the pack's reporting vintage / timeline anchor only — it does NOT
     # classify actual vs forecast. Scenario is the source's own column tag, and no
@@ -526,7 +536,7 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             routing["mapping_failed_metrics"] = mapping_failed[:80]
             try:
                 from app.review.items import make_item
-                sb.insert_review_items(t_vid, [make_item(
+                _q([make_item(
                     source="populate", kind="judgment",
                     question=(f"{len(mapping_failed)} template metric(s) went unmapped because a "
                               "mapping batch failed after retry — re-run populate for these."),
@@ -669,10 +679,18 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             review.append({"template_sheet": v["template_sheet"], "template_cell": v["template_cell"],
                            "note": f"sign violation: expected {v['expected']} ({v['rule'][:60]})"})
         if violations:
-            try:
-                sb.insert_review_items(t_vid, violations_to_review_items(violations, source_label))
-            except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
-                logger.warning("could not file sign-violation review items: %s", e)
+            from app.review.items import make_item
+            cells = [f"{v['template_sheet']}!{v['template_cell']}" for v in violations]
+            _q([make_item(
+                source="populate", kind="judgment",
+                question=(f"{len(cells)} fill(s) landed with a sign against the template's stated "
+                          f"convention ({', '.join(cells[:5])}{'…' if len(cells) > 5 else ''}) — "
+                          "keep the values as sourced?"),
+                why="; ".join(f"{v['template_sheet']}!{v['template_cell']} ({v['metric']}): "
+                              f"expected {v['expected']}" for v in violations[:10]),
+                affected={"cells": cells[:20]},
+                suggested_answer="yes — keep as sourced",
+            )], priority=4)
 
         # Upgrade apply_links' generic "no source match" to the executor's precise reason
         # (low confidence / no source period / unit unresolved / currency mismatch).
@@ -734,9 +752,9 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                     affected={"metrics": [q["metric"]]},
                     suggested_answer="leave it blank",
                 ) for q in open_questions]
-                sb.insert_review_items(t_vid, items)
+                _q(items, priority=1)
             except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
-                logger.warning("could not file reconciliation/decision review items: %s", e)
+                logger.warning("could not build reconciliation/decision questions: %s", e)
 
         # FILL-PLAN questions: every question-tier verifier/executor issue becomes
         # ONE batched review item per (metric, issue) with the plan's proposal as
@@ -795,12 +813,8 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                     affected={"metrics": [i.metric], "cells": i.cells[:12]},
                     suggested_answer=i.suggested_resolution, check_spec=spec))
             if plan_q_items:
-                try:
-                    sb.insert_review_items(t_vid, plan_q_items)
-                    routing["plan_questions_filed"] = len(plan_q_items)
-                except Exception as e:  # noqa: BLE001 — but a LOST question is surfaced, not swallowed
-                    logger.warning("could not file plan questions: %s", e)
-                    routing["plan_questions_lost"] = len(plan_q_items)
+                _q(plan_q_items, priority=3)
+                routing["plan_questions_filed"] = len(plan_q_items)
 
         # UNDER-COUNTING check as a question, not a dead list: source series no
         # mapping touched. One batched informational item (content-addressed, so
@@ -809,13 +823,13 @@ def _run_population(target_template_id: str, source_snapshot: dict,
             try:
                 from app.review.items import make_item
                 names = ", ".join(unused_source_series[:15]) + ("…" if len(unused_source_series) > 15 else "")
-                sb.insert_review_items(t_vid, [make_item(
+                _q([make_item(
                     source="populate-plan", kind="judgment",
                     question=(f"{len(unused_source_series)} source series went unused "
                               f"({names}) — is that expected?"),
                     suggested_answer="yes — nothing missing",
                     why="Unused source data can mean under-counting (a cost line left out of a reconciled total).",
-                )])
+                )], priority=7)
             except Exception as e:  # noqa: BLE001
                 logger.warning("could not file unused-series item: %s", e)
 
@@ -886,18 +900,26 @@ def _run_population(target_template_id: str, source_snapshot: dict,
                                "note": f"template check FAILED: {r['label']} "
                                        f"({str(r.get('before'))[:24]} → {str(r.get('after'))[:24]})"})
             if failed_checks:
-                try:
-                    sb.insert_review_items(t_vid, checks_to_review_items(failed_checks, source_label))
-                except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
-                    logger.warning("could not file template-check review items: %s", e)
+                from app.review.items import make_item
+                cc = [f"{r['sheet']}!{r['cell']}" for r in failed_checks]
+                _q([make_item(
+                    source="populate", kind="judgment",
+                    question=(f"{len(cc)} of the template's own validation checks read FAIL after "
+                              f"this fill ({', '.join(cc[:5])}{'…' if len(cc) > 5 else ''}) — "
+                              "accept the fill anyway?"),
+                    why="; ".join(f"{r['sheet']}!{r['cell']}: {str(r.get('before'))[:24]!r}"
+                                  f" → {str(r.get('after'))[:24]!r}" for r in failed_checks[:10]),
+                    affected={"cells": cc[:20]},
+                    suggested_answer="yes — accept; I'll review the check cells in the workbook",
+                )], priority=4)
 
         # Additions into the inbox: written lines as informational "keep it?" items,
         # occupied-label proposals as one-tap approvals (approving replays next run).
         if additions_applied or pending_overwrites:
             try:
                 from app.population.region_bridge import addition_review_items
-                sb.insert_review_items(
-                    t_vid, addition_review_items(additions_applied, pending_overwrites, source_label))
+                _q(addition_review_items(additions_applied, pending_overwrites,
+                                         source_label), priority=6)
             except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
                 logger.warning("could not file addition review items: %s", e)
 
@@ -929,6 +951,12 @@ def _run_population(target_template_id: str, source_snapshot: dict,
         tgt_tmp.unlink(missing_ok=True)
 
     filled = [fc.model_dump(mode="json") for fc in result.filled]
+    try:
+        from app.review.items import file_questions
+        routing["questions"] = file_questions(t_vid, pending_q, family="populate")
+    except Exception as e:  # noqa: BLE001 — inbox filing must never fail the run
+        logger.warning("question filing failed: %s", e)
+
     return {
         "target_template_id": target_template_id,
         "source_filename": source_label,

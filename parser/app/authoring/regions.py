@@ -880,7 +880,8 @@ def detect_and_persist(template_id: str) -> dict:
                     suggested_answer="adjustable — lines may be renamed per company",
                 ))
             if q_items:
-                sb.insert_review_items(version_id, q_items)
+                from app.review.items import file_questions
+                file_questions(version_id, q_items, family="onboarding-regions")
         except Exception as e:  # noqa: BLE001 — questions are best-effort, never fatal
             logger.warning("could not file configurable-list questions: %s", e)
         return {"template_version_id": version_id, "regions": payload,

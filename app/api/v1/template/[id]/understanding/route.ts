@@ -19,7 +19,19 @@ export async function GET(
       const message = body?.detail ?? body?.error ?? `Parser returned ${res.status}`;
       return NextResponse.json({ error: message }, { status: res.status });
     }
-    return NextResponse.json(body);
+    // Rewrite parser-signed snippet URLs (fresh token each request = browser
+    // cache busted every load) to the stable, downscaling /api/v1/snippet
+    // proxy so sheet screenshots cache like normal images.
+    const proxied = JSON.parse(
+      JSON.stringify(body).replace(
+        /"(https?:[^"]*?\/template-snippets\/([^"?]+))(\?[^"]*)?"/g,
+        (_m, _full, path) =>
+          JSON.stringify(
+            `/api/v1/snippet?path=${encodeURIComponent(decodeURIComponent(path))}&w=1400`
+          )
+      )
+    );
+    return NextResponse.json(proxied);
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `Parser unreachable: ${e.message}` : "Parser unreachable" },

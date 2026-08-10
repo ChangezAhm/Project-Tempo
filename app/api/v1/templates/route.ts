@@ -6,8 +6,6 @@ import { createAdminClient } from "@/utils/supabase/admin";
 // key so RLS can be locked down (supabase/migrations/0007_lock_rls.sql).
 
 const BUCKET = "template-files";
-// Sheet screenshots rendered by the understanding pass live here (private).
-const SNIPPET_BUCKET = "template-snippets";
 
 // Shape of the nested select we read back from Supabase.
 type RawTemplateRow = {
@@ -96,21 +94,14 @@ export async function GET() {
     };
   });
 
-  // Sign every card thumbnail in one round trip (private bucket).
-  const paths = [...new Set(rows.map((r) => r.snippetPath).filter((p): p is string => !!p))];
-  const signed = new Map<string, string>();
-  if (paths.length > 0) {
-    const { data: urls } = await supabase.storage
-      .from(SNIPPET_BUCKET)
-      .createSignedUrls(paths, 3600);
-    for (const u of urls ?? []) {
-      if (u.path && u.signedUrl && !u.error) signed.set(u.path, u.signedUrl);
-    }
-  }
-
+  // STABLE proxy URLs (not per-request signed URLs, which changed their token
+  // query param every load and so busted the browser cache on every visit) —
+  // /api/v1/snippet downscales and serves with immutable cache headers.
   const templates = rows.map(({ snippetPath, ...rest }) => ({
     ...rest,
-    thumbnailUrl: snippetPath ? signed.get(snippetPath) ?? null : null,
+    thumbnailUrl: snippetPath
+      ? `/api/v1/snippet?path=${encodeURIComponent(snippetPath)}&w=640`
+      : null,
   }));
 
   return NextResponse.json(templates);

@@ -90,3 +90,20 @@ def test_prior_claim_beats_placeholder_config_lexicon():
     assert f is not None
     assert f["category"] == "sourced"
     assert f["category_source"] == "ratchet:prior_claim"
+
+
+def test_fallback_value_cols_recovers_from_sibling_rows():
+    # KPI_Dashboard defect: model declared no value_header_cells — the region's
+    # own populated rows define the value columns; header dates resolve above.
+    from app.authoring.regions import _fallback_value_cols
+    cmap = {}
+    cmap[(3, 4)] = {"value": "Jan-25"}          # header row above region
+    cmap[(3, 5)] = {"value": "Feb-25"}
+    for col in (4, 5):
+        cmap[(10, col)] = {"value": 100.0}      # existing KPI row (slot)
+        cmap[(12, col)] = {"value": None, "formula": "=SUM(D10:D11)"}  # total row
+    cols = _fallback_value_cols(cmap, label_col=2, slot_rows=[10, 11],
+                                total_row=12, row_start=9)
+    assert [c["col"] for c in cols] == [4, 5]
+    assert cols[0]["parsed_date"] and cols[0]["parsed_date"].startswith("2025-01")
+    assert cols[1]["header_label"] == "Feb-25"

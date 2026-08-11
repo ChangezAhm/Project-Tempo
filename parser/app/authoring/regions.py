@@ -546,6 +546,42 @@ _STRUCTURAL = {"unlocked", "validated", "input_fill", "summed_member"}   # autho
 _CONFIGURABLE_KINDS = {"kpi_list", "custom_rows"}
 
 
+def _fallback_value_cols(cmap: dict[tuple[int, int], dict], label_col: int,
+                         slot_rows: list[int], total_row: int | None,
+                         row_start: int) -> list[dict]:
+    """Value columns recovered from the region's OWN rows when the model
+    declared no value_header_cells (the KPI_Dashboard defect: renamed lines got
+    labels but no value columns). The columns sibling slot rows / the total row
+    already use — numeric or formula cells right of the label column — ARE the
+    region's value columns; the nearest date-parsable cell above row_start
+    supplies each column's period identity when one exists."""
+    rows = [r for r in slot_rows if r] + ([total_row] if total_row else [])
+    col_hits: set[int] = set()
+    for rr in rows:
+        for cc in range(label_col + 1, label_col + 160):
+            cell = cmap.get((rr, cc))
+            if cell is None:
+                continue
+            v = effective_value(cell)
+            if cell.get("formula") or (isinstance(v, (int, float)) and not isinstance(v, bool)):
+                col_hits.add(cc)
+    out: list[dict] = []
+    for cc in sorted(col_hits):
+        hv = None
+        d = None
+        for hr in range(max(1, row_start - 8), row_start):
+            hcell = cmap.get((hr, cc))
+            if hcell is None:
+                continue
+            cand = effective_value(hcell)
+            dd = parse_any_date(cand)
+            if dd is not None:
+                hv, d = cand, dd
+        out.append({"col": cc, "parsed_date": d.isoformat() if d else None,
+                    "header_label": (str(hv)[:40] if hv not in (None, "") else None)})
+    return out
+
+
 def _convert(r: RegionOut, sheet_name: str, cmap: dict[tuple[int, int], dict],
              signals: dict[tuple[int, int], list[str]] | None = None,
              ) -> tuple[dict | None, list[str]]:
@@ -652,6 +688,12 @@ def _convert(r: RegionOut, sheet_name: str, cmap: dict[tuple[int, int], dict],
         d = parse_any_date(hv)
         value_cols.append({"col": hc[0], "parsed_date": d.isoformat() if d else None,
                            "header_label": (str(hv)[:40] if hv not in (None, "") else None)})
+    if not value_cols:
+        value_cols = _fallback_value_cols(
+            cmap, label_col, [sl["row"] for sl in slots], r.total_row, r.row_start)
+        if value_cols:
+            reasons.append(f"{sheet_name}: no value_header_cells declared — recovered "
+                           f"{len(value_cols)} value columns from the region's own rows")
     value_cols.sort(key=lambda v: v["col"])
     for i, vc in enumerate(value_cols):
         vc["position"] = i          # left-to-right ordinal — enables positional matching

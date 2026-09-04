@@ -50,7 +50,7 @@ def _fact(cell, category="data", value_role=None, label="Revenue", pidx=0):
 
 
 def test_build_demand_excludes_staging_and_protects_totals(monkeypatch):
-    from app.population import run as R
+    from app.population.pipeline import demand as R
     facts = [
         _fact("C5"),                                            # real input
         _fact("C6", category="staging", label="Scratch"),       # gated

@@ -71,3 +71,37 @@ def test_single_current_when_boundary_and_fallback_disagree():
     currents = [p for p in periods.values() if p.status == PeriodStatus.CURRENT]
     assert len(currents) == 1 and currents[0].col == 3
     assert periods[4].status == PeriodStatus.HISTORICAL
+
+
+def test_year_slot_bridges_from_quarterly_source():
+    # quarterly-only BS source serving a template FY column — the WTAF gap:
+    # 'end' takes the final quarter's balance, 'sum' needs all four quarters
+    from datetime import date as _d
+    from app.population.periods import align_slot
+    q = [(3, _d(2026, 3, 31), "quarter"), (4, _d(2026, 6, 30), "quarter"),
+         (5, _d(2026, 9, 30), "quarter"), (6, _d(2026, 12, 31), "quarter")]
+    picked, why = align_slot(0, 1, _d(2026, 12, 31), q, "month",
+                             template_grain="year", rollup="end")
+    assert picked == ([6], "single") and why is None          # Q4 balance
+    picked, why = align_slot(0, 1, _d(2026, 12, 31), q, "month",
+                             template_grain="year", rollup="sum")
+    assert picked == ([3, 4, 5, 6], "sum") and why is None    # four-quarter flow
+    picked, why = align_slot(0, 1, _d(2026, 12, 31), q[:3], "month",
+                             template_grain="year", rollup="sum")
+    assert picked is None and why == "bucket_incomplete"      # 3 of 4 quarters
+    picked, why = align_slot(0, 1, _d(2026, 12, 31), q[:3], "month",
+                             template_grain="year", rollup="end")
+    assert picked is None and why == "period_end_missing"     # Q4 absent
+
+
+def test_incomplete_months_never_fall_through_to_quarters():
+    # months present-but-incomplete DECIDE (bucket_incomplete); mixing grains
+    # inside one bucket would double-count
+    from datetime import date as _d
+    from app.population.periods import align_slot
+    cols = ([(c, _d(2026, m, 28), "month") for c, m in ((10, 1), (11, 2), (12, 3))]
+            + [(3, _d(2026, 3, 31), "quarter"), (4, _d(2026, 6, 30), "quarter"),
+               (5, _d(2026, 9, 30), "quarter"), (6, _d(2026, 12, 31), "quarter")])
+    picked, why = align_slot(0, 1, _d(2026, 12, 31), cols, "month",
+                             template_grain="year", rollup="sum")
+    assert picked is None and why == "bucket_incomplete"

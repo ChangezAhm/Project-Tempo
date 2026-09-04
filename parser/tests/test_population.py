@@ -33,7 +33,7 @@ def _open(data: bytes, tmp_path):
 
 
 def test_reset_values_clears_literals_only(tmp_path):
-    data, stats, applied, skipped, _checks = render_filled(_tiny_template(tmp_path), [], _clear_facts())
+    data, stats, applied, skipped, _checks, _linked = render_filled(_tiny_template(tmp_path), [], _clear_facts())
     assert stats == {"cleared_values": 1, "cleared_formulas": 0}
     ws = _open(data, tmp_path)
     assert ws.cells.get("B2").value is None          # stale literal wiped
@@ -42,7 +42,7 @@ def test_reset_values_clears_literals_only(tmp_path):
 
 
 def test_reset_full_clears_connector_formulas_too(tmp_path):
-    data, stats, applied, skipped, _checks = render_filled(
+    data, stats, applied, skipped, _checks, _linked = render_filled(
         _tiny_template(tmp_path), [], _clear_facts(), reset="full")
     assert stats == {"cleared_values": 1, "cleared_formulas": 1}
     ws = _open(data, tmp_path)

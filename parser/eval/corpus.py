@@ -84,32 +84,44 @@ CONSTRUCTED: list[Case] = [_config_case(), _connector_case(), _transposed_case()
 
 
 # --------------------------------------------------------------------------- #
-# Real corpus — the 9 stored templates
+# Real corpus — every template CURRENTLY stored with an understanding
 # --------------------------------------------------------------------------- #
+# The corpus used to be a hardcoded list of 9 template ids. Those templates
+# were later deleted from the DB and every real case silently became "No
+# versions for template ..." — the regression net was DEAD for weeks while the
+# derivation went through four versions unwatched (the whack-a-mole era).
+# Anchors are therefore ENUMERATED from the live DB: every stored template
+# with an understanding is automatically a regression case, and a new upload
+# grows the net instead of aging it. Hand-verified per-template invariants
+# key by template id below and simply stop applying if that template goes.
 _CHRONOGRAPH = "aeb5f285-3f53-41a0-9d81-3a816390fc49"
-REAL_TEMPLATE_IDS = [
-    _CHRONOGRAPH,
-    "d9c1589d-c60a-4146-8726-2086d3a82ac8",
-    "5a6e9620-bc45-4483-984a-5b04b7fd7c08",
-    "6c047599-a508-4c86-98c1-2dce138d996a",
-    "d7f0f4ac-bced-4b22-9a41-0edcc24ad4da",
-    "38d240a2-2f11-4ccb-ae92-b1b34b04985c",
-    "e8d562f4-7a8f-4da3-a380-0ea110b701ee",
-    "787d2d51-5cc7-4ee6-b1f2-32fcb3add93e",
-    "3ee0051b-07b9-4d04-90a6-867dbb11d750",
-]
-
-# Hand-verified truths for the Chronograph flash (this session's fixes).
 _CHRONOGRAPH_CONTROLS = ["POC Mode", "Scenario Selection 1", "Scenario Selection 2",
                          "Scenario Selection 5", "Historical chart series override flags",
                          "KPI Label 1", "KPI Label 5", "KPI Label 10"]
+_PER_TEMPLATE_INVARIANTS = {
+    _CHRONOGRAPH: [inv.labels_excluded(_CHRONOGRAPH_CONTROLS), inv.labels_fillable(["ARR"])],
+}
+
+
+def real_template_ids() -> list[str]:
+    """Templates that exist NOW and have an understanding to derive from."""
+    from app import supabase_client as sb
+    cl = sb.get_client()
+    rows = (cl.table("template_understanding")
+            .select("template_version_id, template_versions(template_id)")
+            .execute().data or [])
+    out: list[str] = []
+    for r in rows:
+        tid = ((r.get("template_versions") or {}).get("template_id"))
+        if tid and tid not in out:
+            out.append(tid)
+    return sorted(out)
 
 
 def real_cases() -> list[Case]:
     cases: list[Case] = []
-    for tid in REAL_TEMPLATE_IDS:
+    for tid in real_template_ids():
         invs = [inv.no_positional_labels, inv.totals_not_fillable, inv.sourced_have_period(0.8)]
-        if tid == _CHRONOGRAPH:
-            invs += [inv.labels_excluded(_CHRONOGRAPH_CONTROLS), inv.labels_fillable(["ARR"])]
+        invs += _PER_TEMPLATE_INVARIANTS.get(tid, [])
         cases.append(Case(name=tid[:8], template_id=tid, invariants=invs))
     return cases

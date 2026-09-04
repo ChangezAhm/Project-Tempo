@@ -103,7 +103,7 @@ class _FC:
 def test_render_filled_recalculates_and_reads_checks(tmp_path):
     checks = [{"sheet": "S", "cell": "C2", "row": 2, "col": 3, "kind": "ok_error",
                "origin": "formula_shape", "label": "S!C2", "before": None}]
-    data, stats, _a, _s, results = render_filled(
+    data, stats, _a, _s, results, _l = render_filled(
         _check_template(tmp_path), [_FC("S", "B2", 5)], [], checks=checks)
     assert len(results) == 1
     r = results[0]
@@ -122,7 +122,7 @@ def test_render_filled_calc_disabled_by_env(tmp_path, monkeypatch):
     monkeypatch.setenv("TEMPO_VERIFY_CALC", "0")
     checks = [{"sheet": "S", "cell": "C2", "row": 2, "col": 3, "kind": "ok_error",
                "origin": "formula_shape", "label": "S!C2", "before": None}]
-    data, stats, _a, _s, results = render_filled(
+    data, stats, _a, _s, results, _l = render_filled(
         _check_template(tmp_path), [_FC("S", "B2", 5)], [], checks=checks)
     assert results == [] and "calc_seconds" not in stats and data
 
@@ -136,6 +136,6 @@ def test_render_filled_calc_error_contained(tmp_path, monkeypatch):
     monkeypatch.setattr(tc, "evaluate_checks", boom)
     checks = [{"sheet": "S", "cell": "C2", "row": 2, "col": 3, "kind": "ok_error",
                "origin": "formula_shape", "label": "S!C2", "before": None}]
-    data, stats, _a, _s, results = render_filled(
+    data, stats, _a, _s, results, _l = render_filled(
         _check_template(tmp_path), [_FC("S", "B2", 5)], [], checks=checks)
     assert data and results == [] and "calc exploded" in stats.get("calc_error", "")

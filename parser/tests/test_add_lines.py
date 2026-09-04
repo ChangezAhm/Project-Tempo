@@ -228,17 +228,21 @@ def test_apply_writes_label_and_numeric_values():
 
 
 def test_apply_skips_empty_formula_error_and_text_source_values():
+    # ALL values unreadable -> the whole line is refused, label included (a
+    # label with zero values is litter, not a new line)
     ws = FakeWs()
     sval = {("Src", "AB7"): "=SUM(A1:A3)", ("Src", "AC7"): "#REF!"}
-    applied, _ = apply_additions({"KPIs": ws}, [_proposal()], sval)
-    assert applied[0]["cells_written"] == 0          # label written, no values
-    assert ws.cells.get("B10").value == "Churn"
+    applied, skipped = apply_additions({"KPIs": ws}, [_proposal()], sval)
+    assert applied == [] and "no readable source values" in skipped[0]["reason"]
+    assert ws.cells.get("B10").value is None
     assert ws.cells.get("C10").value is None and ws.cells.get("D10").value is None
 
+    # SOME values readable -> line written; only the bad cells skip
     ws2 = FakeWs()
-    sval2 = {("Src", "AB7"): None, ("Src", "AC7"): "n/a"}   # absent + noise text
+    sval2 = {("Src", "AB7"): 12.5, ("Src", "AC7"): "n/a"}
     applied2, _ = apply_additions({"KPIs": ws2}, [_proposal()], sval2)
-    assert applied2[0]["cells_written"] == 0
+    assert applied2[0]["cells_written"] == 1
+    assert ws2.cells.get("B10").value == "Churn"
 
 
 def test_apply_refuses_occupied_label_cell():
@@ -367,11 +371,45 @@ def test_placeholder_slots_apply_without_approval():
     ws = _WS()
     p = {"sheet_name": "KPI", "row": 17, "label_col": 1, "slot_mode": "placeholder",
          "expected_label": "Custom KPI 1", "label": "Turnover – APAC",
-         "row_start": 17, "total_row": None, "values": []}
-    applied, skipped = apply_additions({"KPI": ws}, [p], {})
+         "row_start": 17, "total_row": None,
+         "values": [{"col": 3, "source_sheet": "S", "source_cell": "C9"}]}
+    applied, skipped = apply_additions({"KPI": ws}, [p], {("S", "C9"): 42.0})
     assert applied and applied[0].get("overwrote_label")
     # editable_label without approval still refuses
     p2 = {**p, "slot_mode": "editable_label", "expected_label": "Net Debt"}
     ws2 = _WS()
     applied2, skipped2 = apply_additions({"KPI": ws2}, [p2], {})
     assert not applied2 and skipped2
+
+
+def test_apply_refuses_label_only_line_when_no_values_readable():
+    # every source value unreadable (empty/formula/error) -> the LABEL must not
+    # be written either (a real run stamped raw KPI codes onto empty rows)
+    ws = FakeWs()
+    prop = {"sheet_name": "KPIs", "row": 10, "label_col": 2, "label": "NEW_LOGOS",
+            "source_series_id": "S!c7", "slot_mode": "blank", "total_row": None,
+            "row_start": 10,
+            "values": [{"col": 3, "source_sheet": "S", "source_cell": "G5"},
+                       {"col": 4, "source_sheet": "S", "source_cell": "G6"}]}
+    sval = {("S", "G5"): None, ("S", "G6"): "=CX.GET(x)"}
+    applied, skipped = apply_additions({"KPIs": ws}, [prop], sval)
+    assert applied == []
+    assert skipped and "no readable source values" in skipped[0]["reason"]
+    assert ws.cells.get("B10").value is None          # label untouched
+
+
+def test_dated_series_never_sprays_into_a_narrow_categorical_table():
+    # a 31-month cash-flow series must not positionally 'align' into a covenant
+    # table whose 6 undated columns are Type/Currency/Facility-size (real bug)
+    from datetime import date as _d
+    from app.population.authoring import _matched_values
+    long_series = _series("CF!r7", "CF", 7, "Opening bank balance",
+                          [(3 + i, _d(2024, 1 + (i % 12), 28)) for i in range(31)])
+    categorical_cols = [(c, None) for c in range(3, 9)]     # 6 undated columns
+    assert _matched_values(long_series, categorical_cols) == []
+    # comparable widths remain allowed (genuine dateless template), flagged
+    wide_cols = [(c, None) for c in range(3, 18)]           # 15 undated columns
+    m = _matched_values(_series("S!r5", "S", 5, "Rev",
+                                [(3 + i, _d(2024, 1 + i, 28)) for i in range(11)]),
+                        wide_cols)
+    assert m and all(v["match"] == "positional" for v in m)

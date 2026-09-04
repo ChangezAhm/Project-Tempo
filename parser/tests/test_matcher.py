@@ -372,7 +372,7 @@ def test_bind_headcount_is_never_scaled_or_fxed():
     ]}]}
     periods = {"SaaS": [{"col": 3, "parsed_date": "2023-12", "period_type": "month"}]}
     cat = build_catalogue(snap, periods)
-    maps = [MetricMap(metric="headcount", series_id="SaaS!r7", confidence=0.95,
+    maps = [MetricMap(metric="Headcount (FTE)", series_id="SaaS!r7", confidence=0.95,
                   source_unit="FTE (count)", target_unit="FTE (count)")]
     fact = _fact("headcount", "D6", unit=None, currency=None)
     fact["metric_label"] = "Headcount (FTE)"
@@ -873,8 +873,8 @@ def test_bind_quarterly_kpi_rollup_end_to_end():
     # rate (% unit, no mapper verdict) averages the quarter's months; a quarter
     # with no source months stays blank. All deterministic, all cited.
     cat = build_catalogue(_kpi_source(), _kpi_periods())
-    maps = [MetricMap(metric="arr", series_id="SaaS!r5", confidence=0.9, rollup="end"),
-            MetricMap(metric="churn", series_id="SaaS!r6", confidence=0.9, rollup="avg")]
+    maps = [MetricMap(metric="ARR (€m)", series_id="SaaS!r5", confidence=0.9, rollup="end"),
+            MetricMap(metric="Monthly Churn %", series_id="SaaS!r6", confidence=0.9, rollup="avg")]
     facts = [_kpi_fact("arr", "D5", 4, 5, 0, "EUR millions", label="ARR (€m)"),
              _kpi_fact("churn", "D6", 4, 6, 0, "%", label="Monthly Churn %"),
              _kpi_fact("arr", "F5", 6, 5, 2, "EUR millions", label="ARR (€m)")]  # Q3: no data

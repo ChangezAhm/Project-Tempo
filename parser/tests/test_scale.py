@@ -134,10 +134,43 @@ def _demand():
 
 def test_bind_uses_template_magnitudes_to_scale_with_no_labels():
     cat = build_catalogue(_source(), _periods())
-    maps = [MetricMap(metric="revenue", series_id="P&L!r5", confidence=0.9)]
+    maps = [MetricMap(metric="Revenue", series_id="P&L!r5", confidence=0.9)]
     # template row 10 already holds ~12 (a prior actual) -> scale 1e-6 with NO unit labels
     ctx = ({("Model", "B10"): "#,##0.0"}, {("Model", 10): [11.9, 12.0]}, {})
     links, unmatched = bind([_fact()], cat, maps, _demand(), template_context=ctx)
     assert not unmatched and links[0].unit_scale == 1e-6
     # magnitude-confirmed -> no SCALE review flag
     assert not (links[0].note and "scale_unverified" in links[0].note)
+
+
+def test_no_template_unit_evidence_keeps_source_basis_flagged():
+    # the plan wrote sign PROSE into target_unit ("sign: cash outflow"), the
+    # template row is empty and carries no number format / display unit: the
+    # only evidence in the room is the source's basis — keep it at x1 with a
+    # visible flag + SCALE_CONFLICT (a real run blanked 200 CF cells here).
+    unknown = resolve_unit("sign: cash outflow (negative)")
+    assert unknown.kind == "unknown"
+    scale, flag, code = _rs(unknown, source_unit="GBP'000", sample=(1200.0, 1100.0))
+    assert scale == 1.0 and code == "SCALE_CONFLICT"
+    assert flag and "scale_assumed" in flag
+
+
+def test_no_unit_evidence_but_template_display_base_wins():
+    # other anchored rows imply the template displays raw ones while the source
+    # declares thousands -> scale from the display base, no question needed.
+    from types import SimpleNamespace
+    from app.population.execute import _resolve_scale
+    unknown = resolve_unit("sign: cash inflow")
+    fill = MetricMap(metric="x", source_unit="GBP'000")
+    scale, flag, code = _resolve_scale(
+        fill, SimpleNamespace(unit=_RAW), [1200.0], [], unknown, tpl_target_base=1.0)
+    assert scale == 1000.0 and code is None and "display-base" in flag
+
+
+def test_meaningless_metric_keys_are_skipped():
+    from app.population.run import _meaningless_key
+    assert _meaningless_key("row 25")
+    assert _meaningless_key("2023-01-31T00:00:00")
+    assert _meaningless_key("2023-01-31")
+    assert not _meaningless_key("Revenue")
+    assert not _meaningless_key("2023 revenue bridge")

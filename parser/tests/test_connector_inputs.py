@@ -101,7 +101,7 @@ def test_classify_matrix():
 # --- demand gate: 'row N' fallbacks never generate mapping demand ------------
 def test_build_demand_drops_rown_labels(monkeypatch):
     from app.datamodel.derive import DERIVATION_VERSION
-    from app.population import run as R
+    from app.population.pipeline import demand as R
     facts = [
         {"sheet_name": "F", "cell": "C25", "row": 25, "col": 3, "canonical_metric": None,
          "metric_label": "row 25", "category": "sourced", "value_role": None,
@@ -150,7 +150,7 @@ def test_unmatched_sourced_cell_is_never_cleared(tmp_path):
         {"sheet_name": "S", "cell": "B3", "category": "sourced"},   # connector formula, unmatched
         {"sheet_name": "S", "cell": "B4", "category": "sourced"},   # value-saved connector, unmatched
     ]
-    data, stats, _a, _s, _c = render_filled(
+    data, stats, _a, _s, _c, _l = render_filled(
         _connector_template(tmp_path), filled=[], clear_facts=clear_facts, reset="full")
     ws = _open(data, tmp_path)
     assert ws.cells.get("B2").value is None                 # manual stale value wiped
@@ -162,7 +162,7 @@ def test_matched_sourced_cell_is_cleared_and_filled(tmp_path):
     from app.population.run import render_filled
     clear_facts = [{"sheet_name": "S", "cell": "B4", "category": "sourced"}]
     filled = [_FC("S", "B4", 1234.0)]                       # a source value maps here
-    data, _stats, _a, _s, _c = render_filled(
+    data, _stats, _a, _s, _c, _l = render_filled(
         _connector_template(tmp_path), filled=filled, clear_facts=clear_facts, reset="full")
     ws = _open(data, tmp_path)
     assert ws.cells.get("B4").value == 1234.0               # replaced by the uploaded figure

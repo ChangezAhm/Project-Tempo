@@ -22,12 +22,16 @@ export async function POST(
   const asOf = form?.get("as_of_date");
   const reset = form?.get("reset");
   const addLines = form?.get("add_lines");
+  const dryRun = form?.get("dry_run");
+  const linkSources = form?.get("link_sources");
   const bytes = new Uint8Array(await file.arrayBuffer());
 
   const qs = new URLSearchParams({ filename: file.name || "source.xlsx" });
   if (typeof asOf === "string" && asOf) qs.set("as_of_date", asOf);
   if (typeof reset === "string" && reset) qs.set("reset", reset);
   if (typeof addLines === "string" && addLines) qs.set("add_lines", addLines);
+  if (typeof linkSources === "string" && linkSources) qs.set("link_sources", linkSources);
+  if (typeof dryRun === "string" && dryRun) qs.set("dry_run", dryRun);
   try {
     const res = await parserFetch(`${PARSER_URL}/populate/${id}?${qs.toString()}`, {
       method: "POST",

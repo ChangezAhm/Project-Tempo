@@ -268,7 +268,34 @@ export type PopulateResult = {
   proposed_additions?: ProposedAddition[];
   additions_applied?: AppliedAddition[];
   notes: string[];
+  // plain-words date coverage (source span vs template demand) — why honest
+  // blanks are blank
+  coverage_summary?: string[];
+  // the template's own tie-out formulas after filling — failed_after > 0 means
+  // the workbook disagrees with the company's own reported totals (RED banner)
+  tie_out?: {
+    evaluated?: number;
+    failed_before?: number;
+    failed_after?: number;
+    revised?: number;
+  } | null;
+  template_checks?: (Record<string, unknown> & {
+    evaluated?: number;
+    failed?: number;
+    items?: { status: string; sheet: string; cell: string; label: string }[];
+  }) | null;
   filled_url: string | null;
+  // Traceable deliverable: same fill, but every written value is a formula
+  // referencing the source data, imported as values-only "Source - …" sheets.
+  linked_url: string | null;
+  linked?: {
+    sheets_added?: string[];
+    formula_cells?: number;
+    fallback_cells?: number;
+    verified?: boolean;
+    additions_not_linked?: number;
+    error?: string;
+  } | null;
   audit_url: string | null;
 };
 
@@ -279,7 +306,43 @@ export type PopulateOptions = {
   asOf?: string | null;
   reset?: "values" | "full";
   addLines?: "off" | "propose" | "apply";
+  // also produce the traceable (formula-linked) workbook — default true
+  linkSources?: boolean;
 };
+
+// Pre-flight cost estimate: same endpoint with dry_run — no LLM spend, returns
+// what the run WILL cost so the user consents before a token is bought.
+export type PopulateEstimate = {
+  dry_run: true;
+  demand_metrics: number;
+  source_series: number;
+  plan_cache?: string | null;
+  estimated_total_usd?: number | null;
+  cap_exceeded?: boolean;
+  run_cap_usd?: number;
+};
+
+export async function estimatePopulate(
+  targetId: string,
+  file: File,
+  opts: PopulateOptions = {}
+): Promise<PopulateEstimate> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("dry_run", "true");
+  if (opts.asOf) form.append("as_of_date", opts.asOf);
+  if (opts.reset) form.append("reset", opts.reset);
+  if (opts.addLines) form.append("add_lines", opts.addLines);
+  const res = await fetch(`/api/v1/template/${targetId}/populate`, {
+    method: "POST",
+    body: form,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error ?? `Estimate failed (${res.status})`);
+  }
+  return body as PopulateEstimate;
+}
 
 export async function populateTemplate(
   targetId: string,
@@ -291,6 +354,7 @@ export async function populateTemplate(
   if (opts.asOf) form.append("as_of_date", opts.asOf);
   if (opts.reset) form.append("reset", opts.reset);
   if (opts.addLines) form.append("add_lines", opts.addLines);
+  if (opts.linkSources != null) form.append("link_sources", String(opts.linkSources));
   const res = await fetch(`/api/v1/template/${targetId}/populate`, {
     method: "POST",
     body: form,

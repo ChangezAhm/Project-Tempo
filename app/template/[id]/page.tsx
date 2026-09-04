@@ -9,8 +9,10 @@ import {
   getRegions,
   getReviewItems,
   getUnderstanding,
+  estimatePopulate,
   parseTemplate,
   populateTemplate,
+  type PopulateEstimate,
   understandTemplate,
   verifyReviewItem,
   type ExtensibleRegion,
@@ -36,26 +38,49 @@ function PopulatePanel({ templateId }: { templateId: string }) {
   const [asOf, setAsOf] = useState("");
   const [reset, setReset] = useState<"values" | "full">("values");
   const [addLines, setAddLines] = useState<"off" | "propose" | "apply">("propose");
+  const [linkSources, setLinkSources] = useState(true);
   const [dragging, setDragging] = useState(false);
   const [running, setRunning] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PopulateResult | null>(null);
+  const [estimate, setEstimate] = useState<PopulateEstimate | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const VALID = /\.(xlsx|xlsm|xls)$/i;
 
+  // CONSENT FIRST: dropping a file gets a cost estimate, not a charge — the
+  // run only starts after an explicit confirm showing the expected dollars.
   async function handleFile(file: File) {
     if (!VALID.test(file.name)) {
       setError("Drop an Excel file (.xlsx, .xlsm, .xls).");
       return;
     }
-    setRunning(true);
     setError(null);
     setResult(null);
+    setEstimate(null);
     setFileName(file.name);
+    setPendingFile(file);
+    setRunning(true);
     try {
-      setResult(await populateTemplate(templateId, file, { asOf: asOf || null, reset, addLines }));
+      setEstimate(await estimatePopulate(templateId, file, { asOf: asOf || null, reset, addLines }));
+    } catch {
+      setEstimate(null); // estimator failure never blocks — confirm shows "unknown"
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function runConfirmed() {
+    const file = pendingFile;
+    if (!file) return;
+    setPendingFile(null);
+    setEstimate(null);
+    setRunning(true);
+    setError(null);
+    try {
+      setResult(await populateTemplate(templateId, file, { asOf: asOf || null, reset, addLines, linkSources }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Population failed");
     } finally {
@@ -111,6 +136,17 @@ function PopulatePanel({ templateId }: { templateId: string }) {
               <option value="off">Off</option>
             </select>
           </label>
+          <label className="text-xs text-neutral-500">
+            Traceable copy
+            <select
+              value={linkSources ? "on" : "off"}
+              onChange={(e) => setLinkSources(e.target.value === "on")}
+              className="mt-1 block rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm"
+            >
+              <option value="on">Formulas → source</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
         </div>
       </div>
 
@@ -163,8 +199,68 @@ function PopulatePanel({ templateId }: { templateId: string }) {
 
       {error ? <div className="mt-3"><ErrorNote>{error}</ErrorNote></div> : null}
 
+      {pendingFile ? (
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-neutral-300 bg-neutral-50 px-3 py-2.5 text-sm">
+          <span className="font-medium text-ink">{pendingFile.name}</span>
+          <span className="text-neutral-600">
+            {estimate?.estimated_total_usd != null
+              ? `Estimated cost ~$${estimate.estimated_total_usd.toFixed(2)} (cap $${estimate.run_cap_usd?.toFixed(0)})`
+              : running ? "Estimating cost…" : "Cost estimate unavailable"}
+            {estimate?.plan_cache ? " — previous plan cached, this re-run is nearly free" : ""}
+          </span>
+          {estimate?.cap_exceeded ? (
+            <span className="text-red-700">
+              Estimate exceeds the cap — raise TEMPO_MAX_RUN_USD before running.
+            </span>
+          ) : null}
+          <button
+            onClick={() => void runConfirmed()}
+            disabled={running}
+            className="ml-auto rounded-md bg-ink px-3 py-1.5 text-xs font-medium text-neutral-50 transition hover:bg-neutral-700 disabled:opacity-50"
+          >
+            Run populate
+          </button>
+          <button
+            onClick={() => { setPendingFile(null); setEstimate(null); }}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
+
+      {result?.coverage_summary?.length ? (
+        <div className="mt-3 rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-800">
+          {result.coverage_summary.map((line, i) => (
+            <p key={i}>{line}</p>
+          ))}
+        </div>
+      ) : null}
+
       {result ? (
         <div className="mt-4 space-y-3">
+          {result.tie_out && (result.tie_out.failed_after ?? 0) > 0 ? (
+            <div className="rounded-md border-2 border-red-400 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+              <p className="font-semibold">
+                ⚠ {result.tie_out.failed_after} of {result.tie_out.evaluated} template tie-out
+                checks FAIL — the filled totals disagree with the source&apos;s own reported
+                figures. Do not submit this workbook without reviewing.
+              </p>
+              <p className="mt-1 text-xs">
+                {typeof result.tie_out.failed_before === "number" &&
+                result.tie_out.failed_before > (result.tie_out.failed_after ?? 0)
+                  ? `An automatic revision fixed ${result.tie_out.failed_before - (result.tie_out.failed_after ?? 0)} check(s); the rest need a human call — see the review inbox.`
+                  : "The failing checks are listed in the review inbox with the computed values."}
+              </p>
+            </div>
+          ) : result.tie_out && (result.tie_out.evaluated ?? 0) > 0 ? (
+            <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              ✓ All {result.tie_out.evaluated} of the template&apos;s own tie-out checks pass
+              {result.tie_out.revised
+                ? ` (after an automatic revision fixed ${result.tie_out.failed_before} failing check(s))`
+                : ""}.
+            </p>
+          ) : null}
           {result.routing?.hint ? (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">{result.routing.hint}</p>
           ) : null}
@@ -209,12 +305,44 @@ function PopulatePanel({ templateId }: { templateId: string }) {
                 Download filled workbook
               </a>
             ) : null}
+            {result.linked_url ? (
+              <a
+                href={result.linked_url}
+                title="Same fill, but every value is a formula pointing at your source data, included as 'Source - …' sheets"
+                className={cx(
+                  "rounded-md border border-ink px-3 py-1.5 text-xs font-medium text-ink transition hover:bg-neutral-100",
+                  !result.filled_url && "ml-auto"
+                )}
+              >
+                Download traceable workbook
+              </a>
+            ) : null}
             {result.audit_url ? (
               <a href={result.audit_url} className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50">
                 Audit (JSON)
               </a>
             ) : null}
           </div>
+          {result.linked?.formula_cells ? (
+            <p className="text-xs text-neutral-500">
+              Traceable copy: {result.linked.formula_cells} cell
+              {result.linked.formula_cells === 1 ? "" : "s"} as live formulas over{" "}
+              {result.linked.sheets_added?.length ?? 0} embedded source sheet
+              {(result.linked.sheets_added?.length ?? 0) === 1 ? "" : "s"}
+              {result.linked.fallback_cells
+                ? ` — ${result.linked.fallback_cells} kept as raw values (formula didn't reproduce the written value)`
+                : ", all verified to compute the written values"}
+              {result.linked.additions_not_linked
+                ? `; ${result.linked.additions_not_linked} added line${result.linked.additions_not_linked === 1 ? "" : "s"} stay values`
+                : ""}
+              .
+            </p>
+          ) : null}
+          {result.linked?.error ? (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              Traceable copy unavailable: {result.linked.error}
+            </p>
+          ) : null}
           {result.filled.length > 0 ? (
             <div className="tempo-scroll max-h-80 overflow-auto rounded-md border border-neutral-200">
               <table className="w-full text-left text-xs">

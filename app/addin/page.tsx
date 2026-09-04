@@ -28,6 +28,8 @@ type PopulateResult = {
   open_questions_count: number;
   review_count: number;
   filled_url: string | null;
+  // traceable variant: values as formulas over embedded "Source - …" sheets
+  linked_url: string | null;
   error?: string;
 };
 
@@ -168,13 +170,11 @@ export default function AddinPage() {
   //      Excel on it natively (createWorkbook rejects very large payloads).
   //   3. window.open on the signed URL — plain browser download.
   const openFilled = useCallback(
-    async (result: PopulateResult, template?: TemplateCard) => {
-      if (!result.filled_url) return;
+    async (url: string | null, name: string) => {
+      if (!url) return;
       setOpenState("opening");
       try {
-        const res = await fetch(
-          `/api/v1/filled-file?url=${encodeURIComponent(result.filled_url)}`
-        );
+        const res = await fetch(`/api/v1/filled-file?url=${encodeURIComponent(url)}`);
         if (!res.ok) throw new Error(`Download failed (${res.status})`);
         const buf = await res.arrayBuffer();
         await openWorkbookFromBase64(bufferToBase64(buf));
@@ -187,10 +187,7 @@ export default function AddinPage() {
         const res = await fetch("/api/v1/open-local", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url: result.filled_url,
-            name: `${template?.name ?? "template"} — filled.xlsx`,
-          }),
+          body: JSON.stringify({ url, name }),
         });
         if (!res.ok) throw new Error(`Local open failed (${res.status})`);
         setOpenState("opened");
@@ -199,7 +196,7 @@ export default function AddinPage() {
         // tier 3: browser download
       }
       try {
-        window.open(result.filled_url, "_blank");
+        window.open(url, "_blank");
         setOpenState("opened");
       } catch {
         setOpenState("failed");
@@ -214,7 +211,7 @@ export default function AddinPage() {
     if (phase.kind !== "done" || !phase.result.filled_url) return;
     if (autoOpened.current === phase.result.filled_url) return;
     autoOpened.current = phase.result.filled_url;
-    openFilled(phase.result, phase.template);
+    openFilled(phase.result.filled_url, `${phase.template.name} — filled.xlsx`);
   }, [phase, openFilled]);
 
   const busy = phase.kind === "reading" || phase.kind === "filling";
@@ -363,7 +360,7 @@ export default function AddinPage() {
         </div>
 
         <button
-          onClick={() => openFilled(r, phase.template)}
+          onClick={() => openFilled(r.filled_url, `${phase.template.name} — filled.xlsx`)}
           disabled={!r.filled_url || openState === "opening"}
           className="mt-4 w-full rounded-lg bg-ink px-3 py-2.5 text-[13px] font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50"
         >
@@ -373,6 +370,18 @@ export default function AddinPage() {
               ? "Open again"
               : "Open filled workbook"}
         </button>
+        {r.linked_url ? (
+          <button
+            onClick={() =>
+              openFilled(r.linked_url, `${phase.template.name} — filled (traceable).xlsx`)
+            }
+            disabled={openState === "opening"}
+            title="Values as formulas pointing at your source data, included as 'Source - …' sheets"
+            className="mt-2 w-full rounded-lg border border-ink px-3 py-2.5 text-[13px] font-medium text-ink transition hover:bg-neutral-100 disabled:opacity-50"
+          >
+            Open traceable copy
+          </button>
+        ) : null}
         {openState === "opened" && (
           <p className="mt-2 text-center text-[11px] text-neutral-400">
             The filled workbook opened in a new Excel window.

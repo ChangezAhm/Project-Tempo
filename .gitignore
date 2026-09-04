@@ -55,3 +55,10 @@ venv/
 *.csv
 parser/_*.py
 ~$*
+
+# populate run outputs & scratch workbooks at repo ROOT only - regenerable, never commit
+# (does not match "Templates for testing/", which is the labelled eval corpus)
+/*.xlsx
+
+# hiring: candidate submissions reviewed locally - not product code
+/sample-project/

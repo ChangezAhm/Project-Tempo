@@ -58,6 +58,7 @@ def _matched_values(series: Series, value_col_dates: list[tuple[int, date | None
          review instead of silently guessing.
     A region with SOME dated columns never falls back positionally — a partial
     timeline means the undated columns are something else (labels, totals)."""
+    from app.population.catalogue import series_cell
     dated = [(col, d) for col, d in value_col_dates if col is not None and d is not None]
     if dated:
         out: list[dict] = []
@@ -66,21 +67,29 @@ def _matched_values(series: Series, value_col_dates: list[tuple[int, date | None
                 if sd is not None and _bucket(d, "month") == _bucket(sd, "month"):
                     out.append({"col": col,
                                 "source_sheet": series.sheet,
-                                "source_cell": f"{_col_letters(scol)}{series.row}",
+                                "source_cell": series_cell(series, scol),
                                 "match": "date"})
                     break    # first matching source column wins (period_cols order is stable)
         return out
 
-    # fully undated region → positional, newest-anchored, flagged
+    # fully undated region → positional, newest-anchored, flagged — with a
+    # SHAPE guard: a long DATED series squeezed into a handful of undated
+    # columns is a categorical table, not a dateless timeline (a real run
+    # sprayed 31-month cash-flow series across a covenant table whose columns
+    # were Type/Currency/Facility-size). Comparable widths stay allowed (the
+    # genuine dateless-template case) and remain review-flagged as before.
     rcols = sorted(col for col, _d in value_col_dates if col is not None)
     scols = sorted(c for (c, _d, _pt) in series.period_cols)
     if not rcols or not scols:
+        return []
+    dated_n = sum(1 for (_c, d, _pt) in series.period_cols if d is not None)
+    if dated_n and len(rcols) * 3 < dated_n:
         return []
     out = []
     for i in range(1, min(len(rcols), len(scols)) + 1):
         out.append({"col": rcols[-i],
                     "source_sheet": series.sheet,
-                    "source_cell": f"{_col_letters(scols[-i])}{series.row}",
+                    "source_cell": series_cell(series, scols[-i]),
                     "match": "positional"})
     out.reverse()
     return out
@@ -302,11 +311,11 @@ def apply_additions(ws_by_name: dict, proposals: list[dict], sval: dict
                 continue
             overwrote = {"from": live, "to": p.get("label")}
 
+        # Resolve WRITABLE values BEFORE touching the label: a label with zero
+        # values is not a new line, it's litter (a real run stamped raw KPI
+        # codes onto empty rows because the value reads all failed).
         style_row = (p.get("row_start") or row) - 1   # last native sibling above the region
-        label_cell.put_value(p.get("label"))
-        _copy_style(ws, style_row, p["label_col"], label_cell)
-
-        written = 0
+        writable: list[tuple[int, float]] = []
         for v in p.get("values") or []:
             raw = sval.get((v.get("source_sheet"), (v.get("source_cell") or "").upper()))
             # Same guards as apply.py: an empty cell or a formula/error string
@@ -324,8 +333,19 @@ def apply_additions(ws_by_name: dict, proposals: list[dict], sval: dict
             cell = ws.cells.get(f"{_col_letters(v['col'])}{row}")
             if getattr(cell, "is_formula", False):
                 continue    # never write over a live formula cell
+            writable.append((v["col"], num))
+        if not writable:
+            _skip("no readable source values landed in this region's columns — "
+                  "label not written")
+            continue
+
+        label_cell.put_value(p.get("label"))
+        _copy_style(ws, style_row, p["label_col"], label_cell)
+        written = 0
+        for col_, num in writable:
+            cell = ws.cells.get(f"{_col_letters(col_)}{row}")
             cell.put_value(num)
-            _copy_style(ws, style_row, v["col"], cell)
+            _copy_style(ws, style_row, col_, cell)
             written += 1
 
         record = {"sheet_name": p["sheet_name"], "row": row,

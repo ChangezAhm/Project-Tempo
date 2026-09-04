@@ -40,8 +40,11 @@ _COARSER = {"month": 0, "quarter": 1, "year": 2}
 def verify_plan(fills: list[MetricMap], catalogue: dict[str, Series], facts: list[dict],
                 demand: dict, template_context: tuple[dict, dict, dict],
                 agg_membership: dict[str, frozenset] | None,
-                confidence_floor: float = 0.6) -> list[PlanIssue]:
-    """Plan-level verification (cell-level data gaps surface in execute)."""
+                confidence_floor: float = 0.6,
+                scenario_equiv: dict[str, str] | None = None) -> list[PlanIssue]:
+    """Plan-level verification (cell-level data gaps surface in execute).
+    ``scenario_equiv``: user-confirmed contract substitutions ({"budget":
+    "forecast"}) — a demanded scenario its equivalent can serve is not a gap."""
     issues: list[PlanIssue] = []
     by_metric: dict[str, MetricMap] = {}
     for m in fills:
@@ -98,11 +101,17 @@ def verify_plan(fills: list[MetricMap], catalogue: dict[str, Series], facts: lis
                 suggested_resolution=f"map to '{series.label}' ({m.series_id})"))
 
         # SCENARIO_NO_SOURCE: the template demands budget/forecast slots this
-        # series can't serve (no variant row, no tagged column) — factual check
+        # series can't serve (no variant row, no tagged column) — factual check.
+        # A user-confirmed equivalence counts as coverage (the executor serves
+        # those slots from the equivalent scenario's columns).
         for scen in sorted(scen_of.get(key, ())):
-            has = (scen in (series.variants or {})
-                   or series.scenario == scen
-                   or any((series.col_scenario.get(c) or "actual") == scen
+            accepted = {scen}
+            sub = (scenario_equiv or {}).get(scen)
+            if sub:
+                accepted.add(sub)
+            has = (bool(accepted & set(series.variants or {}))
+                   or series.scenario in accepted
+                   or any((series.col_scenario.get(c) or "actual") in accepted
                           for (c, _d, _pt) in series.period_cols))
             if not has:
                 # a data gap the planner cannot repair (it can't conjure budget

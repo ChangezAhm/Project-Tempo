@@ -40,7 +40,10 @@ def source_fingerprint(snapshot: dict) -> str:
 _CONFIRM = ("yes", "approve", "approved", "confirm", "confirmed", "ok", "keep", "correct")
 
 # fields a decision may set on a SeriesFill
-_FIELDS = {"rollup", "source_unit", "target_unit", "sign_flip", "confirmed", "scenario"}
+_FIELDS = {"rollup", "source_unit", "target_unit", "sign_flip", "confirmed", "scenario",
+           # template-level (metric='*'), consumed by the EXECUTOR not the plan:
+           # {"budget": "forecast"} = slots demanding budget accept forecast columns
+           "scenario_equivalence"}
 
 
 def decision_spec(metric: str, field: str, proposal=None, *, scope: str = "template",
@@ -82,6 +85,14 @@ def parse_answer(field: str, answer: str, proposal=None):
         for s in ("actual", "budget", "forecast"):
             if s in t:
                 return s
+        return None
+    if field == "scenario_equivalence":
+        # "yes — use forecast for budget columns" (the one-tap) -> the proposal;
+        # free text naming both scenarios also parses; a refusal doesn't apply.
+        if t.startswith(_CONFIRM) or ("use" in t and "forecast" in t):
+            return proposal
+        if "no" in t or "blank" in t:
+            return None
         return None
     return None
 
@@ -130,6 +141,8 @@ def apply_decisions(fills: list[MetricMap], decisions: dict[str, dict]) -> int:
             continue
         changed = 0   # per fill — the note marks only fills a decision touched
         for field, val in dec.items():
+            if field == "scenario_equivalence":
+                continue   # executor-level; extracted by the caller, not a plan field
             if field == "confirmed":
                 if val and m.confidence < 0.9:
                     m.confidence = 0.9   # user confirmed the mapping — floor cleared

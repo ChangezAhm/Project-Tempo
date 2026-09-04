@@ -204,28 +204,42 @@ def align_slot(period_index: int | None, period_count: int, parsed_date: date | 
             if _bucket(d, bgrain) == tkey:
                 return ([c], "single"), None
         if bgrain in ("quarter", "year"):
-            # the bucket's month columns, deduped by calendar month (a month that
-            # appears as both actual and budget contributes once — first wins,
-            # and the caller orders actuals first)
-            months, seen = [], set()
-            for d, c in cols_of("month"):
-                if _bucket(d, bgrain) == tkey and (d.year, d.month) not in seen:
-                    seen.add((d.year, d.month))
-                    months.append((d, c))
-            if not months:
-                return None, "no_column_in_bucket"
-            if rollup == "end":
-                end = _bucket_end(parsed_date, bgrain)
-                for d, c in months:
-                    if (d.year, d.month) == end:
-                        return ([c], "single"), None
-                return None, "period_end_missing"
-            if rollup in ("sum", "avg"):
-                need = 3 if bgrain == "quarter" else 12
-                if len(months) == need:
-                    return ([c for _d, c in months], rollup), None
-                return None, "bucket_incomplete"
-            return None, "grain_unbridgeable"
+            # CROSS-GRAIN BRIDGE, generalized: a coarse slot fills from the
+            # FINEST sub-grain present in its bucket — months first, then (for
+            # a year slot) quarters. The finest-present grain DECIDES: an
+            # incomplete month set never falls through to quarters (mixing
+            # grains inside one bucket double-counts). A quarterly-only BS
+            # source can thus serve FY columns (final-quarter balance for
+            # 'end' stocks, four-quarter sum for flows) — previously only
+            # months bridged and quarterly sources left every annual slot blank.
+            sub_grains = [("month", 3 if bgrain == "quarter" else 12)]
+            if bgrain == "year":
+                sub_grains.append(("quarter", 4))
+            for fgrain, need in sub_grains:
+                units, seen = [], set()
+                for d, c in cols_of(fgrain):
+                    if _bucket(d, bgrain) == tkey and _bucket(d, fgrain) not in seen:
+                        seen.add(_bucket(d, fgrain))
+                        units.append((d, c))
+                if not units:
+                    continue                      # try the next finer grain
+                if rollup == "end":
+                    if fgrain == "month":
+                        end_key = _bucket_end(parsed_date, bgrain)
+                        keys = [((d.year, d.month), c) for d, c in units]
+                    else:                         # final quarter of the year
+                        end_key = (tkey[0], 3)
+                        keys = [(_bucket(d, "quarter"), c) for d, c in units]
+                    for key, c in keys:
+                        if key == end_key:
+                            return ([c], "single"), None
+                    return None, "period_end_missing"
+                if rollup in ("sum", "avg"):
+                    if len(units) == need:
+                        return ([c for _d, c in units], rollup), None
+                    return None, "bucket_incomplete"
+                return None, "grain_unbridgeable"
+            return None, "no_column_in_bucket"
         return None, "no_column_in_bucket"
     if period_index is None:
         return None, "no_slot_index"

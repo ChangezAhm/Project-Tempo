@@ -46,13 +46,15 @@ def estimate_call_usd(model: str, input_chars: int, max_output_tokens: int, n_im
 
 
 def default_cap_usd() -> float:
-    """Cap for a POPULATE run: one text-first source-understanding pass (Sonnet,
-    a handful of sheets) + the metric→series mapping. Low by design; repeat runs on
-    the same file are free (cached). Tune via TEMPO_MAX_RUN_USD."""
+    """Cap for a POPULATE run: source understanding + the grid-mode mapping
+    (Opus with BOTH workbooks in context — the one call that determines output
+    quality). Raised from $3: the low cap forced a starved digest mapper, and
+    the owner's standing rule is reliability over cost. Still a hard abort —
+    tune via TEMPO_MAX_RUN_USD."""
     try:
-        return float(os.environ.get("TEMPO_MAX_RUN_USD", "3.00"))
+        return float(os.environ.get("TEMPO_MAX_RUN_USD", "12.00"))
     except ValueError:
-        return 3.00
+        return 12.00
 
 
 def default_onboarding_cap_usd() -> float:

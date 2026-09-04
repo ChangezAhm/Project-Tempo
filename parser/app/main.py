@@ -323,6 +323,7 @@ async def populate_route(
     reset: str = "values",
     add_lines: str = "apply",
     deep_rescue: bool = True,
+    link_sources: bool = True,
 ) -> dict:
     if not settings.configured:
         raise HTTPException(503, "Parser not configured (missing Supabase service-role key)")
@@ -338,7 +339,7 @@ async def populate_route(
             return await run_in_threadpool(
                 partial(populate_from_bytes, target_template_id, filename, data, as_of_date,
                         display_unit=display_unit, reset=reset, add_lines=add_lines,
-                        dry_run=dry_run, deep_rescue=deep_rescue)
+                        dry_run=dry_run, deep_rescue=deep_rescue, link_sources=link_sources)
             )
     except SpendCapExceeded as e:
         # 402: the run hit its spend cap and was aborted before overspending.
@@ -431,7 +432,8 @@ async def populate_workbook_route(target_template_id: str, payload: dict = Body(
                         payload.get("as_of_date"),
                         display_unit=opts.get("display_unit"), reset=reset,
                         add_lines=add_lines, dry_run=bool(opts.get("dry_run")),
-                        deep_rescue=opts.get("deep_rescue", True))
+                        deep_rescue=opts.get("deep_rescue", True),
+                        link_sources=bool(opts.get("link_sources", True)))
             )
     except SpendCapExceeded as e:
         raise HTTPException(402, str(e))

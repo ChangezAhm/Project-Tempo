@@ -138,7 +138,8 @@ def total_leaf_rows(snapshot: dict) -> dict[tuple[str, int], set[tuple[str, int]
 
 
 def _metric_key(fact: dict) -> str | None:
-    return fact.get("canonical_metric") or fact.get("metric_label")
+    # mirror of schema.metric_key: label-first (see its docstring)
+    return fact.get("metric_label") or fact.get("canonical_metric")
 
 
 def metric_totals(facts: list[dict], snapshot: dict | None) -> dict[str, frozenset] | None:

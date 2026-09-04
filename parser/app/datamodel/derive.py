@@ -42,7 +42,9 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 15   # v15: claims ratchet (prior committed claims persist) + push/ratchet facts beat config lexicon
+DERIVATION_VERSION = 19   # v19: explicit column grain honours L2's deterministic
+                          # period_type too, not just the LLM's granularity (v18 missed
+                          # FY columns the LLM had typed monthly)
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -681,6 +683,7 @@ def derive_data_model(template_id: str) -> DataModelResult:
     flags: list[str] = []
     orphan_cells = 0
     seen: set[tuple[str, str]] = set()
+    bare_derived_rows: set[tuple[str, int]] = set()   # declared-derived, no formulas backing
     role_by_sheet: dict[str, str | None] = {}
     l3_row_tags: dict[str, dict[int, tuple[str | None, int | None]]] = {}
     gated_by_role: dict[str, int] = {}
@@ -777,7 +780,20 @@ def derive_data_model(template_id: str) -> DataModelResult:
             iso = col_date.get(col)
             parsed = iso or pidx.get(col, {}).get("parsed_date")
             # deterministic date-spacing grain wins over the LLM's guess.
-            grain = sheet_date_grain or (cp.get("period_type") if cp else None) or default_ptype
+            # An explicitly-typed column keeps its OWN type: an FY/quarter/LTM
+            # summary column on a monthly sheet is not a month, and letting the
+            # sheet's dominant grain clobber it once fed an annual slot a single
+            # November. Both the LLM's granularity AND L2's deterministic
+            # period_type (which parses 'FY26 Budget' → year) count as explicit;
+            # the sheet grain only fills gaps.
+            cp_type = str(cp.get("period_type") or "").lower() if cp else None
+            l2_type = str(pidx.get(col, {}).get("period_type") or "").lower()
+            _EXPLICIT = ("year", "quarter", "ltm", "ytd")
+            explicit = next((t for t in (cp_type, l2_type) if t in _EXPLICIT), None)
+            if explicit:
+                grain = explicit
+            else:
+                grain = sheet_date_grain or cp_type or default_ptype
             if cp:
                 # a real date makes the cleanest label; fall back to the LLM's/header text.
                 lbl = (_iso_label(iso) or _label(cp["label"])
@@ -951,22 +967,50 @@ def derive_data_model(template_id: str) -> DataModelResult:
         # variant rows were understood perfectly at metric-row level but never
         # claimed as fields, so four whole rows produced no facts). Emit each
         # claimed row across the sheet's period columns; seen-cells win.
+        # ALWAYS union the columns the sheet's already-claimed facts use: on a
+        # formula-driven header row L2/L3 pin only a few period headers, and a
+        # row-level claim emitted against that narrow set produced 8-of-51
+        # facts per derived row (2 fills) while input rows carried all 51.
         row_claim_cols = sorted(
             set(period_idx.get(sheet, {}).keys())
             | {rc[0] for p in u.get("periods", []) if (rc := _rc(p.get("header_cell") or ""))}
-            # fallback: the columns the sheet's ALREADY-CLAIMED facts use — the
-            # actual rows define exactly which columns their variants span
-            # (templates whose period headers neither L2 nor L3 could pin).
-            or emitted_cols)
+            | emitted_cols)
+        # EVIDENCE GATE for derived rows: value_role='subtotal'/'total'/'formula'
+        # is the understanding's reading of INTENT ("this row derives from
+        # others"). The write-protection downstream assumes the template
+        # actually computes such rows — true only when the row contains real
+        # formulas. On a bare-grid template nothing computes them, so protecting
+        # them guarantees the most-looked-at lines (Net revenue, Gross profit,
+        # margins) stay empty forever. A derived row with NO formulas is emitted
+        # as a fillable fact; its value_role is prefixed 'derived:' (post-pass
+        # below) so it escapes the exact-match protection while keeping the
+        # declared intent visible in every audit.
+        formula_rows_here = {r for (nm, r, _c) in cell_formula if nm == sheet}
+        _DERIVED_ROLES = ("subtotal", "total", "formula", "calculated", "computed")
         for m in u.get("metric_rows", []):
-            if (m.get("value_role") or "") != "input":
-                continue
+            role_m = (m.get("value_role") or "").strip().lower()
             rc = _rc(m.get("label_cell") or "")
             if not rc:
                 continue
+            derived_claim = False
+            if role_m == "input":
+                pass
+            elif role_m in _DERIVED_ROLES and rc[1] not in formula_rows_here:
+                bare_derived_rows.add((sheet, rc[1]))
+                derived_claim = True
+            else:
+                continue
             for col in row_claim_cols:
-                if (sheet, f"{column_letter(col)}{rc[1]}") not in seen:
-                    _emit(col, rc[1], {"label": m.get("label"), "needs_value": True})
+                if (sheet, f"{column_letter(col)}{rc[1]}") in seen:
+                    continue
+                # a DERIVED display row only spans period-bearing columns — on
+                # config-heavy templates the fact-column union includes scattered
+                # non-period input cells, and a subtotal "fact" in a notes/config
+                # column is pure noise (input rows keep the wider span: their
+                # own claims already bound them)
+                if derived_claim and period_for(col, rc[1]) is None:
+                    continue
+                _emit(col, rc[1], {"label": m.get("label"), "needs_value": True})
 
         # 2) Deterministic metadata-detected inputs (UNION) — captures the cells the
         # LLM under-enumerated; already-seen cells are skipped (LLM semantics win).
@@ -1014,8 +1058,39 @@ def derive_data_model(template_id: str) -> DataModelResult:
             if rnm == sheet and (sheet, f"{column_letter(rcol)}{rr}") not in seen:
                 _emit(rcol, rr, None)
 
+    # Post-pass for the evidence gate: facts on declared-derived-but-formula-less
+    # rows get value_role 'derived:<role>' — outside the exact-match protection
+    # (fillable), intent still auditable. Counted, never silent.
+    if bare_derived_rows:
+        n_rewritten = 0
+        for f in facts:
+            if ((f.sheet_name, f.row) in bare_derived_rows
+                    and f.value_role and not f.value_role.startswith("derived:")):
+                f.value_role = f"derived:{f.value_role}"
+                n_rewritten += 1
+        if n_rewritten:
+            flags.append(
+                f"{len(bare_derived_rows)} derived-role row(s) carry no formulas — the "
+                "template declares them computed but nothing computes them, so they are "
+                f"FILLABLE ({n_rewritten} facts marked 'derived:'). They fill from the "
+                "source like inputs; add formulas to the template to make them computed.")
+
     if orphan_cells:
         flags.append(f"{orphan_cells} input cells got no period (no header row above them) — review period detection.")
+
+    # A sheet whose facts ALL lack period identity cannot fill AT ALL — that is
+    # a whole-sheet failure, not a per-cell footnote (a real run left two
+    # sheets at zero fills with only scattered 'no_slot_index' reasons).
+    _by_sheet_periodless: dict[str, list[int]] = {}
+    for f in facts:
+        _by_sheet_periodless.setdefault(f.sheet_name, []).append(
+            1 if (f.parsed_date or f.period_index is not None or f.period_label) else 0)
+    for _sh, marks in _by_sheet_periodless.items():
+        if len(marks) >= 5 and not any(marks):
+            flags.append(
+                f"sheet '{_sh}': NONE of its {len(marks)} facts carry a period — no cell "
+                "there can align to source data. Its period headers were not recognised "
+                "(or it is a non-timeseries table); fills on this sheet will be zero.")
 
     # Period is RELATIVE: assign each period-bearing column an ordinal on its
     # sheet's timeline (left→right). The absolute month resolves only at

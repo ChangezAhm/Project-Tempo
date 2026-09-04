@@ -239,11 +239,37 @@ _OPTIONAL_FACT_COLS = ("category_source", "write_mode")   # 0011, 0012
 def replace_data_points(version_id: str, rows: list[dict], chunk: int = 500) -> None:
     """replace_rows for template_data_points, with a pre-migration fallback for
     the optional columns above (same pattern as replace_extensible_regions'
-    pre-0010 fallback)."""
+    pre-0010 fallback).
+
+    Chunked delete-then-insert is NOT atomic (PostgREST has no transactions), so
+    a transient network failure mid-way leaves a TORN model — a real incident: a
+    'Server disconnected' after chunk 1 left 500 of 2,092 facts and populate
+    silently filled 11 of 42 metrics. Two defences: each chunk retries on
+    transient errors, and the final row count is verified so a torn write can
+    never complete quietly."""
+    import time
+
     sb = get_client()
 
     def _stripped(batch: list[dict]) -> list[dict]:
         return [{k: v for k, v in r.items() if k not in _OPTIONAL_FACT_COLS} for r in batch]
+
+    def _insert_with_retry(batch: list[dict]) -> None:
+        for attempt in range(3):
+            try:
+                sb.table("template_data_points").insert(batch).execute()
+                return
+            except Exception as e:  # noqa: BLE001
+                msg = str(e)
+                # schema errors won't heal on retry — let the caller's
+                # optional-column fallback (or the raise) handle them
+                if "PGRST" in msg or any(c in msg for c in _OPTIONAL_FACT_COLS):
+                    raise
+                if attempt == 2:
+                    raise
+                logger.warning("data-point chunk insert failed (%s) — retry %d/2",
+                               msg[:120], attempt + 1)
+                time.sleep(1.5 * (attempt + 1))
 
     sb.table("template_data_points").delete().eq("template_version_id", version_id).execute()
     strip = False
@@ -252,7 +278,7 @@ def replace_data_points(version_id: str, rows: list[dict], chunk: int = 500) -> 
         if strip:
             batch = _stripped(batch)
         try:
-            sb.table("template_data_points").insert(batch).execute()
+            _insert_with_retry(batch)
         except Exception as e:  # noqa: BLE001 — likely a missing optional column
             msg = str(e)
             optional_missing = "PGRST204" in msg or any(c in msg for c in _OPTIONAL_FACT_COLS)
@@ -263,7 +289,14 @@ def replace_data_points(version_id: str, rows: list[dict], chunk: int = 500) -> 
                 "columns %s. Apply supabase/migrations/0011_category_source.sql "
                 "and 0012_write_mode.sql to persist them.", e, _OPTIONAL_FACT_COLS)
             strip = True
-            sb.table("template_data_points").insert(_stripped(batch)).execute()
+            _insert_with_retry(_stripped(batch))
+
+    stored = (sb.table("template_data_points").select("id", count="exact")
+              .eq("template_version_id", version_id).execute().count)
+    if stored != len(rows):
+        raise RuntimeError(
+            f"data-point write incomplete: {stored} of {len(rows)} rows stored — "
+            "the model is torn; re-run derive")
 
 
 
@@ -315,18 +348,26 @@ def _safe_label(label: str) -> str:
     return slug.strip("_") or "source"
 
 
-def upload_filled(target_version_id: str, source_label: str, data: bytes) -> str:
+def upload_filled(target_version_id: str, source_label: str, data: bytes,
+                  *, variant: str | None = None, run_stamp: str | None = None) -> str:
     """Store a populated workbook; returns its storage path (private bucket).
-    ``source_label`` is an arbitrary source filename — slugged into a safe key."""
+    ``source_label`` is an arbitrary source filename — slugged into a safe key.
+    ``variant`` distinguishes sibling deliverables of one run (e.g. 'linked');
+    ``run_stamp`` disambiguates RUNS (two sources sharing a filename must never
+    overwrite each other's artifacts)."""
     _ensure_bucket(FILLED_BUCKET)
-    path = f"{target_version_id}/{_safe_label(source_label)}.xlsx"
+    stamp = f"-{_safe_label(run_stamp)}" if run_stamp else ""
+    suffix = f"-{_safe_label(variant)}" if variant else ""
+    path = f"{target_version_id}/{_safe_label(source_label)}{stamp}{suffix}.xlsx"
     return _upload_with_replace(FILLED_BUCKET, path, data, _XLSX)
 
 
-def upload_audit(target_version_id: str, source_label: str, data: bytes) -> str:
+def upload_audit(target_version_id: str, source_label: str, data: bytes,
+                 *, run_stamp: str | None = None) -> str:
     """Store a population run's JSON audit alongside its filled workbook; returns
     the storage path (same private bucket)."""
-    path = f"{target_version_id}/{_safe_label(source_label)}.audit.json"
+    stamp = f"-{_safe_label(run_stamp)}" if run_stamp else ""
+    path = f"{target_version_id}/{_safe_label(source_label)}{stamp}.audit.json"
     return _upload_with_replace(FILLED_BUCKET, path, data, "application/json")
 
 

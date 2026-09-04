@@ -19,7 +19,7 @@ from collections import Counter
 
 from app.population.catalogue import Series
 from app.population.numfmt import parse_number_format
-from app.population.periods import align_slot, parse_iso_period, sheet_grains
+from app.population.periods import _grain, align_slot, parse_iso_period, sheet_grains
 from app.population.schema import CellLink, MetricMap, PlanIssue, metric_key
 from app.population.units import reconcile_scale, resolve_unit
 
@@ -46,16 +46,29 @@ def _sum_samples(samples: list[list[float]]) -> list[float]:
     return [sum(s[i] for s in lists) for i in range(n)]
 
 
-def _scenario_columns(series: Series, dem_scen: str) -> list[tuple]:
+def _scenario_columns(series: Series, dem_scen: str,
+                      equiv: dict[str, str] | None = None) -> list[tuple]:
     """Candidate period columns for a demanded scenario — FACTS from the source's
     own tags. Restrict to the demanded scenario only when the template explicitly
     asks for budget/forecast; otherwise every column is a candidate, actuals first
-    so a same-period tie resolves to the actual."""
+    so a same-period tie resolves to the actual.
+
+    ``equiv`` is a USER-CONFIRMED scenario equivalence from the contract
+    ({"budget": "forecast"}): when the demanded scenario has no tagged columns,
+    columns tagged with its declared equivalent serve instead. Never inferred —
+    the wall between scenarios only opens on an explicit answered decision
+    (templates and sources routinely disagree on what to call the same months)."""
     def scen_of(col: int) -> str:
         return series.col_scenario.get(col) or "actual"
     cols = series.period_cols
     if dem_scen in ("budget", "forecast"):
-        return [pc for pc in cols if scen_of(pc[0]) == dem_scen]
+        exact = [pc for pc in cols if scen_of(pc[0]) == dem_scen]
+        if exact:
+            return exact
+        sub = (equiv or {}).get(dem_scen)
+        if sub:
+            return [pc for pc in cols if scen_of(pc[0]) == sub]
+        return []
     return sorted(cols, key=lambda pc: 0 if scen_of(pc[0]) == "actual" else 1)
 
 
@@ -175,6 +188,22 @@ def _resolve_scale(fill: MetricMap, series: Series, recon_sample, tpl_mags, tgt_
         # conflict: the template's own numbers are the stronger evidence — use
         # them, flagged, and surface the conflict
         return mag, f"scale:auto-resolved to template magnitude (plan implied x{declared:g})", "SCALE_CONFLICT"
+    # The template side carries NO unit evidence at all (no parseable declared
+    # unit — e.g. the plan wrote sign prose into target_unit — no number
+    # format, no magnitudes, no display_unit) but the plan EXPLICITLY declared
+    # the source's unit (read off the pack, e.g. "GBP'000"): the only evidence
+    # in the room is the source's own basis — keep it, unscaled, as a flagged
+    # default + question. Nothing is invented: the number the user sees is the
+    # number the source shows, in the source's stated units. (Distinct from the
+    # deleted modal-fallback scale, which GUESSED a factor, and gated on the
+    # explicit declaration so unknown-vs-unknown still asks instead of writing —
+    # a real run blanked 200 CF cells on an empty template without this.)
+    if fill.source_unit and src_u.kind == "money" and tgt_u.kind == "unknown":
+        if tpl_target_base:
+            return ((src_u.base or 1.0) / tpl_target_base,
+                    "scale:template-display-base (no row evidence)", None)
+        if not tpl_mags:
+            return 1.0, "scale_assumed:no template unit evidence — source basis kept", "SCALE_CONFLICT"
     return None, "scale_unknown", "SCALE_CONFLICT"
 
 
@@ -182,9 +211,12 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
                  demand: dict, *, display_unit: str | None = None,
                  template_context: tuple[dict, dict, dict] | None = None,
                  blocked: dict[str, str] | None = None,
+                 scenario_equiv: dict[str, str] | None = None,
                  ) -> tuple[list[CellLink], list[dict], list[PlanIssue]]:
     """Returns (links, unmatched, issues). ``blocked`` maps metrics with
-    unresolved blocking issues to a reason — their cells stay blank, explained."""
+    unresolved blocking issues to a reason — their cells stay blank, explained.
+    ``scenario_equiv``: user-confirmed contract substitutions ({"budget":
+    "forecast"}) — see _scenario_columns; substituted fills are note-flagged."""
     numfmt_by_cell, mags_by_row, dates_by_col = template_context or ({}, {}, {})
     blocked = blocked or {}
     sheet_grain = sheet_grains(dates_by_col)
@@ -284,25 +316,40 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
 
         # SCENARIO: factual column/variant selection (tags from the source's own
         # understanding); the demanded scenario comes from the template fact.
-        if dem_scen in ("budget", "forecast") and not agg and dem_scen in (series.variants or {}):
-            series = series.variants[dem_scen]
+        scen_sub = None   # set when a contract equivalence served the slot
+        eff_scen = dem_scen
+        if (dem_scen in ("budget", "forecast") and scenario_equiv
+                and dem_scen not in (series.variants or {})
+                and series.scenario != dem_scen
+                and not any((series.col_scenario.get(c) or "actual") == dem_scen
+                            for (c, _d, _pt) in series.period_cols)):
+            sub = scenario_equiv.get(dem_scen)
+            if sub:
+                eff_scen, scen_sub = sub, sub
+        if eff_scen in ("budget", "forecast") and not agg and eff_scen in (series.variants or {}):
+            series = series.variants[eff_scen]
             components = [series]
             recon_sample = series.sample
             cand_cols = sorted(series.period_cols, key=lambda pc: pc[0])
-        elif dem_scen in ("budget", "forecast") and series.scenario == dem_scen:
+        elif eff_scen in ("budget", "forecast") and series.scenario == eff_scen:
             cand_cols = sorted(series.period_cols, key=lambda pc: pc[0])
         else:
-            cand_cols = _scenario_columns(series, dem_scen)
-            if dem_scen in ("budget", "forecast") and not cand_cols:
+            cand_cols = _scenario_columns(series, eff_scen)
+            if eff_scen in ("budget", "forecast") and not cand_cols:
                 unmatched.append(_unmatched(
                     f, f"source has no {dem_scen} column or row-variant for '{fill.series_id}'"))
                 continue
 
-        # PERIOD: mechanical alignment under the plan's declared semantics
+        # PERIOD: mechanical alignment under the plan's declared semantics.
+        # The SLOT's own explicit grain (an FY summary column on a monthly
+        # sheet) outranks the sheet's dominant grain — an annual slot must
+        # match a year column or roll months up, never take one month.
         sheet = f.get("sheet_name")
         tdate = dates_by_col.get((sheet, f.get("col"))) or parse_iso_period(f.get("parsed_date"))
+        slot_grain = _grain(str(f.get("period_type") or ""))
+        tpl_grain = slot_grain if slot_grain in ("quarter", "year") else sheet_grain.get(sheet)
         picked, why = align_slot(f.get("period_index"), pc_by_sheet.get(sheet) or period_count,
-                                 tdate, cand_cols, grain, template_grain=sheet_grain.get(sheet),
+                                 tdate, cand_cols, grain, template_grain=tpl_grain,
                                  rollup=fill.rollup)
         if picked is None:
             unmatched.append(_unmatched(f, f"no source column for this period ({why})"))
@@ -333,8 +380,9 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
             continue
         if sc_code == "SCALE_CONFLICT":   # auto-resolved to evidence, visibly
             note_issue(key, sc_code, "default",
-                       f"declared units disagreed with the template's magnitudes for '{key}'",
-                       None, cell_ref, resolution=f"used template-magnitude scale x{scale:g}")
+                       f"unit scale for '{key}' could not be fully verified",
+                       None, cell_ref,
+                       resolution=f"scale x{scale:g} ({sflag or 'template magnitude'})")
 
         # SIGN: the plan's call, cross-checked against template evidence.
         src_sign = _dominant_sign(recon_sample)
@@ -358,10 +406,11 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
         if src_ccy and tpl_ccy and src_ccy != tpl_ccy and tgt_u.kind == "money":
             ccy_flag = f"currency_unverified:{src_ccy}->{tpl_ccy}"
 
-        source_cell = f"{_col_letters(col)}{series.row}"
-        agg_source_cells = [f"{series.sheet}!{_col_letters(c)}{series.row}" for c in cols[1:]]
+        from app.population.catalogue import series_cell
+        source_cell = series_cell(series, col)
+        agg_source_cells = [f"{series.sheet}!{series_cell(series, c)}" for c in cols[1:]]
         if agg:
-            agg_source_cells += [f"{c.sheet}!{_col_letters(cc)}{c.row}"
+            agg_source_cells += [f"{c.sheet}!{series_cell(c, cc)}"
                                  for c in components[1:] for cc in cols]
             note = "SUM: " + " + ".join(c.label for c in components) + f" @ {series.sheet} [derived:sum]"
         else:
@@ -372,6 +421,19 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
             note += f" [reconciled: {(fill.assumption or 'source granularity differs')[:140]}]"
         if not any(d is not None for (_c, d, _pt) in series.period_cols):
             note += " [period:positional — source has no dates, verify alignment]"
+        if scen_sub:
+            note += f" [scenario:{dem_scen}⇐{scen_sub} per contract decision]"
+        # FISCAL-YEAR VISIBILITY: the source's own labels prove a non-January
+        # fiscal year, and this fill lands in an FY-grain template slot. The
+        # template's 'FY25' meaning fiscal FY25 vs calendar 2025 is a sponsor
+        # CONVENTION — the fill proceeds on the calendar reading but is flagged
+        # and question-batched, never silently assumed (a fiscal pack's FY
+        # column once took a calendar-year bucket with no trace).
+        _fs = getattr(series, "fiscal_start", None)
+        if _fs not in (None, 1) and (slot_grain == "year" or tpl_grain == "year"):
+            import calendar as _cal
+            note += (f" [fiscal:source reports a {_cal.month_abbr[_fs]}-start FY; "
+                     f"template FY read as CALENDAR year — confirm convention]")
         if sflag:
             note += f" [{sflag}]"
         if ccy_flag:

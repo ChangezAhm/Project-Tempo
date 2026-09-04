@@ -173,6 +173,18 @@ def _parse_period_label(label: str, col: int, today: date) -> DetectedPeriod | N
     if _LTM.search(label_stripped):
         return DetectedPeriod(col=col, label=label_stripped, period_type="ltm", status=PeriodStatus.LTM)
     if _BUDGET.search(label_stripped):
+        # A scenario word must not ERASE the period's time identity: 'FY26
+        # Budget' is a YEAR (2026) shown under the budget scenario — typing it
+        # 'budget' with no date once fed an annual slot a single November
+        # (alignment had neither grain nor date to work with). Parse the FY /
+        # date first; the scenario survives as status.
+        fy = _FY.search(label_stripped)
+        if fy:
+            year = _normalize_year(fy.group(1))
+            if year:
+                return DetectedPeriod(col=col, label=label_stripped,
+                                      parsed_date=f"{year:04d}",
+                                      period_type="year", status=PeriodStatus.BUDGET)
         parsed, _ = _extract_date_from_label(label_stripped)
         return DetectedPeriod(col=col, label=label_stripped, parsed_date=parsed,
                               period_type="budget", status=PeriodStatus.BUDGET)

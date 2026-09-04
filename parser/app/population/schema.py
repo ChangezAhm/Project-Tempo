@@ -102,9 +102,17 @@ class MappingOut(_M):
 
 
 def metric_key(fact: dict) -> str | None:
-    """The demand key a template fact maps under: canonical metric first, the
-    written label as fallback — ONE definition for demand, verify and execute."""
-    return fact.get("canonical_metric") or fact.get("metric_label")
+    """The demand key a template fact maps under: the WRITTEN LABEL first, the
+    canonical metric as fallback — ONE definition for demand, verify and execute.
+
+    Label-first because the label is the template's own row identity, while
+    canonical_metric is an LLM normalisation that COLLIDES across distinct
+    lines: 'Gross revenue' and 'Net revenue' both canonicalised to 'Revenue',
+    collapsed into one demand entry, and both rows filled from the gross
+    series. Two rows sharing the same written label are genuinely the same
+    quantity displayed twice (e.g. 'Reported EBITDA' opening the CF bridge)
+    and correctly share one mapping."""
+    return fact.get("metric_label") or fact.get("canonical_metric")
 
 
 class PlanIssue(_M):

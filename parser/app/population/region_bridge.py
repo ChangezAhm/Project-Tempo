@@ -28,11 +28,20 @@ from __future__ import annotations
 
 import logging
 
+import re
+
 from app.priors import ADJUSTMENT_LEXICON
 
 logger = logging.getLogger(__name__)
 
 _RATE_UNIT_KINDS = {"percent", "ratio"}
+# KPI-shaped labels: counts, rates, per-unit measures, credit metrics. A
+# kpi_list region prefers these over generic money lines whatever their unit
+# resolves to (counts/ARR/backlog fall back to 'money' in unit resolution).
+_KPI_LABEL = re.compile(
+    r"(#|%|\bARR\b|\bMRR\b|ARPU|churn|headcount|FTE|backlog|days\b|cover(age)?\b|"
+    r"leverage|covenant|\bLTM\b|\bper\b|rate\b|ratio|customers?\b|logos?\b|"
+    r"wins\b|conversion|retention|utili[sz]ation)", re.I)
 
 
 def used_series(metric_maps) -> set[str]:
@@ -77,7 +86,11 @@ def rank_candidates(region: dict, series_list) -> list:
         if kind == "adjustment_rows":
             fit = 0 if ADJUSTMENT_LEXICON.search(label) else 1
         elif kind == "kpi_list":
-            fit = 0 if unit_kind in _RATE_UNIT_KINDS else 1
+            # rate/ratio units OR a KPI-shaped label — counts, ARR, DSO etc.
+            # resolve to 'money' by unit fallback, but they ARE the KPIs; a
+            # row-ordered pool structurally favours whatever sits highest on
+            # the sheet (P&L tails) over a KPI section at the bottom.
+            fit = 0 if (unit_kind in _RATE_UNIT_KINDS or _KPI_LABEL.search(label)) else 1
         elif kind == "chart_of_accounts":
             fit = 0 if unit_kind == "money" else 1
         else:
@@ -88,27 +101,35 @@ def rank_candidates(region: dict, series_list) -> list:
 
 
 def route_additions(catalogue: dict, metric_maps, regions: list[dict],
-                    target_inputs: list[dict], *, max_per_region: int | None = None
+                    target_inputs: list[dict], *, max_per_region: int | None = None,
+                    redundant: set[str] | None = None
                     ) -> tuple[list[dict], list[str]]:
     """Propose additions with the mapper's verdicts wired in. A region whose
     hosted metric came back unavailable/needs_decision is ACTIVATED: its
     candidates are the ranked unused series (the data that had nowhere to go).
-    Non-activated regions keep the default pool. Returns (proposals, notes)."""
+    Non-activated regions keep the default pool. ``redundant`` (conservation
+    analysis) removes series that duplicate already-consumed information —
+    derivable subtotals/margins and children of used totals — so candidates are
+    NOVEL data, not repeats of lines filled above. Returns (proposals, notes)."""
     from app.population.authoring import propose_additions
 
-    used = used_series(metric_maps)
+    used = used_series(metric_maps) | (redundant or set())
     unavailable_keys = {m.metric for m in metric_maps
                         if m.status in ("unavailable", "needs_decision")
                         and not m.series_id}
     hosted = region_hosted_metrics(target_inputs, regions)
 
     unused = [s for sid, s in catalogue.items() if sid not in used]
-    region_candidates: dict[int, list[str]] = {}
+    # EVERY region gets kind-ranked candidates — the ranking used to apply only
+    # to "activated" regions (a hosted metric unavailable), so a kpi_list whose
+    # placeholder rows generate no demand fell back to the row-ordered default
+    # pool and filled with whatever sat highest on the source sheet.
+    region_candidates: dict[int, list[str]] = {
+        idx: [s.id for s in rank_candidates(region, unused)]
+        for idx, region in enumerate(regions)}
     notes: list[str] = []
     for idx, keys in hosted.items():
         if keys & unavailable_keys:
-            ranked = rank_candidates(regions[idx], unused)
-            region_candidates[idx] = [s.id for s in ranked]
             notes.append(
                 f"region {regions[idx].get('sheet_name')}!r{regions[idx].get('row_start')}"
                 f"-r{regions[idx].get('row_end')} activated: hosted metric(s) "

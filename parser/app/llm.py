@@ -83,7 +83,7 @@ def estimate_messages(system: str, messages: list[dict]) -> tuple[int, int]:
 def guarded_stream(*, model: str, system: str, content=None, messages: list[dict] | None = None,
                    max_tokens: int, est_input_chars: int | None = None, n_images: int | None = None,
                    thinking: bool | None = None, temperature: float | None = None,
-                   site: str | None = None):
+                   site: str | None = None, cache_blocks: int = 0):
     """Single guarded text/vision call: checks the run's spend cap BEFORE sending,
     records real usage after, gates 'adaptive' thinking to the smart tier,
     surfaces truncation, and names the call in LangSmith (``site`` + the run
@@ -105,7 +105,23 @@ def guarded_stream(*, model: str, system: str, content=None, messages: list[dict
     guard = get_guard()
     if guard is not None:
         guard.check(estimate_call_usd(model, est_input_chars, max_tokens, n_images))
-    kwargs: dict = {"model": model, "max_tokens": max_tokens, "system": system,
+    sys_payload = system
+    if cache_blocks > 0:
+        # PROMPT CACHING: a stable prefix (system + the first ``cache_blocks``
+        # content blocks — the workbook grids) is cached server-side, so calls
+        # that repeat it (mapping batches, retries, the revision pass) pay ~10%
+        # for it instead of full price. A big template once burned $20 re-
+        # sending identical grids seven times. Callers keep the STABLE part in
+        # the leading blocks and the per-call part after.
+        sys_payload = [{"type": "text", "text": system,
+                        "cache_control": {"type": "ephemeral"}}]
+        first = messages[0]
+        if isinstance(first.get("content"), list) and len(first["content"]) >= cache_blocks:
+            marked = [dict(b) for b in first["content"]]
+            marked[cache_blocks - 1] = {**marked[cache_blocks - 1],
+                                        "cache_control": {"type": "ephemeral"}}
+            messages = [{**first, "content": marked}, *messages[1:]]
+    kwargs: dict = {"model": model, "max_tokens": max_tokens, "system": sys_payload,
                     "messages": messages}
     use_thinking = thinking if thinking is not None else (model == MODEL_SMART)
     if use_thinking:
@@ -134,7 +150,14 @@ def guarded_stream(*, model: str, system: str, content=None, messages: list[dict
     else:
         msg = _invoke()
     if guard is not None and getattr(msg, "usage", None) is not None:
-        guard.record_actual(model, msg.usage.input_tokens, msg.usage.output_tokens)
+        u = msg.usage
+        # cache tokens bill at 1.25x (write) / 0.1x (read) of the input rate —
+        # fold them into an EFFECTIVE input-token count so the guard tracks
+        # real spend, not just uncached input.
+        eff_in = (u.input_tokens
+                  + int((getattr(u, "cache_creation_input_tokens", 0) or 0) * 1.25)
+                  + int((getattr(u, "cache_read_input_tokens", 0) or 0) * 0.1))
+        guard.record_actual(model, eff_in, u.output_tokens)
     if msg.stop_reason == "max_tokens":
         raise RuntimeError(
             f"LLM call truncated at max_tokens={max_tokens}"

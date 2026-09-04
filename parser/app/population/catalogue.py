@@ -17,7 +17,7 @@ sheet — never from the LLM. The LLM's only job downstream is to say which seri
 from __future__ import annotations
 
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -42,6 +42,15 @@ def a1_to_rowcol(addr: str) -> tuple[int, int] | None:
 
 
 
+def _letters(col: int) -> str:
+    """1-based column index -> Excel letters."""
+    s = ""
+    while col > 0:
+        col, rem = divmod(col - 1, 26)
+        s = chr(65 + rem) + s
+    return s
+
+
 @dataclass
 class Series:
     id: str
@@ -63,6 +72,78 @@ class Series:
     # the whole ROW's scenario when tagged (by the AI's per-row judgment or an
     # explicit label); None = untagged/actual-ish.
     scenario: str | None = None
+    # TRANSPOSED sheet (periods run DOWN rows, series ACROSS columns): the
+    # ``row`` attribute holds the series' COLUMN and each period_cols index is
+    # a ROW. Everything that turns (series, period-index) into a real address
+    # must go through ``series_cell`` — a real pack in this layout once
+    # collapsed to one catalogue entry per sheet and filled 76 of 3,418 cells.
+    transposed: bool = False
+    # The sheet's fiscal-year START MONTH (1=calendar) inferred from its own
+    # period labels ('FY26-Q3' claimed as 2025-12 ⇒ April start). None =
+    # no fiscal labels. Execute flags FY-slot fills from non-calendar-fiscal
+    # sheets — whether the TEMPLATE's 'FY25' means fiscal FY25 or calendar
+    # 2025 is a sponsor convention, never silently assumed.
+    fiscal_start: int | None = None
+
+
+_FY_LABEL = re.compile(r"\bFY\s?(\d{2,4})[\s\-_]?([QM])(\d{1,2})\b", re.IGNORECASE)
+
+
+def fiscal_start_month(label_dates: list[tuple[str, date | None]]) -> int | None:
+    """Infer a sheet's fiscal start month from (period label, claimed date)
+    pairs: 'FY26-Q3' ending 2025-12 ⇒ (12 − 3·3) mod 12 + 1 = April. Returns
+    the start month only when ≥3 labels agree; 1 = calendar; None = no
+    evidence. Pure arithmetic over the sheet's own labels — no convention is
+    ever guessed from the company or the template."""
+    votes: Counter = Counter()
+    for label, d in label_dates:
+        if d is None or not isinstance(label, str):
+            continue
+        m = _FY_LABEL.search(label)
+        if not m:
+            continue
+        n = int(m.group(3))
+        offset = 3 * n if m.group(2).upper() == "Q" else n
+        votes[(d.month - offset) % 12 + 1] += 1
+    if not votes:
+        return None
+    start, n = votes.most_common(1)[0]
+    return start if n >= 3 else None
+
+
+def series_cell(series: "Series", axis_idx: int) -> str:
+    """Real A1 of a series' value at one period-axis index — the ONE
+    orientation-aware address builder (classic: axis is a column; transposed:
+    axis is a row and series.row holds the column)."""
+    if getattr(series, "transposed", False):
+        return f"{_letters(series.row)}{axis_idx}"
+    return f"{_letters(axis_idx)}{series.row}"
+
+
+def claim_orientation(periods: list[dict], series: list[dict]) -> str:
+    """The geometry of an understanding claim, decided from its OWN cells:
+      'columns'  — periods across columns, series in rows (classic)
+      'rows'     — periods down rows, series across columns (transposed)
+      'unknown'  — inconsistent (e.g. long-format panels) — do NOT catalogue;
+                   proceeding once collapsed 27 series into one id, silently.
+    Code decides from the claim's geometry; no LLM field is trusted for this."""
+    prc = [rc for p in periods if (rc := a1_to_rowcol(p.get("header_cell", "")))]
+    src = [rc for s in series if (rc := a1_to_rowcol(s.get("label_cell", "")))]
+    if len(prc) < 3:
+        return "columns"          # too few period claims to infer — classic default
+    pcols, prows = {c for _r, c in prc}, {r for r, _c in prc}
+    if len(pcols) >= 3 and len(prows) <= 2:
+        axis = "columns"
+    elif len(prows) >= 3 and len(pcols) <= 2:
+        axis = "rows"
+    else:
+        return "unknown"
+    if len(src) >= 3:             # series must vary along the OTHER axis
+        scols, srows = {c for _r, c in src}, {r for r, _c in src}
+        varies = len(srows) if axis == "columns" else len(scols)
+        if varies < max(2, len(src) // 2):
+            return "unknown"
+    return axis
 
 
 _SCEN_WORDS = {"budget": "budget", "bud": "budget",
@@ -349,7 +430,10 @@ def _unit_from_llm(unit_str, currency, number_format, sheet_ccy, samples=None) -
 
 
 def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
-                                 as_of: date | None = None) -> dict[str, "Series"]:
+                                 as_of: date | None = None,
+                                 diagnostics: list[str] | None = None,
+                                 sid_index: dict[tuple[str, str], str] | None = None
+                                 ) -> dict[str, "Series"]:
     """Build the catalogue from AI source-understanding instead of deterministic
     detection. `sheets` is a list of {sheet, periods:[{header_cell,date,grain,kind}],
     series:[{label_cell,label,canonical_metric,unit,currency,sign_flip}]}. The AI
@@ -379,9 +463,22 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
         name = sh.get("sheet")
         if name is None:
             continue
+        # GEOMETRY FIRST: decide the claim's orientation from its own cells.
+        # A transposed sheet processed as classic collapses every series onto
+        # one id (all labels share row 4) and every period onto one column —
+        # a real pack filled 76/3,418 cells that way, silently.
+        orientation = claim_orientation(sh.get("periods", []), sh.get("series", []))
+        if orientation == "unknown":
+            msg = (f"{name}: claim geometry is inconsistent (long-format panel?) — "
+                   f"sheet NOT catalogued rather than collapsed")
+            if diagnostics is not None:
+                diagnostics.append(msg)
+            continue
+        transposed = orientation == "rows"
         sheet_ccy = _detect_sheet_currency(cells_by_sheet.get(name, []))
         period_cols: list[tuple[int, date | None, str]] = []
         col_scenario: dict[int, str] = {}
+        fy_evidence: list[tuple[str, date | None]] = []
         for p in sh.get("periods", []):
             rc = a1_to_rowcol(p.get("header_cell", ""))
             if not rc:
@@ -393,40 +490,65 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
                 # formula date header caches its real date — so a source whose month
                 # columns are formula-driven still aligns by date instead of blanking.
                 d = parse_any_date(val_by_rc.get((name, rc[0], rc[1])))
-            col = rc[1]
+            axis = rc[0] if transposed else rc[1]   # period axis: row or column
             # Keep the column whatever its scenario; record the scenario so execute
             # can honour an explicit budget/forecast demand and keep budget out of
             # actual slots. No column is ever dropped here.
-            period_cols.append((col, d, p.get("grain") or "month"))
-            col_scenario[col] = normalise_scenario(p.get("kind"))
+            period_cols.append((axis, d, p.get("grain") or "month"))
+            col_scenario[axis] = normalise_scenario(p.get("kind"))
+            hdr_val = val_by_rc.get((name, rc[0], rc[1]))
+            if isinstance(hdr_val, str):
+                fy_evidence.append((hdr_val, d))
         if not period_cols:
             continue
+        fiscal_start = fiscal_start_month(fy_evidence)
+        claimed = 0
         for ser in sh.get("series", []):
             rc = a1_to_rowcol(ser.get("label_cell", ""))
             if not rc:
                 continue
-            row = rc[0]
+            claimed += 1
+            anchor = rc[1] if transposed else rc[0]   # series anchor: column or row
             sample = []
-            for col, _d, _g in period_cols:
-                v = val_by_rc.get((name, row, col))
+            for axis, _d, _g in period_cols:
+                r_, c_ = (axis, anchor) if transposed else (anchor, axis)
+                v = val_by_rc.get((name, r_, c_))
                 if _is_number(v):
                     n = _num(v)
                     if n is not None:
                         sample.append(n)
-            number_format = next((fmt_by_rc.get((name, row, col)) for col, _, _ in period_cols
-                                  if fmt_by_rc.get((name, row, col))), None)
-            sid = f"{name}!r{row}"
+            number_format = next(
+                (fmt_by_rc.get((name, axis, anchor) if transposed else (name, anchor, axis))
+                 for axis, _, _ in period_cols
+                 if fmt_by_rc.get((name, axis, anchor) if transposed else (name, anchor, axis))),
+                None)
+            sid = f"{name}!{'c' if transposed else 'r'}{anchor}"
+            if sid_index is not None:
+                # label-cell → sid join for the one-pass mapper: the model
+                # references series by the CELL it can see in the grid; only
+                # this function knows how a cell becomes an id (orientation).
+                sid_index[(name, str(ser.get("label_cell", "")).strip().upper())] = sid
             out[sid] = Series(
-                id=sid, sheet=name, row=row,
+                id=sid, sheet=name, row=anchor,
                 label=(ser.get("label") or ser.get("canonical_metric") or sid),
                 period_cols=period_cols,
                 unit=_unit_from_llm(ser.get("unit"), ser.get("currency"), number_format, sheet_ccy, sample),
                 sample=sample[:5],
                 col_scenario=col_scenario,
+                transposed=transposed,
+                fiscal_start=fiscal_start,
             )
             scen = (ser.get("scenario") or "").strip().lower() or None
             vof = (ser.get("variant_of") or "").strip() or None
             if scen or vof:
                 ai_tags[sid] = (scen, vof)
+        # COLLAPSE BELT: many claims producing few ids is a geometry bug,
+        # whatever the orientation call said — say so, never proceed silently.
+        produced = sum(1 for sid in out if sid.startswith(f"{name}!"))
+        if claimed >= 6 and produced <= max(2, claimed // 3):
+            msg = (f"{name}: {claimed} series claims collapsed to {produced} catalogue "
+                   f"entries — geometry mismatch, coverage is unreliable")
+            if diagnostics is not None:
+                diagnostics.append(msg)
     _attach_scenario_variant_rows(out, ai_tags)
     return out

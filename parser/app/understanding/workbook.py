@@ -359,7 +359,7 @@ def verify(wb: WorkbookUnderstanding, snap: dict) -> dict:
 # --- Orchestrator ---------------------------------------------------------
 
 @traceable(name="understand_workbook", run_type="chain")
-def understand_workbook(template_id: str, *, max_sheets: int | None = None, per_sheet_workers: int = 4,
+def understand_workbook(template_id: str, *, max_sheets: int | None = None, per_sheet_workers: int = 8,
                         force_deep: set[str] | None = None) -> dict:
     # Deep-sheet cap, env-tunable: a 20-30 tab workbook used to silently lose tabs
     # past 16 (review-flagged only). Default raised to 24; TEMPO_MAX_DEEP_SHEETS.
@@ -412,6 +412,12 @@ def understand_workbook(template_id: str, *, max_sheets: int | None = None, per_
             if source_cache.get(_sheet_cache_key(version_id, sheet_name, "deep")) is not None:
                 # Cached result — _run serves it without an Opus call, so the
                 # render (the only other per-sheet cost) would be thrown away.
+                imgs = []
+            elif len(sheet.get("cells") or []) > 3000:
+                # Big TABULAR sheets gain least from images (documented cost
+                # finding: the text grid carries 100% of content and tiling a
+                # dense sheet costs minutes of serial render + heavy image
+                # tokens) — text-only for them; form-style sheets keep tiles.
                 imgs = []
             else:
                 try:

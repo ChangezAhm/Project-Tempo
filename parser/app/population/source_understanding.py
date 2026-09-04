@@ -106,8 +106,9 @@ _MAX_SAMPLES = 8
 _MAX_IMAGE_BYTES = 5_000_000   # Anthropic's per-image cap; oversized tiles are dropped
 _MAX_TILES = 3                 # per sheet
 _EST_TILES_PER_SHEET = 2       # dry-run estimate (tiles aren't rendered for a dry run)
-_CACHE_VERSION = 3             # bump when the understanding inputs change materially
-                               # (v3: per-series scenario + variant_of) — older entries re-run
+_CACHE_VERSION = 4             # bump when the understanding inputs change materially
+                               # (v4: complete header band in digest — v3 entries were
+                               # built from truncated headers) — older entries re-run
 
 
 def vision_enabled() -> bool:
@@ -146,8 +147,12 @@ def _digest(sheet: dict) -> str:
             if v is None or v == "":
                 continue
             parts.append(f"{c.get('address')}={str(v)[:24]}")
-        if parts:
-            lines.append("  " + " ".join(parts[:40]))
+        # STRUCTURE is never truncated: a header row IS the timeline/basis — a
+        # `[:40]` cap here once amputated 13 period columns (May-26..FY27F) and
+        # the model reported the source as ending in March-26. Long rows wrap
+        # onto continuation lines instead of being cut.
+        for i in range(0, len(parts), 40):
+            lines.append("  " + " ".join(parts[i:i + 40]))
 
     lines.append("DATA ROWS (label_cell | label | sample addr=value):")
     body = 0

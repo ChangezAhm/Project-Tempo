@@ -1,22 +1,33 @@
-"""The ONLY LLM step in population: text-only meaning matching.
+"""The mapping brain of population: the model PERCEIVES, code VERIFIES.
 
-Given the template's distinct metrics and the deterministic source catalogue
-(labels only — no values, no images), ask the model which source series *means*
-which template metric, and whether the sign convention differs. That's it. No
-addresses, no numbers, no scale, no periods — those are all decided deterministically
-in verify/execute from facts Aspose already knows.
+Three variants live here, selected by the pipeline (TEMPO_MAPPER + gates):
+- ONE-PASS (default, ≤80 metrics): `understand_and_map` — one strong-model call
+  that reads BOTH workbooks as address-tagged grids (+ one layout image per
+  sheet) and returns source-structure claims AND metric mappings together.
+- BATCHED GRID: `map_metrics` with grids — the same full-workbook context,
+  chunked with a cached stable prefix, auto-tiered to Sonnet above
+  TEMPO_OPUS_METRIC_LIMIT metrics.
+- DIGEST (legacy fallback, TEMPO_MAPPER=digest): text-only label matching
+  against the catalogue, no grids/images.
 
-This is what makes runaway cost structurally impossible for the populate path:
-one cheap (Sonnet) text call (chunked if huge), under the run's spend cap, with a
-dry-run estimate available before a single token is sent.
+Whatever variant runs, the OUTPUT contract is identical — MetricMap entries
+naming catalogue series ids (or label-cell refs resolved by
+`translate_sources`) — and every number still comes from the snapshot via
+verify/execute/apply: the model never emits a value, address arithmetic, scale
+or period alignment. Bounded revision calls (`revise_plan` outcome loop,
+`revise_for_checks` tie-out loop, `repair_plan`) reuse the same contract.
+All calls run under the run's spend cap, with a dry-run estimate available
+before a single token is sent.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import re
 import logging
 
-from app.llm import MODEL_MAP, guarded_stream
+from app.llm import MODEL_MAP, MODEL_SMART, guarded_stream
 from app.population.catalogue import Series
 from app.population.cost import estimate_call_usd
 from app.population.schema import MappingOut, MetricMap
@@ -139,6 +150,296 @@ _BATCH = 12  # template metrics per call; the full series catalogue + slot facts
              # along each time, and each metric now gets a complete fill-semantics
              # answer — small batches keep the output JSON inside max_tokens.
 
+# GRID MODE (the Tracelight-parity inversion): the mapper SEES both workbooks —
+# full address-tagged grids — and maps in ONE strong-model call. The output
+# contract is IDENTICAL (MetricMap entries keyed by catalogue series ids), so
+# verify/execute/apply and every guard downstream are unchanged: the model
+# gained eyes, not hands. Rationale: every mapping-quality failure traced to
+# the model being shown a starved digest while deterministic code did the
+# 'seeing' badly; values/magnitudes/layout are the strongest mapping evidence
+# that exists and they were being withheld.
+_GRID_PREAMBLE = (
+    "You can SEE both workbooks below as full grids (address = value, exactly as the "
+    "sheets display; values are authoritative). Map like an analyst with both files "
+    "open:\n"
+    "- READ the actual numbers: magnitudes reveal scale and units, signs reveal "
+    "conventions, and a candidate mapping should be sanity-checked by comparing a few "
+    "real values between the sheets.\n"
+    "- READ the layout: period axes (columns OR rows), scenario blocks, fiscal labels, "
+    "section structure. Trust what the grid shows over any summary.\n"
+    "- The SOURCE SERIES catalogue lists the ids you must use in series_id / "
+    "also_series_ids — pick ids whose grid rows/columns you have verified by looking. "
+    "If data you can see in the grid has NO catalogue id, do not invent one: say so in "
+    "the affected metric's note.\n"
+    "- Every id and semantic you output is verified and executed deterministically; "
+    "never output cell values or computed scales.\n\n"
+)
+_GRID_MAX_TOKENS = 24000
+_GRID_HALF = 40   # metrics per call in grid mode (halved only for huge templates)
+
+# ONE-PASS mode: the same call that maps ALSO reports the source's structure
+# (periods + series per sheet, the existing claim schema) — the model reads the
+# source once, with the demand in hand, instead of a separate digest-fed
+# understanding pass. Mappings reference series by their LABEL CELL (visible in
+# the grid); the catalogue's own orientation logic turns cells into ids after
+# the fact, so the model never guesses id formats.
+_ONEPASS_CONTRACT = (
+    "FIRST report each SOURCE sheet's structure, THEN the mappings. Return ONLY JSON:\n"
+    '{"sheets":[{"sheet":"...","periods":[{"header_cell":"B5","date":"YYYY-MM-DD or null",'
+    '"grain":"month|quarter|year|ltm|ytd","kind":"actual|budget|forecast"}],'
+    '"series":[{"label_cell":"B10","label":"...","unit":"...|null","currency":"...|null",'
+    '"scenario":"actual|budget|forecast|null","variant_of":"...|null"}]}],'
+    '"mappings":[{"metric":"...","status":"direct|aggregate|reconcile|needs_decision|unavailable",'
+    '"source":"Sheet!B10|null","also_sources":["Sheet!B12"],"assumption":"...|null",'
+    '"rollup":"sum|end|avg","scenario":"actual|budget|forecast|null","source_unit":"...|null",'
+    '"target_unit":"...|null","sign_flip":false,"sign_basis":"...|null",'
+    '"period_map":"calendar|positional","confidence":0.0,"note":"..."}]}\n'
+    "PERIODS: report every time column/row you can see, whichever AXIS they run on "
+    "(down rows or across columns) — header_cell is the cell holding the period header. "
+    "SERIES: every data row/column with a label; label_cell is where its label sits.\n"
+    "MAPPINGS: reference source series ONLY by 'Sheet!<label_cell>' exactly as you "
+    "listed them in sheets[].series — never invent ids, never cite value cells."
+)
+_ONEPASS_SYSTEM = _SYSTEM.rsplit("Return ONLY JSON", 1)[0] + _ONEPASS_CONTRACT
+_ONEPASS_MAX_TOKENS = 32000
+
+
+def _stream_thinking_fallback(**kw):
+    """guarded_stream, retrying ONCE with thinking OFF when the reply truncates
+    at max_tokens — adaptive thinking shares the output budget, and a large
+    structured answer (a transposed pack's 90 series + 66 mappings) can be
+    squeezed out by its own reasoning. Deterministic decoding gets the whole
+    budget on the retry; a still-truncated reply raises for the caller's
+    fallback ladder."""
+    try:
+        return guarded_stream(**kw)
+    except RuntimeError as e:
+        if "truncated at max_tokens" not in str(e):
+            raise
+        logger.warning("%s — retrying with thinking off (full budget to output)",
+                       str(e)[:120])
+        # no temperature: Opus 4.8 rejects the param outright (API 400)
+        return guarded_stream(**{**kw, "thinking": False,
+                                 "site": f"{kw.get('site', 'llm')}_nothink"})
+
+_SRC_REF = re.compile(r"^(.*)!\s*\$?([A-Za-z]{1,3})\$?(\d+)$")
+
+
+def understand_and_map(metrics: list[dict], grids: str, context: str = "",
+                       images: list[tuple[str, bytes]] | None = None
+                       ) -> tuple[list[dict], list[dict], bool]:
+    """ONE strong-model call: read the source structure AND map, with both
+    workbooks (grids + optional sheet images) in context. Returns
+    (sheet_claims, raw_mappings, degraded) — raw mappings reference label
+    CELLS and are translated to catalogue ids by ``translate_sources``;
+    ``degraded``=True means the structure dump was squeezed (truncation /
+    corrective retry) and the caller should prefer RICHER claims from the
+    cache or the per-sheet understanding while keeping these mappings (label
+    cells resolve against any claims covering the same sheets). Raises on an
+    unusable reply; the caller falls back to the two-pass path, loudly."""
+    stable = _grid_stable_prefix("(you will define the series yourself — see the "
+                                 "output contract)", context, grids)
+    var = _grid_metrics_text(metrics)
+    blocks: list[dict] = []
+    n_images = 0
+    if images:
+        for cap, png in images:
+            if cap:
+                blocks.append({"type": "text", "text": cap})
+            blocks.append({"type": "image", "source": {
+                "type": "base64", "media_type": "image/png",
+                "data": __import__("base64").standard_b64encode(png).decode("ascii")}})
+        n_images = len(images)
+    blocks.append({"type": "text", "text": stable})
+    blocks.append({"type": "text", "text": var})
+    content: list[dict] = blocks
+    cache_blocks = len(blocks) - 1        # everything except the metrics text
+    user_text = stable + var
+
+    def _parse_onepass(text: str) -> tuple[list[dict], list[dict]]:
+        t = text.strip()
+        if t.startswith("```"):
+            t = t.split("```", 2)[1]
+            if t.lstrip().startswith("json"):
+                t = t.lstrip()[4:]
+        a, b = t.find("{"), t.rfind("}")
+        if a == -1 or b == -1:
+            raise ValueError("no JSON object in reply")
+        obj = json.loads(t[a:b + 1])
+        sheets = [{"sheet": s.get("sheet"), "periods": s.get("periods") or [],
+                   "series": s.get("series") or []} for s in obj.get("sheets") or []]
+        maps = obj.get("mappings") or []
+        if not sheets or not maps:
+            raise ValueError("reply missing sheets or mappings")
+        return sheets, maps
+
+    degraded = False   # first call truncated → the structure dump was squeezed;
+                       # the caller should prefer richer claims from elsewhere
+    try:
+        _, text = guarded_stream(
+            model=MODEL_SMART, system=_ONEPASS_SYSTEM, content=content,
+            max_tokens=_ONEPASS_MAX_TOKENS,
+            est_input_chars=len(_ONEPASS_SYSTEM) + len(user_text),
+            n_images=n_images, site="grid_onepass", cache_blocks=cache_blocks)
+    except RuntimeError as e:
+        if "truncated at max_tokens" not in str(e):
+            raise
+        degraded = True
+        logger.warning("%s — retrying with thinking off (full budget to output)", str(e)[:120])
+        _, text = guarded_stream(
+            model=MODEL_SMART, system=_ONEPASS_SYSTEM, content=content,
+            max_tokens=_ONEPASS_MAX_TOKENS, thinking=False,
+            est_input_chars=len(_ONEPASS_SYSTEM) + len(user_text) // 6,
+            n_images=n_images, site="grid_onepass_nothink",
+            cache_blocks=cache_blocks)
+    try:
+        sheets, maps = _parse_onepass(text)
+        return sheets, maps, degraded
+    except Exception as e:  # noqa: BLE001 — one corrective retry
+        logger.warning("one-pass reply didn't parse (%s) — corrective retry", e)
+        messages = [
+            {"role": "user", "content": content},
+            {"role": "assistant", "content": text[:6000]},
+            {"role": "user", "content": (
+                f"That reply was not usable ({e}). Return ONLY the JSON object with BOTH "
+                '"sheets" and "mappings" for the metrics above — no prose, no fences.')},
+        ]
+        _, text = _stream_thinking_fallback(
+            model=MODEL_SMART, system=_ONEPASS_SYSTEM,
+            messages=messages, max_tokens=_ONEPASS_MAX_TOKENS,
+            site="grid_onepass_retry")
+        sheets, maps = _parse_onepass(text)
+        return sheets, maps, True   # corrective retry = degraded-confidence claims
+
+
+def translate_sources(raw_mappings: list[dict],
+                      sid_index: dict[tuple[str, str], str],
+                      valid_sids: set[str]) -> tuple[list[MetricMap], list[str]]:
+    """Label-cell references → catalogue series ids. Unresolvable components
+    are DROPPED with a note; an unresolvable primary keeps the entry visible
+    as unavailable-with-note (never a silent loss)."""
+    lower_index = {(sh.strip().lower(), cell): sid for (sh, cell), sid in sid_index.items()}
+
+    def resolve(ref) -> str | None:
+        s = str(ref or "").strip()
+        if not s:
+            return None
+        if s in valid_sids:            # the model echoed a real id — accept
+            return s
+        m = _SRC_REF.match(s)
+        if not m:
+            return None
+        return lower_index.get((m.group(1).strip().strip("'").lower(),
+                                f"{m.group(2).upper()}{m.group(3)}"))
+
+    out: list[MetricMap] = []
+    notes: list[str] = []
+    for r in raw_mappings:
+        sid = resolve(r.get("source"))
+        also: list[str] = []
+        for a in r.get("also_sources") or []:
+            rsid = resolve(a)
+            if rsid and rsid != sid and rsid not in also:
+                also.append(rsid)
+            elif not rsid:
+                notes.append(f"{r.get('metric')}: component ref {a!r} not resolvable — dropped")
+        entry = dict(r)
+        entry["series_id"] = sid
+        entry["also_series_ids"] = also
+        if r.get("source") and sid is None:
+            entry["status"] = "unavailable"
+            entry["note"] = (f"source ref {r.get('source')!r} did not resolve to a "
+                             f"catalogued series. {entry.get('note') or ''}").strip()
+            notes.append(f"{r.get('metric')}: primary ref {r.get('source')!r} not resolvable")
+        out.append(MetricMap(**entry))
+    return out, notes[:40]
+
+
+def revise_for_checks(failures: list[dict], metric_maps, catalogue: dict[str, Series],
+                      grids: str, context: str = "",
+                      flags: list[str] | None = None) -> list[MetricMap]:
+    """TIE-OUT revision: the template's OWN check formulas failed after the
+    fill (EBITDA doesn't tie, cash movement doesn't reconcile). A workbook
+    delivered with failing tie-outs is worse than a blank one — so the model
+    sees the exact failing checks, the current plan and the grids, and revises
+    the mis-mapped/missing/double-counted metrics. One bounded iteration; the
+    final render re-evaluates every check, and anything still failing is
+    reported loudly and filed for review — never delivered silently."""
+    from app.population.cost import SpendCapExceeded
+
+    if not failures or not catalogue:
+        return []
+    fail_lines = "\n".join(
+        f"  {f.get('sheet')}!{f.get('cell')} \"{str(f.get('label'))[:60]}\": "
+        f"computes {str(f.get('after'))[:18]} (a passing check reads OK/TRUE/~0)"
+        for f in failures[:25])
+    plan_lines = "\n".join(
+        f"  {m.metric} -> {m.series_id or 'UNFILLED'}"
+        + (f" +{m.also_series_ids}" if m.also_series_ids else "")
+        + f" ({m.status}, conf {m.confidence:g})"
+        for m in metric_maps if m.series_id or m.status != "unavailable")[:12000]
+    flag_lines = ("\nKNOWN GAPS (source sheets NOT catalogued — their data has no ids; "
+                  "do not invent series for them):\n  " + "\n  ".join(flags)
+                  if flags else "")
+    stable = _grid_stable_prefix(_series_lines(catalogue), context, grids)
+    var = ("\n\nTHE TEMPLATE'S OWN CHECK FORMULAS FAIL after this fill — the totals do "
+           "not tie. This means a component is MIS-MAPPED, DOUBLE-COUNTED, MISSING, or "
+           "carries the wrong sign/scale. Failing checks:\n" + fail_lines
+           + "\n\nCURRENT PLAN:\n" + plan_lines + flag_lines
+           + "\n\nLooking at the grids and the check formulas' inputs, revise the "
+             "mapping entries responsible. Return entries ONLY for metrics you are "
+             "changing; if a failure is caused by data the source genuinely lacks, "
+             "change nothing for it and it will be reported for review. Never force "
+             "a fill just to make a check pass.\n"
+             'Return ONLY the JSON {"mappings":[...]}.')
+    content = [{"type": "text", "text": stable}, {"type": "text", "text": var}]
+    try:
+        _, text = _stream_thinking_fallback(
+            model=MODEL_SMART, system=_SYSTEM, content=content,
+            est_input_chars=len(_SYSTEM) + len(var) + len(stable) // 4,
+            max_tokens=14000, site="tie_out_revision", cache_blocks=1)
+        return _parse(text)
+    except SpendCapExceeded:
+        raise
+    except Exception as e:  # noqa: BLE001 — the failure still reports loudly downstream
+        logger.warning("tie-out revision failed (%s) — check failures stand and report", e)
+        return []
+
+
+def revise_plan(problems: list[dict], catalogue: dict[str, Series],
+                grids: str, context: str = "") -> list[MetricMap]:
+    """OUTCOME-driven revision: the model sees what actually happened to the
+    problem metrics (its own entry + the executor's per-metric reasons) with
+    the grids still in context, and returns revised entries for ONLY the
+    metrics it believes it can genuinely improve — or none. Best-effort."""
+    from app.population.cost import SpendCapExceeded
+
+    if not problems or not catalogue:
+        return []
+    blocks = []
+    for p in problems:
+        blocks.append(f"METRIC: {p['metric']}\nYOUR PLAN: {json.dumps(p['plan'])}\n"
+                      f"OUTCOME: {p['outcome']}")
+    stable = _grid_stable_prefix(_series_lines(catalogue), context, grids)
+    var = ("\n\nThese metrics did NOT fully fill. For each, either return a REVISED "
+           "mapping entry (only if, looking at the grids, you can see a genuinely "
+           "better answer) or omit it (the current outcome stands). Never force a "
+           "bad fill to make a blank go away.\n\n"
+           + "\n\n".join(blocks)
+           + "\n\nReturn ONLY the JSON {\"mappings\":[...]} for metrics you are revising.")
+    content = [{"type": "text", "text": stable}, {"type": "text", "text": var}]
+    try:
+        _, text = _stream_thinking_fallback(
+            model=MODEL_SMART, system=_SYSTEM, content=content,
+            est_input_chars=len(_SYSTEM) + len(var) + len(stable) // 4,
+            max_tokens=14000, site="plan_revision", cache_blocks=1)
+        return _parse(text)
+    except SpendCapExceeded:
+        raise
+    except Exception as e:  # noqa: BLE001 — revision is best-effort by design
+        logger.warning("revision pass failed (%s) — first outcome stands", e)
+        return []
+
 
 def _series_periods(s: Series) -> str:
     """Compact facts about a series' timeline: grain(s), date range, scenario mix
@@ -203,10 +504,28 @@ def _metric_lines(metrics: list[dict]) -> str:
     return "\n".join(out)
 
 
-def _user_text(metrics: list[dict], series_block: str, context: str = "") -> str:
+def _grid_stable_prefix(series_block: str, context: str, grids: str) -> str:
+    """The CACHEABLE part of a grid-mode call: context + grids + catalogue —
+    byte-identical across mapping batches, the repair round and the revision
+    pass (all share _SYSTEM), so every call after the first pays ~10% for it.
+    The per-call metrics/problem text goes in a separate block AFTER this."""
     ctx = f"TEMPLATE CONTEXT (authoritative — sponsor-confirmed):\n{context}\n\n" if context else ""
+    return (f"{ctx}{_GRID_PREAMBLE}{grids}\n\n"
+            "SOURCE SERIES (id | sheet | label [unit] | samples):\n"
+            f"{series_block}")
+
+
+def _grid_metrics_text(metrics: list[dict]) -> str:
+    return ("\n\nTEMPLATE METRICS to map (key | label | unit | def | qualifies):\n"
+            f"{_metric_lines(metrics)}\n\nReturn the JSON now.")
+
+
+def _user_text(metrics: list[dict], series_block: str, context: str = "",
+               grids: str | None = None) -> str:
+    ctx = f"TEMPLATE CONTEXT (authoritative — sponsor-confirmed):\n{context}\n\n" if context else ""
+    grid_block = f"{_GRID_PREAMBLE}{grids}\n\n" if grids else ""
     return (
-        f"{ctx}"
+        f"{ctx}{grid_block}"
         "SOURCE SERIES (id | sheet | label [unit] | samples):\n"
         f"{series_block}\n\n"
         "TEMPLATE METRICS to map (key | label | unit | def | qualifies):\n"
@@ -216,10 +535,20 @@ def _user_text(metrics: list[dict], series_block: str, context: str = "") -> str
 
 
 def estimate_mapping_usd(metrics: list[dict], catalogue: dict[str, Series],
-                         max_tokens: int = 8000, context: str = "") -> float:
+                         max_tokens: int = 8000, context: str = "",
+                         grids: str | None = None) -> float:
     """Dry-run cost: what the whole mapping step would cost before sending anything."""
     series_block = _series_lines(catalogue)
     total = 0.0
+    if grids:
+        stable = _grid_stable_prefix(series_block, context, grids)
+        tier = _grid_tier_model(len(metrics))
+        for n, i in enumerate(range(0, len(metrics), _GRID_HALF)):
+            chunk = metrics[i:i + _GRID_HALF]
+            var_chars = len(_grid_metrics_text(chunk))
+            chars = len(_SYSTEM) + var_chars + (len(stable) if n == 0 else len(stable) // 8)
+            total += estimate_call_usd(tier, chars, _GRID_MAX_TOKENS)
+        return round(total, 4)
     for i in range(0, len(metrics), _BATCH):
         chunk = metrics[i:i + _BATCH]
         chars = len(_SYSTEM) + len(_user_text(chunk, series_block, context))
@@ -239,15 +568,47 @@ def _parse(text: str) -> list[MetricMap]:
     return MappingOut(**json.loads(text[start:end + 1])).mappings
 
 
+def _grid_tier_model(n_metrics: int) -> str:
+    """Which model maps in grid mode: Opus for normal templates, Sonnet for
+    huge ones. Opus writes output at 5x Sonnet's price and ~1/3 its speed, and
+    a 231-metric template's mapping cost is ~90% OUTPUT tokens — the grids
+    (the actual quality lever) are identical either way, and the tie-out loop
+    + eval net guard quality. TEMPO_OPUS_METRIC_LIMIT tunes the threshold."""
+    try:
+        limit = int(os.environ.get("TEMPO_OPUS_METRIC_LIMIT", "100"))
+    except ValueError:
+        limit = 100
+    return MODEL_SMART if n_metrics <= limit else MODEL_MAP
+
+
 def _map_chunk(chunk: list[dict], series_block: str, max_tokens: int,
-               context: str = "") -> list[MetricMap]:
+               context: str = "", grids: str | None = None,
+               cache_hit: bool = False,
+               model_override: str | None = None) -> list[MetricMap]:
     """One mapping batch, with ONE corrective retry when the reply doesn't parse
     (or parses to nothing for a non-empty chunk). Raises after the retry fails —
-    the caller decides whether that kills the run."""
-    user = _user_text(chunk, series_block, context)
-    _, text = guarded_stream(model=MODEL_MAP, system=_SYSTEM, content=user,
-                             max_tokens=max_tokens, est_input_chars=len(_SYSTEM) + len(user),
-                             temperature=0, site="metric_planner")
+    the caller decides whether that kills the run. In grid mode the call runs
+    on the STRONG model, the grids ride in a CACHED prefix block (``cache_hit``
+    marks calls whose prefix is already cached, so the guard estimates them at
+    the cached rate instead of aborting a run for spend it won't incur)."""
+    if grids:
+        stable = _grid_stable_prefix(series_block, context, grids)
+        var = _grid_metrics_text(chunk)
+        content: list[dict] | str = [{"type": "text", "text": stable},
+                                     {"type": "text", "text": var}]
+        est = len(_SYSTEM) + len(var) + (len(stable) // 8 if cache_hit else len(stable))
+        model, cache_blocks = (model_override or MODEL_SMART), 1
+        temperature = None            # Opus 4.8 rejects the param
+    else:
+        content = _user_text(chunk, series_block, context)
+        est = len(_SYSTEM) + len(content)
+        model, cache_blocks = MODEL_MAP, 0
+        temperature = 0
+    user = content
+    _, text = guarded_stream(model=model, system=_SYSTEM, content=content,
+                             max_tokens=max_tokens, est_input_chars=est,
+                             temperature=temperature, site="metric_planner",
+                             cache_blocks=cache_blocks)
     try:
         maps = _parse(text)
         if maps:
@@ -264,8 +625,11 @@ def _map_chunk(chunk: list[dict], series_block: str, max_tokens: int,
             '{"mappings":[...]} for the TEMPLATE METRICS above — no prose, no fences.'
         )},
     ]
-    _, text = guarded_stream(model=MODEL_MAP, system=_SYSTEM, messages=messages,
-                             max_tokens=max_tokens, temperature=0, site="metric_planner_retry")
+    _, text = guarded_stream(model=model, system=_SYSTEM, messages=messages,
+                             max_tokens=max_tokens,
+                             est_input_chars=(est // 4 if grids else None),
+                             temperature=temperature, site="metric_planner_retry",
+                             cache_blocks=cache_blocks)
     maps = _parse(text)
     if not maps:
         raise RuntimeError("mapping batch unusable after corrective retry")
@@ -273,7 +637,8 @@ def _map_chunk(chunk: list[dict], series_block: str, max_tokens: int,
 
 
 def repair_plan(failing: list[tuple[dict, "MetricMap", list]], catalogue: dict[str, Series],
-                max_tokens: int = 8000, context: str = "") -> list[MetricMap]:
+                max_tokens: int = 8000, context: str = "",
+                grids: str | None = None) -> list[MetricMap]:
     """ONE self-repair round (Fill-Plan §2.4 tier 1): the planner sees its own
     previous entries plus the verifier's typed findings for ONLY the failing
     metrics, and returns revised entries. Best-effort — a failed repair leaves
@@ -290,19 +655,28 @@ def repair_plan(failing: list[tuple[dict, "MetricMap", list]], catalogue: dict[s
         blocks.append(f"METRIC:\n{_metric_lines([metric])}\n"
                       f"YOUR PREVIOUS PLAN: {json.dumps(prev.model_dump(exclude_none=True))}\n"
                       f"VERIFIER FINDINGS: {prob}")
-    user = (
-        (f"TEMPLATE CONTEXT (authoritative — sponsor-confirmed):\n{context}\n\n" if context else "")
-        + "SOURCE SERIES (id | sheet | label [unit] | periods | samples):\n"
-        + _series_lines(catalogue)
-        + "\n\nThe deterministic verifier could not execute these plan entries. "
-          "Revise EACH one to something executable against the facts above (or mark it "
-          "needs_decision/unavailable with a clear reason — never force a bad fill):\n\n"
-        + "\n\n".join(blocks)
-        + "\n\nReturn the corrected JSON now (mappings for ONLY these metrics)."
-    )
+    var = ("\n\nThe deterministic verifier could not execute these plan entries. "
+           "Revise EACH one to something executable against the facts above (or mark it "
+           "needs_decision/unavailable with a clear reason — never force a bad fill):\n\n"
+           + "\n\n".join(blocks)
+           + "\n\nReturn the corrected JSON now (mappings for ONLY these metrics).")
+    if grids:
+        stable = _grid_stable_prefix(_series_lines(catalogue), context, grids)
+        content = [{"type": "text", "text": stable}, {"type": "text", "text": var}]
+        est = len(_SYSTEM) + len(var) + len(stable) // 4   # prefix usually cached already
+        model, cache_blocks, temperature = MODEL_SMART, 1, None
+    else:
+        content = (
+            (f"TEMPLATE CONTEXT (authoritative — sponsor-confirmed):\n{context}\n\n" if context else "")
+            + "SOURCE SERIES (id | sheet | label [unit] | periods | samples):\n"
+            + _series_lines(catalogue) + var)
+        est = len(_SYSTEM) + len(content)
+        model, cache_blocks, temperature = MODEL_MAP, 0, 0
     try:
-        _, text = guarded_stream(model=MODEL_MAP, system=_SYSTEM, content=user,
-                                 max_tokens=max_tokens, temperature=0, site="plan_repair")
+        _, text = guarded_stream(model=model, system=_SYSTEM, content=content,
+                                 est_input_chars=est, max_tokens=max_tokens,
+                                 temperature=temperature, site="plan_repair",
+                                 cache_blocks=cache_blocks)
         return _parse(text)
     except SpendCapExceeded:
         raise
@@ -312,7 +686,8 @@ def repair_plan(failing: list[tuple[dict, "MetricMap", list]], catalogue: dict[s
 
 
 def map_metrics(metrics: list[dict], catalogue: dict[str, Series],
-                max_tokens: int = 8000, context: str = "") -> tuple[list[MetricMap], list[str]]:
+                max_tokens: int = 8000, context: str = "",
+                grids: str | None = None) -> tuple[list[MetricMap], list[str]]:
     """Run the mapping (chunked). ``context`` is the template's business-context
     block (sponsor notes, answered review questions, strict rules) — authoritative
     knowledge the mapper must honor. Returns (mappings, failed_metric_keys). A
@@ -328,6 +703,48 @@ def map_metrics(metrics: list[dict], catalogue: dict[str, Series],
     series_block = _series_lines(catalogue)
     out: list[MetricMap] = []
     failed_metrics: list[str] = []
+
+    if grids:
+        # GRID MODE: batch 1 runs alone (writes the prompt cache for the
+        # shared grids prefix), the rest run CONCURRENTLY as cache hits —
+        # a large template's mapping drops from N sequential full-price Opus
+        # calls (a real run burned $20 / 30 min re-sending identical grids)
+        # to one full-price call plus N-1 cheap parallel ones.
+        chunks = [metrics[i:i + _GRID_HALF] for i in range(0, len(metrics), _GRID_HALF)]
+        tier = _grid_tier_model(len(metrics))
+        try:
+            out.extend(_map_chunk(chunks[0], series_block, _GRID_MAX_TOKENS,
+                                  context, grids, cache_hit=False,
+                                  model_override=tier))
+        except SpendCapExceeded:
+            raise
+        except Exception:  # noqa: BLE001
+            failed_metrics.extend(str(m.get("metric")) for m in chunks[0])
+            logger.exception("grid mapping batch 1 failed after retry")
+        if len(chunks) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+
+            from app.llm import bind_worker, get_llm_context
+            from app.population.cost import get_guard
+
+            def _run(chunk):
+                return _map_chunk(chunk, series_block, _GRID_MAX_TOKENS,
+                                  context, grids, cache_hit=True,
+                                  model_override=tier)
+
+            with ThreadPoolExecutor(max_workers=4, initializer=bind_worker,
+                                    initargs=(get_guard(), get_llm_context())) as pool:
+                futs = {pool.submit(_run, c): c for c in chunks[1:]}
+                for fut, chunk in futs.items():
+                    try:
+                        out.extend(fut.result())
+                    except SpendCapExceeded:
+                        raise
+                    except Exception:  # noqa: BLE001
+                        failed_metrics.extend(str(m.get("metric")) for m in chunk)
+                        logger.exception("grid mapping batch failed after retry")
+        return out, failed_metrics
+
     for i in range(0, len(metrics), _BATCH):
         chunk = metrics[i:i + _BATCH]
         try:

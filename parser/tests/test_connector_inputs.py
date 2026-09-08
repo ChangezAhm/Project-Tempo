@@ -166,3 +166,19 @@ def test_matched_sourced_cell_is_cleared_and_filled(tmp_path):
         _connector_template(tmp_path), filled=filled, clear_facts=clear_facts, reset="full")
     ws = _open(data, tmp_path)
     assert ws.cells.get("B4").value == 1234.0               # replaced by the uploaded figure
+
+
+def test_delivered_workbook_demands_recalc_on_open(tmp_path):
+    """Fills change inputs, but the deliverable is frozen without a workbook
+    recalc — every dependent formula still carries its pre-fill cached value.
+    The file must demand a full calculation on open, or Excel trusts the stale
+    caches and the user sees old numbers until they F2 each cell."""
+    import io
+
+    from openpyxl import load_workbook
+
+    from app.population.run import render_filled
+    data, *_ = render_filled(
+        _connector_template(tmp_path), filled=[_FC("S", "B2", 1.0)],
+        clear_facts=[{"sheet_name": "S", "cell": "B2", "category": "data"}], reset="standard")
+    assert load_workbook(io.BytesIO(data)).calculation.fullCalcOnLoad is True

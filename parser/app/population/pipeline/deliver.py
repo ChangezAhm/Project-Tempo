@@ -117,6 +117,12 @@ def render_filled(template_workbook_path, filled, clear_facts=(), *, reset: str 
         from app.population.authoring import apply_additions
         applied, skipped = apply_additions(ws_by_name, additions, sval or {})
 
+    # The deliverable is frozen without a workbook recalc, so every dependent
+    # formula still carries its pre-fill cached value. Excel trusts those caches
+    # unless the file demands a full calculation on open — without this flag the
+    # user sees stale numbers until they F2 each cell.
+    wb.settings.formula_settings.calculate_on_open = True
+
     fd, name = tempfile.mkstemp(suffix=".xlsx")
     os.close(fd)
     out = Path(name)

@@ -96,6 +96,18 @@ def test_classify_matrix():
     assert _classify_category("Buffer", "", None, "calc", "Sh", S) == ("staging", None)
     assert _classify_category("Buffer", "", None, "calc", "Sh", {"Sh"}) == ("data", None)   # input surface wins
     assert _classify_category("Revenue", "", None, "input", "Sh", S) == ("data", None)
+    # FACT beats PRIOR: an explicit 'input' value_role beats the placeholder label,
+    # so a generically-named-but-user-entered slot ('Adjustment 1') is a data input.
+    assert _classify_category("Adjustment 1", "", None, None, "Sh", S,
+                              value_role="input") == ("data", None)
+    # without the input value_role, the placeholder prior still holds
+    assert _classify_category("Adjustment 1", "", None, None, "Sh", S) == ("config", "placeholder")
+    # a CONTROL label is a stronger prior — an input role does NOT override it
+    assert _classify_category("POC Mode", "", None, None, "Sh", S,
+                              value_role="input") == ("config", "control")
+    # the input-role rescue never applies to a real (non-connector) formula cell
+    assert _classify_category("Adjustment 1", "=A1+A2", None, None, "Sh", S,
+                              value_role="input") == ("computed", None)
 
 
 # --- demand gate: 'row N' fallbacks never generate mapping demand ------------

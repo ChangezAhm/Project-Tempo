@@ -42,10 +42,10 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 20   # v20: a 'year' label on a column INSIDE a consecutive
-                          # monthly run is a grouping band, not the grain — demote to
-                          # monthly (stops summing 12 months into January). v19:
-                          # explicit column grain honoured L2's deterministic period_type.
+DERIVATION_VERSION = 21   # v21: an explicit 'input' value_role beats the placeholder
+                          # lexicon prior (Adjustment N rows are inputs, not config).
+                          # v20: a 'year' label on a column INSIDE a consecutive monthly
+                          # run is a grouping band, not the grain — demote to monthly.
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -366,7 +366,8 @@ def _is_date_format(fmt: str | None) -> bool:
 
 
 def _classify_category(metric_label: str | None, formula: str, sec_cat: str | None,
-                       role: str | None, sheet: str, input_surface: set[str]) -> tuple[str, str | None]:
+                       role: str | None, sheet: str, input_surface: set[str],
+                       value_role: str | None = None) -> tuple[str, str | None]:
     """PURE per-cell category decision (returns (category, cfg_kind)). Extracted so
     the whole cascade is table-testable without a snapshot. Order matters:
       - a CONTROL/PLACEHOLDER label wins — a selector or generic slot is not a data
@@ -389,6 +390,14 @@ def _classify_category(metric_label: str | None, formula: str, sec_cat: str | No
         return "config", "scaffolding"
     cfg_kind = ("control" if _is_control_label(metric_label)
                 else "placeholder" if _is_placeholder_label(metric_label) else None)
+    # FACT beats PRIOR: an explicit 'input' value_role (the LLM's per-row judgment)
+    # means the author intends this generically-named slot ('Adjustment 1') as an
+    # entry cell — it beats the soft PLACEHOLDER lexicon prior. A CONTROL label
+    # (a selector/toggle) is a stronger prior and still wins; connector formulas
+    # are handled below.
+    if (cfg_kind == "placeholder" and (value_role or "").lower() == "input"
+            and not (formula and not is_connector)):
+        cfg_kind = None
     if cfg_kind and not (formula and not is_connector):
         return "config", cfg_kind
     if is_connector:
@@ -903,7 +912,8 @@ def derive_data_model(template_id: str) -> DataModelResult:
             unit = l3m.get("unit") or l2mr.get("unit") or (llm_field or {}).get("unit")
             # Per-cell category (see _classify_category for the full cascade + rules).
             category, cfg_kind = _classify_category(
-                metric_label, formula, sec_cat, role, sheet, input_surface)
+                metric_label, formula, sec_cat, role, sheet, input_surface,
+                value_role=l3m.get("value_role"))
             # WRITE-SEMANTICS INVERSION (authority model): a formula cell the
             # understanding CLAIMS as an input — or one the workbook's own
             # CX_PUSH topology proves is an entry cell — is a TYPE-OVER DEFAULT,

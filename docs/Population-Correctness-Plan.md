@@ -80,7 +80,24 @@ numeric-oriented and does not fill text fields (e.g. company name) from the sour
 Fix belongs with the mapper contract, validated by a live fill — deferred to sit
 with P3 (both are mapper/coverage changes needing a live run to validate).
 
-## Phase 3 — Coverage: one metric may need more than one source sheet
+## Phase 3 — Coverage: one metric may need more than one source sheet (DONE, logic tested)
+
+**Shipped:** a coverage-completion pass in `execute_plan`. When the main pass
+leaves a cell blank for lack of a source period, and another catalogue series of
+the **same metric label** covers that period (history on a second sheet, or a
+budget-scenario sibling), execute fills the gap from it under the identical
+scale/sign/grain guards, at reduced confidence, flagged per-cell and with a
+`COVERAGE_CROSS_SHEET` review issue. The same-label anchor reuses the label the
+mapper already accepted — completing coverage, not inventing meaning.
+
+**Safety:** additive — only fills cells the main pass left blank, so a correct
+primary fill can never be disturbed; a bad sibling fails the guards → the cell
+stays blank and reported. Validated by `tests/test_coverage_completion.py`
+(history fill from sibling sheet + flag; no-sibling stays blank; primary never
+overwritten); full suite 432. End-to-end live validation against the frozen
+eval source is the final confirmation step.
+
+**Superseded design notes (kept for context):**
 
 **3a. Loud coverage accounting (cheap, do first).** Today unused sheets/series are a
 priority-7 "is that expected?" line with no hint they held missing periods. Change

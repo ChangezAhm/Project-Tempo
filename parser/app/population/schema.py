@@ -33,6 +33,11 @@ class CellLink(_M):
     agg_op: str = "sum"           # 'sum' | 'avg' — how agg_source_cells combine
     unit_scale: float = 1.0
     sign_flip: bool = False
+    # ATTRIBUTE fill: a literal TEXT to write verbatim (no source-value read, no
+    # scale/sign) — used for per-row label columns ("as-reported name") that hold
+    # the source's own name for the line, not a number. When set, source_cell is
+    # provenance only. apply writes literal_text directly.
+    literal_text: str | None = None
     confidence: float = 0.5
     note: str | None = None
 

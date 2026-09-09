@@ -88,6 +88,18 @@ def apply_links(facts: list[dict], source_snapshot: dict, links: list[CellLink],
             continue
         linked_keys.add(tkey)
 
+        # ATTRIBUTE fill: write the literal label text verbatim — no source-value
+        # read, no scale/sign (source_cell is provenance only).
+        if lk.literal_text is not None:
+            filled.append(FilledCell(
+                template_sheet=f["sheet_name"], template_cell=f["cell"],
+                value=lk.literal_text, raw_source_value=lk.literal_text,
+                source_sheet=lk.source_sheet, source_cell=_first_addr(lk.source_cell) or lk.source_cell,
+                metric=f.get("canonical_metric") or f.get("metric_label"),
+                period_index=f.get("period_index"), scenario=f.get("scenario"),
+                confidence=lk.confidence))
+            continue
+
         ssheet = sheet_by_lower.get(lk.source_sheet.lower(), lk.source_sheet)
         saddr = _first_addr(lk.source_cell)
         raw = sval.get((ssheet, saddr)) if saddr else None

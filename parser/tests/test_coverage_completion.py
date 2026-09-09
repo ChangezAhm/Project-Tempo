@@ -111,6 +111,74 @@ def test_no_sibling_means_the_gap_stays_blank():
     assert any(u["template_cell"] == "B9" for u in unmatched)  # and honestly reported
 
 
+def test_coverage_matched_by_template_metric_name_not_winner_label():
+    # THE REAL-WORLD CASE (the Source Anchors 'Revenue' miss): the winner is a
+    # differently-named line ('Total sales'), the history sheet labels the same
+    # line 'Revenue' — which is the TEMPLATE's own name for it. Coverage matches
+    # by the template metric name, so 2023 fills with NO coverage_series_ids and
+    # despite the winner's label differing.
+    primary = [
+        {"row": 1, "col": 1, "value": "EUR millions", "address": "A1"},
+        {"row": 5, "col": 1, "value": "Total sales", "address": "A5"},   # winner, different name
+        {"row": 5, "col": 3, "value": 12_000_000, "address": "C5"},
+        {"row": 5, "col": 4, "value": 13_000_000, "address": "D5"},
+    ]
+    hist = [
+        {"row": 1, "col": 1, "value": "EUR millions", "address": "A1"},
+        {"row": 5, "col": 1, "value": "Revenue", "address": "A5"},       # == template metric name
+        {"row": 5, "col": 3, "value": 10_000_000, "address": "C5"},
+        {"row": 5, "col": 4, "value": 11_000_000, "address": "D5"},
+        {"row": 5, "col": 5, "value": 12_000_000, "address": "E5"},
+        {"row": 5, "col": 6, "value": 13_000_000, "address": "F5"},
+    ]
+    snap = {"sheets": [{"name": "Primary", "cells": primary}, {"name": "Hist", "cells": hist}]}
+    periods = {
+        "Primary": [{"col": 3, "parsed_date": "2024-01", "period_type": "month"},
+                    {"col": 4, "parsed_date": "2024-02", "period_type": "month"}],
+        "Hist": [{"col": 3, "parsed_date": "2023-01", "period_type": "month"},
+                 {"col": 4, "parsed_date": "2023-02", "period_type": "month"},
+                 {"col": 5, "parsed_date": "2024-01", "period_type": "month"},
+                 {"col": 6, "parsed_date": "2024-02", "period_type": "month"}],
+    }
+    cat = build_catalogue(snap, periods)
+    maps = [MetricMap(metric="revenue", series_id="Primary!r5", confidence=0.9)]  # no coverage ids
+    facts = [_fact("B9", "2023-01", 0), _fact("B10", "2024-01", 1)]
+    links, unmatched, _ = execute_plan(facts, cat, maps, _demand())
+    by_cell = {lk.template_cell: lk for lk in links}
+    assert by_cell["B9"].source_sheet == "Hist"            # filled via the template's own name
+    assert not unmatched
+
+
+def _attr_fact(cell):
+    # a period-less per-row attribute input (e.g. column C "as-reported name")
+    return {"sheet_name": "Template", "cell": cell, "canonical_metric": "revenue",
+            "metric_label": "revenue", "unit": None, "currency": None,
+            "row": int(cell[1:]), "col": 3, "period_index": None, "scenario": "actual",
+            "parsed_date": None, "period_type": None}
+
+
+def test_attribute_fill_writes_source_label_into_text_slot():
+    # Column C wants the SOURCE's name for the line (text), not a number. The
+    # period-less text cell gets the mapped series' label written verbatim.
+    cat = build_catalogue(_snapshot(), _periods())          # Primary's label is "Revenue"
+    maps = [MetricMap(metric="revenue", series_id="Primary!r5", confidence=0.9)]
+    facts = [_attr_fact("C10")]
+    ctx = ({("Template", "C10"): "General"}, {}, {})        # text-format cell
+    links, _u, _i = execute_plan(facts, cat, maps, _demand(), template_context=ctx)
+    by_cell = {lk.template_cell: lk for lk in links}
+    assert "C10" in by_cell and by_cell["C10"].literal_text == "Revenue"
+
+
+def test_attribute_fill_skips_numeric_format_cells():
+    # A period-less cell with a NUMBER format is not a label slot — never gets text.
+    cat = build_catalogue(_snapshot(), _periods())
+    maps = [MetricMap(metric="revenue", series_id="Primary!r5", confidence=0.9)]
+    facts = [_attr_fact("C10")]
+    ctx = ({("Template", "C10"): "#,##0"}, {}, {})          # numeric format
+    links, _u, _i = execute_plan(facts, cat, maps, _demand(), template_context=ctx)
+    assert not any(lk.literal_text for lk in links)
+
+
 def test_coverage_completion_never_overwrites_a_primary_fill():
     # When the winner DOES cover the period, the sibling is never consulted.
     cat = build_catalogue(_snapshot(), _periods())

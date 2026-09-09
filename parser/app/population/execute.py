@@ -457,6 +457,8 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
     # grain guards, at reduced confidence, and flag every such fill loudly. The
     # same-label anchor reuses the label the mapper already accepted for this
     # metric, so this completes coverage rather than inventing meaning. ----
+    from app.population.catalogue import series_cell   # also used by the passes below
+
     def _norm_label(s: str | None) -> str:
         return " ".join((s or "").split()).lower()
 
@@ -485,19 +487,22 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
                 continue
             # Candidate coverage siblings, in priority order:
             #  1. the mapper's OWN coverage_series_ids — its meaning judgment that
-            #     these series represent this same metric (any sheet/scenario); the
-            #     general signal, works regardless of differing labels.
-            #  2. FALLBACK: series that share the winner's exact label (handles the
-            #     cases the mapper didn't enumerate; keeps the digest path working).
+            #     these series represent this same metric (any sheet/scenario).
+            #  2. series whose label matches the TEMPLATE'S name for this line
+            #     (metric_key) — the template calls it 'Revenue' and a history sheet
+            #     also labels its line 'Revenue', even when the mapped winner was a
+            #     differently-named line ('Total sales'). Matches the template's own
+            #     vocabulary, not a fuzzy guess.
+            #  3. series sharing the winner's exact label (keeps the digest path).
             # Dedup, preserve order, drop the winner itself.
             sibs, seen = [], {id(pser)}
-            for sid in (primary.coverage_series_ids or []):
-                s2 = catalogue.get(sid)
-                if s2 is not None and id(s2) not in seen:
-                    sibs.append(s2); seen.add(id(s2))
-            for s2 in by_label.get(_norm_label(pser.label), []):
-                if id(s2) not in seen:
-                    sibs.append(s2); seen.add(id(s2))
+            def _add(series_list):
+                for s2 in series_list:
+                    if s2 is not None and id(s2) not in seen:
+                        sibs.append(s2); seen.add(id(s2))
+            _add(catalogue.get(sid) for sid in (primary.coverage_series_ids or []))
+            _add(by_label.get(_norm_label(key), []))
+            _add(by_label.get(_norm_label(pser.label), []))
             if not sibs:
                 continue
             sheet = f.get("sheet_name")
@@ -553,5 +558,50 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
                            f"{n} period-gap cell(s) for '{metric}' filled from '{sh}' — the mapped "
                            f"source did not cover those periods", None, None,
                            resolution=f"filled from {sh}")
+
+    # ---- ATTRIBUTE FILL (demand-gated): per-row label columns. A fillable cell
+    # with a metric but NO time dimension, sitting in a non-numeric (text) column,
+    # is an ATTRIBUTE slot — e.g. an "as-reported / company's own name" column that
+    # holds the SOURCE's name for the line, not a number. Write the mapped series'
+    # label (text), not a value. Gated: only demanded cells that are period-less,
+    # in a text-format column, and whose metric actually maps to a source series —
+    # never a blanket rule, and never a period-bearing value cell. ----
+    def _is_label_slot(fmt) -> bool:
+        s = str(fmt or "")
+        if not s or s == "General":
+            return True
+        return not (any(c in s for c in "#0%") or any(c in s.lower() for c in "ymd"))
+
+    filled_now = {(lk.template_sheet, lk.template_cell) for lk in links}
+    attr_done: set = set()
+    for f in facts:
+        tc = (f.get("sheet_name"), f.get("cell"))
+        if tc in filled_now or tc in attr_done:
+            continue
+        # period-less: no time dimension at all (not a time-series value cell)
+        if f.get("period_index") is not None or f.get("parsed_date") or f.get("period_type"):
+            continue
+        if (f.get("value_role") or "").strip().lower() in ("total", "subtotal", "header"):
+            continue
+        if not _is_label_slot(numfmt_by_cell.get((f.get("sheet_name"), (f.get("cell") or "").upper()))):
+            continue
+        key = metric_key(f)
+        if key in blocked:
+            continue
+        m = fill_for(key, (f.get("scenario") or "").strip().lower())
+        ser = catalogue.get(m.series_id) if (m and m.series_id) else None
+        if ser is None or not ser.label:
+            continue
+        prov = series_cell(ser, ser.period_cols[0][0]) if ser.period_cols else (ser.id or "")
+        links.append(CellLink(
+            template_sheet=f.get("sheet_name"), template_cell=f.get("cell"),
+            source_sheet=ser.sheet, source_cell=prov, literal_text=ser.label,
+            confidence=min((m.confidence or 0.5), 0.7),
+            note=f"as-reported name: the source labels this line '{ser.label}' @ {ser.sheet} "
+                 f"[attribute:source-label]"))
+        attr_done.add(tc)
+    if attr_done:
+        unmatched[:] = [u for u in unmatched
+                        if (u["template_sheet"], u["template_cell"]) not in attr_done]
 
     return links, unmatched, list(issue_by.values())

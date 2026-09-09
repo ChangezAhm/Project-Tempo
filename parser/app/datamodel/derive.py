@@ -42,9 +42,10 @@ logger = logging.getLogger(__name__)
 # Bump whenever the derivation logic changes — population auto-re-derives a data
 # model whose stored version is older than this, so code changes take effect on the
 # next run instead of silently using a stale map.
-DERIVATION_VERSION = 19   # v19: explicit column grain honours L2's deterministic
-                          # period_type too, not just the LLM's granularity (v18 missed
-                          # FY columns the LLM had typed monthly)
+DERIVATION_VERSION = 20   # v20: a 'year' label on a column INSIDE a consecutive
+                          # monthly run is a grouping band, not the grain — demote to
+                          # monthly (stops summing 12 months into January). v19:
+                          # explicit column grain honoured L2's deterministic period_type.
 
 _CELL = re.compile(r"^([A-Z]+)(\d+)$")
 _MAX_CELLS_PER_FIELD = 4000
@@ -134,6 +135,32 @@ def _grain_from_dates(isos) -> str | None:
         return None
     g = Counter(gaps).most_common(1)[0][0]
     return "monthly" if g <= 1 else "quarterly" if g <= 3 else "annual"
+
+
+def _monthly_run_cols(col_date: dict[int, str], min_run: int = 3) -> set[int]:
+    """Columns whose OWN date is a specific month that sits inside a run of
+    >= `min_run` consecutive monthly columns (left-to-right). This is what tells
+    a year-grouping BAND ('FY2024' printed over the first month of a 12-month
+    block) apart from a genuine annual summary column: the band's column is one
+    of a consecutive monthly sequence; a real FY-total column is not. Used to
+    stop a grouping label from mis-grained the month beneath it as annual —
+    while never touching a standalone FY column that happens to carry a date."""
+    def ym(iso: str) -> int | None:
+        parts = (iso or "")[:7].split("-")
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            return int(parts[0]) * 12 + int(parts[1])
+        return None
+    dated = sorted((c, ym(iso)) for c, iso in col_date.items() if ym(iso) is not None)
+    run: set[int] = set()
+    i = 0
+    while i < len(dated):
+        j = i
+        while j + 1 < len(dated) and dated[j + 1][1] - dated[j][1] == 1:
+            j += 1
+        if j - i + 1 >= min_run:
+            run.update(c for c, _ in dated[i:j + 1])
+        i = j + 1
+    return run
 
 
 _SCEN_ENUM = {"budget": Scenario.budget, "forecast": Scenario.forecast}
@@ -734,6 +761,11 @@ def derive_data_model(template_id: str) -> DataModelResult:
                 if iso:
                     col_date[_c] = iso
         sheet_date_grain = _grain_from_dates(col_date.values())
+        # Columns sitting inside a consecutive monthly run — used to demote a
+        # year-grouping BAND ('FY2024' over the first month of a 12-month block)
+        # that would otherwise mis-grain that month as annual and sum 12 months
+        # into it. A standalone FY column is never in a run, so it is untouched.
+        monthly_run = _monthly_run_cols(col_date) if sheet_date_grain == "monthly" else set()
 
         # Sections: the LLM's blocks — used for category + statement-type basis;
         # smallest (most specific) wins on overlap.
@@ -790,7 +822,15 @@ def derive_data_model(template_id: str) -> DataModelResult:
             l2_type = str(pidx.get(col, {}).get("period_type") or "").lower()
             _EXPLICIT = ("year", "quarter", "ltm", "ytd")
             explicit = next((t for t in (cp_type, l2_type) if t in _EXPLICIT), None)
-            if explicit:
+            # A 'year' tag on a column that sits INSIDE a consecutive monthly run
+            # is a grouping band, not the column's grain (an FY label printed over
+            # the first month). The run membership is the fact; the label is the
+            # prior. Demote to the sheet's monthly grain so the executor fills the
+            # month rather than summing 12 months into it. Standalone FY summary
+            # columns are never in a run, so they keep their explicit 'year'.
+            if explicit == "year" and col in monthly_run:
+                grain = sheet_date_grain
+            elif explicit:
                 grain = explicit
             else:
                 grain = sheet_date_grain or cp_type or default_ptype

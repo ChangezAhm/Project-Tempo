@@ -126,6 +126,14 @@ _SYSTEM = (
     "- scenario: when the template demands budget/forecast slots for a metric, emit a "
     "separate mapping per demanded scenario (same metric key) naming which scenario it "
     "serves; omit for plain actuals.\n"
+    "- coverage_series_ids: when the template demands periods the primary series_id does "
+    "NOT cover — earlier YEARS of history, or a budget/forecast year on another sheet — "
+    "list EVERY OTHER source series that represents this SAME metric, even when its label "
+    "differs (e.g. 'Total revenue (allocated)' on a history sheet vs the template's "
+    "'Revenue'). Execute fills only the missing periods from these, under the same guards. "
+    "This is NOT also_series_ids: also_series_ids SUMS components into a total on the same "
+    "sheet; coverage_series_ids are alternative sources of the SAME line for DIFFERENT "
+    "periods/scenarios. Leave [] when the primary series already covers every demanded period.\n"
     "- period_map: 'calendar' (default — align by real dates) or 'positional' ONLY "
     "when the facts show one side has no readable dates.\n"
     "\nTYPICAL TREATMENTS (suggestions from experience — NOT rules; when the facts "
@@ -140,6 +148,7 @@ _SYSTEM = (
     "currency conversions — only the semantic plan.\n"
     'Return ONLY JSON: {"mappings":[{"metric":"...","status":"direct|aggregate|reconcile|'
     'needs_decision|unavailable","series_id":"...|null","also_series_ids":[],'
+    '"coverage_series_ids":[],'
     '"assumption":"...|null","rollup":"sum|end|avg","scenario":"actual|budget|forecast|null",'
     '"source_unit":"...|null","target_unit":"...|null","sign_flip":false,'
     '"sign_basis":"...|null","period_map":"calendar|positional","confidence":0.0,'
@@ -190,7 +199,8 @@ _ONEPASS_CONTRACT = (
     '"series":[{"label_cell":"B10","label":"...","unit":"...|null","currency":"...|null",'
     '"scenario":"actual|budget|forecast|null","variant_of":"...|null"}]}],'
     '"mappings":[{"metric":"...","status":"direct|aggregate|reconcile|needs_decision|unavailable",'
-    '"source":"Sheet!B10|null","also_sources":["Sheet!B12"],"assumption":"...|null",'
+    '"source":"Sheet!B10|null","also_sources":["Sheet!B12"],"coverage_sources":[],'
+    '"assumption":"...|null",'
     '"rollup":"sum|end|avg","scenario":"actual|budget|forecast|null","source_unit":"...|null",'
     '"target_unit":"...|null","sign_flip":false,"sign_basis":"...|null",'
     '"period_map":"calendar|positional","confidence":0.0,"note":"..."}]}\n'
@@ -198,7 +208,14 @@ _ONEPASS_CONTRACT = (
     "(down rows or across columns) — header_cell is the cell holding the period header. "
     "SERIES: every data row/column with a label; label_cell is where its label sits.\n"
     "MAPPINGS: reference source series ONLY by 'Sheet!<label_cell>' exactly as you "
-    "listed them in sheets[].series — never invent ids, never cite value cells."
+    "listed them in sheets[].series — never invent ids, never cite value cells.\n"
+    "coverage_sources: when `source` does NOT cover every demanded period (earlier "
+    "history years, or a budget/forecast year on another sheet), list the OTHER "
+    "'Sheet!<label_cell>' series that mean the SAME metric for the missing periods — "
+    "even when their label differs (e.g. 'Total revenue (allocated)' on a history sheet "
+    "vs the template's 'Revenue'). NOT also_sources (which SUMS components on one sheet); "
+    "coverage_sources are alternative sources of the SAME line for other periods. [] when "
+    "`source` already covers everything."
 )
 _ONEPASS_SYSTEM = _SYSTEM.rsplit("Return ONLY JSON", 1)[0] + _ONEPASS_CONTRACT
 _ONEPASS_MAX_TOKENS = 32000
@@ -343,9 +360,17 @@ def translate_sources(raw_mappings: list[dict],
                 also.append(rsid)
             elif not rsid:
                 notes.append(f"{r.get('metric')}: component ref {a!r} not resolvable — dropped")
+        coverage: list[str] = []
+        for cref in r.get("coverage_sources") or []:
+            rsid = resolve(cref)
+            if rsid and rsid != sid and rsid not in coverage:
+                coverage.append(rsid)
+            elif not rsid:
+                notes.append(f"{r.get('metric')}: coverage ref {cref!r} not resolvable — dropped")
         entry = dict(r)
         entry["series_id"] = sid
         entry["also_series_ids"] = also
+        entry["coverage_series_ids"] = coverage
         if r.get("source") and sid is None:
             entry["status"] = "unavailable"
             entry["note"] = (f"source ref {r.get('source')!r} did not resolve to a "

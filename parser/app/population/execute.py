@@ -483,7 +483,21 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
             pser = catalogue.get(primary.series_id) if (primary and primary.series_id) else None
             if pser is None:
                 continue
-            sibs = [s for s in by_label.get(_norm_label(pser.label), []) if s is not pser]
+            # Candidate coverage siblings, in priority order:
+            #  1. the mapper's OWN coverage_series_ids — its meaning judgment that
+            #     these series represent this same metric (any sheet/scenario); the
+            #     general signal, works regardless of differing labels.
+            #  2. FALLBACK: series that share the winner's exact label (handles the
+            #     cases the mapper didn't enumerate; keeps the digest path working).
+            # Dedup, preserve order, drop the winner itself.
+            sibs, seen = [], {id(pser)}
+            for sid in (primary.coverage_series_ids or []):
+                s2 = catalogue.get(sid)
+                if s2 is not None and id(s2) not in seen:
+                    sibs.append(s2); seen.add(id(s2))
+            for s2 in by_label.get(_norm_label(pser.label), []):
+                if id(s2) not in seen:
+                    sibs.append(s2); seen.add(id(s2))
             if not sibs:
                 continue
             sheet = f.get("sheet_name")

@@ -69,6 +69,13 @@ class MetricMap(_M):
     # template metric is the exact arithmetic total of several source lines and the
     # source has no single series that already means it. Never used to fake a split.
     also_series_ids: list[str] = []
+    # COVERAGE: other source series (any sheet/scenario) that mean the SAME metric
+    # but cover DIFFERENT periods — e.g. a history sheet holding the pre-2024 years,
+    # or a budget-scenario sheet. Used ONLY to fill periods the primary series lacks
+    # (execute's coverage-completion), never to sum. This is the mapper expressing
+    # its full meaning judgment: which series all represent this one metric. Distinct
+    # from also_series_ids (components summed into the total on the SAME sheet).
+    coverage_series_ids: list[str] = []
     # How the metric is resolved:
     #   direct      — one source series means it (series_id).
     #   aggregate   — exact SUM of series_id + also_series_ids (auto-filled).

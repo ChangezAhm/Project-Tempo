@@ -24,8 +24,10 @@ def plan_key_for(content_hash: str | None, version_id: str | None) -> str | None
     format-string edit away from a silent cache-miss)."""
     if not (content_hash and version_id):
         return None
+    # plan2: mapper contract gained coverage_series_ids (cross-sheet coverage) —
+    # bump so plans cached under the old contract are re-mapped, not reused.
     return hashlib.sha256(
-        f"{content_hash}|{version_id}|{DERIVATION_VERSION}|plan1".encode()).hexdigest()
+        f"{content_hash}|{version_id}|{DERIVATION_VERSION}|plan2".encode()).hexdigest()
 
 
 def _build_source_catalogue(snapshot: dict, source_periods: dict, content_hash: str | None,

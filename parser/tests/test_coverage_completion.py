@@ -69,6 +69,36 @@ def test_history_gap_filled_from_sibling_sheet():
     assert any(i.code == "COVERAGE_CROSS_SHEET" for i in issues)   # loud review flag
 
 
+def test_history_filled_via_coverage_ids_despite_different_label():
+    # THE GENERAL CASE: the history sheet labels the metric differently
+    # ("Total revenue (allocated)" vs the winner's "Revenue"), so exact-label
+    # matching would miss it. The mapper's coverage_series_ids — its meaning
+    # judgment that these series are the same metric — bridges it.
+    cat = build_catalogue(_snapshot(hist_label="Total revenue (allocated)"), _periods())
+    maps = [MetricMap(metric="revenue", series_id="Primary!r5",
+                      coverage_series_ids=["Hist!r5"], confidence=0.9)]
+    facts = [_fact("B9", "2023-01", 0), _fact("B10", "2024-01", 1)]
+    links, unmatched, issues = execute_plan(facts, cat, maps, _demand())
+    by_cell = {lk.template_cell: lk for lk in links}
+    assert set(by_cell) == {"B9", "B10"}
+    assert by_cell["B9"].source_sheet == "Hist"            # filled despite different label
+    assert "coverage" in by_cell["B9"].note.lower()
+    assert not unmatched
+    assert any(i.code == "COVERAGE_CROSS_SHEET" for i in issues)
+
+
+def test_different_label_without_coverage_ids_stays_blank():
+    # Same different-label history, but the mapper did NOT list it: no same-label
+    # match and no coverage id → honestly left blank (never guessed by fuzzy label).
+    cat = build_catalogue(_snapshot(hist_label="Total revenue (allocated)"), _periods())
+    maps = [MetricMap(metric="revenue", series_id="Primary!r5", confidence=0.9)]
+    facts = [_fact("B9", "2023-01", 0), _fact("B10", "2024-01", 1)]
+    links, unmatched, _ = execute_plan(facts, cat, maps, _demand())
+    by_cell = {lk.template_cell: lk for lk in links}
+    assert "B10" in by_cell and "B9" not in by_cell
+    assert any(u["template_cell"] == "B9" for u in unmatched)
+
+
 def test_no_sibling_means_the_gap_stays_blank():
     # HIST sheet's row is labelled differently → not the same metric → no fill.
     cat = build_catalogue(_snapshot(hist_label="Something else"), _periods())

@@ -62,31 +62,23 @@ be ambiguous. Handled by P4's contradiction guard, not more precedence rules.
 
 ## Phase 2 — Stop deterministic priors overriding LLM input judgment
 
-Two targeted inversions so the LLM's meaning wins over a lexicon/numeric prior:
+**2a. Placeholder lexicon must not veto an explicit input role. (DONE, tested)**
+The adjustment cells already carried `value_role='input'` (the LLM's per-row
+judgment), but `_classify_category` returned `config/placeholder` before consulting
+role. Fix: an explicit `input` value_role now beats the soft placeholder prior in
+the classifier; a CONTROL label still wins; a real formula is never rescued.
+`DERIVATION_VERSION` → 21. Validated: P&L input-detection recall **70.1% → 100%**
+against the marked ground truth; BS/CF stay 100%; 4 new classifier assertions;
+suite 429. (Note: the original plan guessed the fix was "LLM input_field claim beats
+lexicon" — empirically the LLM listed **zero** input_fields for P&L; the real signal
+was the per-row `value_role`, which is a cleaner fix.)
 
-**2a. Placeholder lexicon must not veto an LLM input-claim on a blank cell.**
-Today `_classify_category` stamps "Adjustment 1/2/3" `config/placeholder` and the
-LLM calling them `input_fields` cannot rescue a *blank* cell (the type-over
-inversion at `derive.py` requires `category == "computed"`). Change: when the LLM's
-understanding explicitly lists a blank cell as an `input_field` in a data section,
-that claim beats the placeholder prior → `data`. Keep the prior only where the LLM
-is silent. (The lexicon stays as a gap-filler, never an override.)
-
-**2b. Text input fields.** `input_detector.py` signal-5 recognises inputs only for
-NUMBER/DATE cells. Add: a blank cell the LLM names as a text `input_field` (or an
-unlocked, dependent-free cell in an input section) becomes a text `data` fact.
-`apply.py` already writes non-numeric values through unchanged, so the write path
-needs no change.
-
-**Validation:** re-derive the marked Template-1; assert the Adjustment 1/2/3 rows
-and the company text field move from `config`/absent into `fillable`, scored against
-the marked (1/2) ground truth via `score_detection.py`. Target: P&L input recall
-100% (was 70.1% — the entire gap is the 111 adjustment cells).
-
-**Risk:** loosening the placeholder veto could re-admit genuine scaffolding rows.
-Mitigate by requiring an explicit LLM `input_field` claim (not mere label
-absence), and re-run detection precision across all three marked templates to
-confirm false-inputs don't rise.
+**2b. Text input fields. (partially covered; population gap remains)**
+Detection of text fields is largely already working — most marked-2 (text) cells
+classify `data`. The remaining gap is on the **population** side: the mapper is
+numeric-oriented and does not fill text fields (e.g. company name) from the source.
+Fix belongs with the mapper contract, validated by a live fill — deferred to sit
+with P3 (both are mapper/coverage changes needing a live run to validate).
 
 ## Phase 3 — Coverage: one metric may need more than one source sheet
 

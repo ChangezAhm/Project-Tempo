@@ -207,6 +207,30 @@ def _resolve_scale(fill: MetricMap, series: Series, recon_sample, tpl_mags, tgt_
     return None, "scale_unknown", "SCALE_CONFLICT"
 
 
+def _value_continuity_siblings(winner: Series, catalogue: dict[str, Series],
+                               min_shared: int = 2, tol: float = 0.01) -> list[Series]:
+    """Series that are the SAME line as `winner` by VALUE CONTINUITY: they agree
+    on overlapping periods at a constant ratio (same numbers, possibly a different
+    scale — millions vs thousands). Label-free and AI-free, this connects a history
+    sheet's 'Total revenue' to a mapped 'Total sales' when their shared months match
+    to a constant factor — the way a human confirms two rows are the same line."""
+    wbp = winner.by_period or {}
+    if len(wbp) < min_shared:
+        return []
+    out = []
+    for s in catalogue.values():
+        if s is winner or not s.by_period:
+            continue
+        shared = [(wbp[k], s.by_period[k]) for k in (wbp.keys() & s.by_period.keys())
+                  if wbp[k] and s.by_period[k]]
+        if len(shared) < min_shared:
+            continue
+        ratios = [w / v for w, v in shared]
+        if all(abs(r / ratios[0] - 1) < tol for r in ratios):   # constant ratio ⇒ same line
+            out.append(s)
+    return out
+
+
 def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[MetricMap],
                  demand: dict, *, display_unit: str | None = None,
                  template_context: tuple[dict, dict, dict] | None = None,
@@ -471,6 +495,7 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
             by_label.setdefault(_norm_label(s.label), []).append(s)
         completed: set[tuple] = set()
         cov: Counter = Counter()
+        vc_cache: dict = {}
         for f in facts:
             tc = (f.get("sheet_name"), f.get("cell"))
             if tc not in gap_cells or tc in filled_cells or tc in completed:
@@ -500,6 +525,11 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
                 for s2 in series_list:
                     if s2 is not None and id(s2) not in seen:
                         sibs.append(s2); seen.add(id(s2))
+            #  0. VALUE CONTINUITY — the strongest, label-free signal: series that
+            #     match the winner's values at a constant ratio ARE the same line.
+            if id(pser) not in vc_cache:
+                vc_cache[id(pser)] = _value_continuity_siblings(pser, catalogue)
+            _add(vc_cache[id(pser)])
             _add(catalogue.get(sid) for sid in (primary.coverage_series_ids or []))
             _add(by_label.get(_norm_label(key), []))
             _add(by_label.get(_norm_label(pser.label), []))
@@ -524,7 +554,12 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
                 recon_sample = sib.sample
                 tpl_mags = mags_by_row.get((sheet, f.get("row")), [])
                 tgt_u = _target_unit(primary, f, numfmt_by_cell, display_unit)
-                scale, sflag, _sc = _resolve_scale(primary, sib, recon_sample, tpl_mags, tgt_u,
+                # Resolve scale from the SIBLING's OWN unit, not the winner's
+                # declared source_unit (they can differ — e.g. history in millions,
+                # the winner in thousands). Clearing source_unit makes _resolve_scale
+                # use sib.unit + magnitude cross-check against the template row.
+                sib_fill = primary.model_copy(update={"source_unit": None})
+                scale, sflag, _sc = _resolve_scale(sib_fill, sib, recon_sample, tpl_mags, tgt_u,
                                                    tpl_target_base=tpl_target_base)
                 if scale is None:
                     continue

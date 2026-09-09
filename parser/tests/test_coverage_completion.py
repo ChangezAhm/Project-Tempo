@@ -87,25 +87,33 @@ def test_history_filled_via_coverage_ids_despite_different_label():
     assert any(i.code == "COVERAGE_CROSS_SHEET" for i in issues)
 
 
-def test_different_label_without_coverage_ids_stays_blank():
-    # Same different-label history, but the mapper did NOT list it: no same-label
-    # match and no coverage id → honestly left blank (never guessed by fuzzy label).
-    cat = build_catalogue(_snapshot(hist_label="Total revenue (allocated)"), _periods())
+def _snapshot_unrelated():
+    # History sheet with a different label AND values that DON'T match the winner
+    # in the overlap — a genuinely different line; must never be connected.
+    primary = [
+        {"row": 1, "col": 1, "value": "EUR millions", "address": "A1"},
+        {"row": 5, "col": 1, "value": "Revenue", "address": "A5"},
+        {"row": 5, "col": 3, "value": 12_000_000, "address": "C5"},   # 2024-01
+        {"row": 5, "col": 4, "value": 13_000_000, "address": "D5"},   # 2024-02
+    ]
+    hist = [
+        {"row": 1, "col": 1, "value": "EUR millions", "address": "A1"},
+        {"row": 5, "col": 1, "value": "Something else", "address": "A5"},
+        {"row": 5, "col": 3, "value": 500.0, "address": "C5"},
+        {"row": 5, "col": 4, "value": 510.0, "address": "D5"},
+        {"row": 5, "col": 5, "value": 777.0, "address": "E5"},        # 2024-01 != 12,000,000
+        {"row": 5, "col": 6, "value": 888.0, "address": "F5"},
+    ]
+    return {"sheets": [{"name": "Primary", "cells": primary}, {"name": "Hist", "cells": hist}]}
+
+
+def test_unrelated_series_is_never_connected():
+    # Different label AND non-matching values AND no coverage id → honestly blank.
+    # Proves value-continuity does not false-positive on a genuinely different line.
+    cat = build_catalogue(_snapshot_unrelated(), _periods())
     maps = [MetricMap(metric="revenue", series_id="Primary!r5", confidence=0.9)]
     facts = [_fact("B9", "2023-01", 0), _fact("B10", "2024-01", 1)]
     links, unmatched, _ = execute_plan(facts, cat, maps, _demand())
-    by_cell = {lk.template_cell: lk for lk in links}
-    assert "B10" in by_cell and "B9" not in by_cell
-    assert any(u["template_cell"] == "B9" for u in unmatched)
-
-
-def test_no_sibling_means_the_gap_stays_blank():
-    # HIST sheet's row is labelled differently → not the same metric → no fill.
-    cat = build_catalogue(_snapshot(hist_label="Something else"), _periods())
-    maps = [MetricMap(metric="revenue", series_id="Primary!r5", confidence=0.9)]
-    facts = [_fact("B9", "2023-01", 0), _fact("B10", "2024-01", 1)]
-    links, unmatched, _ = execute_plan(facts, cat, maps, _demand())
-
     by_cell = {lk.template_cell: lk for lk in links}
     assert "B10" in by_cell and "B9" not in by_cell            # 2024 filled, 2023 left blank
     assert any(u["template_cell"] == "B9" for u in unmatched)  # and honestly reported
@@ -146,6 +154,43 @@ def test_coverage_matched_by_template_metric_name_not_winner_label():
     links, unmatched, _ = execute_plan(facts, cat, maps, _demand())
     by_cell = {lk.template_cell: lk for lk in links}
     assert by_cell["B9"].source_sheet == "Hist"            # filled via the template's own name
+    assert not unmatched
+
+
+def test_history_filled_by_value_continuity_across_different_labels_and_scale():
+    # THE Outlook case: winner "Total sales" (thousands, 2024 only); history sheet
+    # "Total revenue" (MILLIONS, 2023-2024) — different label AND different scale.
+    # They agree in 2024 at a constant x1000 ratio ⇒ same line ⇒ 2023 fills, with
+    # no coverage_series_ids, no shared label, no AI.
+    primary = [
+        {"row": 1, "col": 1, "value": "EUR thousands", "address": "A1"},
+        {"row": 5, "col": 1, "value": "Total sales", "address": "A5"},
+        {"row": 5, "col": 3, "value": 12_000_000, "address": "C5"},   # 2024-01
+        {"row": 5, "col": 4, "value": 13_000_000, "address": "D5"},   # 2024-02
+    ]
+    hist = [
+        {"row": 1, "col": 1, "value": "EUR millions", "address": "A1"},
+        {"row": 5, "col": 1, "value": "Total revenue", "address": "A5"},
+        {"row": 5, "col": 3, "value": 10_000.0, "address": "C5"},      # 2023-01 (x1000 smaller)
+        {"row": 5, "col": 4, "value": 11_000.0, "address": "D5"},      # 2023-02
+        {"row": 5, "col": 5, "value": 12_000.0, "address": "E5"},      # 2024-01  == 12,000,000/1000
+        {"row": 5, "col": 6, "value": 13_000.0, "address": "F5"},      # 2024-02  == 13,000,000/1000
+    ]
+    snap = {"sheets": [{"name": "Primary", "cells": primary}, {"name": "Hist", "cells": hist}]}
+    periods = {
+        "Primary": [{"col": 3, "parsed_date": "2024-01", "period_type": "month"},
+                    {"col": 4, "parsed_date": "2024-02", "period_type": "month"}],
+        "Hist": [{"col": 3, "parsed_date": "2023-01", "period_type": "month"},
+                 {"col": 4, "parsed_date": "2023-02", "period_type": "month"},
+                 {"col": 5, "parsed_date": "2024-01", "period_type": "month"},
+                 {"col": 6, "parsed_date": "2024-02", "period_type": "month"}],
+    }
+    cat = build_catalogue(snap, periods)
+    maps = [MetricMap(metric="revenue", series_id="Primary!r5", confidence=0.9)]  # no coverage ids
+    facts = [_fact("B9", "2023-01", 0), _fact("B10", "2024-01", 1)]
+    links, unmatched, _ = execute_plan(facts, cat, maps, _demand())
+    by_cell = {lk.template_cell: lk for lk in links}
+    assert by_cell["B9"].source_sheet == "Hist"            # matched purely by value continuity
     assert not unmatched
 
 

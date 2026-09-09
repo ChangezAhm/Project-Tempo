@@ -60,6 +60,11 @@ class Series:
     period_cols: list[tuple[int, date | None, str]]  # (col_index, date, grain)
     unit: Unit
     sample: list[float] = field(default_factory=list)
+    # Per-period values keyed "YYYY-MM" (from period_cols dates) — used to prove
+    # two differently-labelled series are the SAME line by value continuity
+    # (constant ratio across overlapping periods), so cross-sheet history fills
+    # even when labels diverge ('Revenue' / 'Total sales' / 'Total revenue').
+    by_period: dict = field(default_factory=dict)
     # per-column scenario, keyed by col_index: 'actual' | 'budget' | 'forecast'.
     # Scenario comes from the source's OWN labelling — never from the as-of date.
     # Execute uses it only to honour a template slot that explicitly asks for a
@@ -384,12 +389,20 @@ def build_catalogue(snapshot: dict,
             vals = [_num(effective_value(c)) for c in data_cells]
             number_format = next(((c.get("style") or {}).get("number_format")
                                   for c in data_cells if (c.get("style") or {}).get("number_format")), None)
+            date_by_col = {p["col"]: parse_iso_period(p.get("parsed_date")) for p in raw_periods}
+            by_period = {}
+            for c in data_cells:
+                d = date_by_col.get(c["col"])
+                n = _num(effective_value(c))
+                if d is not None and n is not None:
+                    by_period[f"{d.year:04d}-{d.month:02d}"] = n
             sid = f"{name}!r{row}"
             out[sid] = Series(
                 id=sid, sheet=name, row=row, label=label,
                 period_cols=period_cols,
                 unit=_series_unit(label, number_format, sheet_ccy),
                 sample=[v for v in vals if v is not None][:5],
+                by_period=by_period,
                 col_scenario=col_scenario,
             )
     _attach_scenario_variant_rows(out)
@@ -510,6 +523,7 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
             claimed += 1
             anchor = rc[1] if transposed else rc[0]   # series anchor: column or row
             sample = []
+            by_period: dict = {}
             for axis, _d, _g in period_cols:
                 r_, c_ = (axis, anchor) if transposed else (anchor, axis)
                 v = val_by_rc.get((name, r_, c_))
@@ -517,6 +531,8 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
                     n = _num(v)
                     if n is not None:
                         sample.append(n)
+                        if _d is not None:
+                            by_period[f"{_d.year:04d}-{_d.month:02d}"] = n
             number_format = next(
                 (fmt_by_rc.get((name, axis, anchor) if transposed else (name, anchor, axis))
                  for axis, _, _ in period_cols
@@ -534,6 +550,7 @@ def catalogue_from_understanding(snapshot: dict, sheets: list[dict],
                 period_cols=period_cols,
                 unit=_unit_from_llm(ser.get("unit"), ser.get("currency"), number_format, sheet_ccy, sample),
                 sample=sample[:5],
+                by_period=by_period,
                 col_scenario=col_scenario,
                 transposed=transposed,
                 fiscal_start=fiscal_start,

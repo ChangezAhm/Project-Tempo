@@ -63,3 +63,8 @@ parser/_*.py
 # hiring: candidate submissions reviewed locally - not product code
 /sample-project/
 /assesment/
+
+# dev server logs
+dev-addin.log
+dev-server.log
+parser/parser-server.log

@@ -449,4 +449,95 @@ def execute_plan(facts: list[dict], catalogue: dict[str, Series], fills: list[Me
             confidence=fill.confidence, note=note,
         ))
 
+    # ---- COVERAGE COMPLETION (additive; only fills cells the main pass left
+    # blank for lack of a source period). When the mapped ("winning") series
+    # doesn't cover a demanded period but ANOTHER catalogue series of the SAME
+    # metric label does — history on a second sheet, or a budget-scenario
+    # sibling — fill the gap from that sibling under the identical scale/sign/
+    # grain guards, at reduced confidence, and flag every such fill loudly. The
+    # same-label anchor reuses the label the mapper already accepted for this
+    # metric, so this completes coverage rather than inventing meaning. ----
+    def _norm_label(s: str | None) -> str:
+        return " ".join((s or "").split()).lower()
+
+    filled_cells = {(lk.template_sheet, lk.template_cell) for lk in links}
+    gap_cells = {(u["template_sheet"], u["template_cell"]) for u in unmatched
+                 if "no source column for this period" in (u.get("reason") or "")}
+    if gap_cells:
+        by_label: dict[str, list[Series]] = {}
+        for s in catalogue.values():
+            by_label.setdefault(_norm_label(s.label), []).append(s)
+        completed: set[tuple] = set()
+        cov: Counter = Counter()
+        for f in facts:
+            tc = (f.get("sheet_name"), f.get("cell"))
+            if tc not in gap_cells or tc in filled_cells or tc in completed:
+                continue
+            if (f.get("value_role") or "").strip().lower() in ("total", "subtotal", "header"):
+                continue
+            key = metric_key(f)
+            if key in blocked:
+                continue
+            dem_scen = (f.get("scenario") or "").strip().lower()
+            primary = fill_for(key, dem_scen)
+            pser = catalogue.get(primary.series_id) if (primary and primary.series_id) else None
+            if pser is None:
+                continue
+            sibs = [s for s in by_label.get(_norm_label(pser.label), []) if s is not pser]
+            if not sibs:
+                continue
+            sheet = f.get("sheet_name")
+            tdate = dates_by_col.get((sheet, f.get("col"))) or parse_iso_period(f.get("parsed_date"))
+            slot_grain = _grain(str(f.get("period_type") or ""))
+            tpl_grain = slot_grain if slot_grain in ("quarter", "year") else sheet_grain.get(sheet)
+            for sib in sibs:
+                cand = _scenario_columns(sib, dem_scen)
+                if dem_scen in ("budget", "forecast") and not cand:
+                    continue
+                picked, _why = align_slot(f.get("period_index"), pc_by_sheet.get(sheet) or period_count,
+                                          tdate, cand, grain, template_grain=tpl_grain,
+                                          rollup=primary.rollup)
+                if picked is None:
+                    continue
+                cols, period_op = picked
+                if period_op == "avg" and len(cols) > 1:
+                    continue
+                recon_sample = sib.sample
+                tpl_mags = mags_by_row.get((sheet, f.get("row")), [])
+                tgt_u = _target_unit(primary, f, numfmt_by_cell, display_unit)
+                scale, sflag, _sc = _resolve_scale(primary, sib, recon_sample, tpl_mags, tgt_u,
+                                                   tpl_target_base=tpl_target_base)
+                if scale is None:
+                    continue
+                src_sign = _dominant_sign(recon_sample)
+                tpl_sign = _dominant_sign(tpl_mags) or _convention_sign(f.get("sign_convention"))
+                sign_flip = (src_sign != tpl_sign) if (src_sign and tpl_sign) else primary.sign_flip
+                source_cell = series_cell(sib, cols[0])
+                agg_cells = [f"{sib.sheet}!{series_cell(sib, c)}" for c in cols[1:]]
+                note = (f"{sib.label} @ {sib.sheet} [coverage: the mapped source had no "
+                        f"{dem_scen or 'actual'} value for this period — filled from {sib.sheet}]")
+                if len(cols) > 1:
+                    note += f" [derived:{period_op} of {len(cols)} columns]"
+                if sflag:
+                    note += f" [{sflag}]"
+                links.append(CellLink(
+                    template_sheet=sheet, template_cell=f.get("cell"),
+                    source_sheet=sib.sheet, source_cell=source_cell,
+                    agg_source_cells=agg_cells,
+                    agg_op="avg" if period_op == "avg" else "sum",
+                    unit_scale=scale, sign_flip=sign_flip,
+                    confidence=min(primary.confidence, 0.7), note=note,
+                ))
+                completed.add(tc)
+                cov[(key, sib.sheet)] += 1
+                break
+        if completed:
+            unmatched[:] = [u for u in unmatched
+                            if (u["template_sheet"], u["template_cell"]) not in completed]
+            for (metric, sh), n in cov.items():
+                note_issue(metric, "COVERAGE_CROSS_SHEET", "default",
+                           f"{n} period-gap cell(s) for '{metric}' filled from '{sh}' — the mapped "
+                           f"source did not cover those periods", None, None,
+                           resolution=f"filled from {sh}")
+
     return links, unmatched, list(issue_by.values())

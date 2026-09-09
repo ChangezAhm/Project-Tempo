@@ -65,6 +65,34 @@ def _build_source_catalogue(snapshot: dict, source_periods: dict, content_hash: 
     return build_catalogue(snapshot, source_periods), "deterministic_fallback", {}
 
 
+def _data_bearing_sheets(snapshot: dict) -> set[str]:
+    """Names of source sheets that hold data (the understanding target set)."""
+    from app.population.source_understanding import select_sheets
+    return {s.get("name") for s in select_sheets(snapshot, max_sheets=10_000)}
+
+
+def _claims_complete(snapshot: dict, claims: list[dict]) -> bool:
+    """True iff the claims cover every data-bearing sheet — the gate for caching."""
+    claimed = {s.get("sheet") for s in (claims or [])}
+    return _data_bearing_sheets(snapshot).issubset(claimed)
+
+
+def _flag_uncatalogued_sheets(state: RunState) -> None:
+    """COMPLETENESS CONTRACT: every data-bearing source sheet must reach the
+    catalogue. Any that didn't — understanding failed/truncated it, or the
+    one-pass missed it — is surfaced LOUDLY in routing.stage_warnings, never a
+    silent partial fill (the history/budget incident). Data was on those sheets;
+    leaving them unread must be visible."""
+    catalogued = {s.sheet for s in (state.catalogue or {}).values()}
+    missing = sorted(_data_bearing_sheets(state.source_snapshot) - catalogued)
+    if missing:
+        state.routing["source_sheets_uncatalogued"] = missing
+        state.routing.setdefault("stage_warnings", []).append(
+            f"INCOMPLETE SOURCE READ: {len(missing)} data-bearing sheet(s) not read "
+            f"({', '.join(missing)}); any history/budget/data on them was NOT filled")
+        logger.warning("COMPLETENESS: data-bearing sheets not catalogued: %s", missing)
+
+
 # ---- stages ------------------------------------------------------------------
 
 def stage_plan_cache(state: RunState) -> None:
@@ -153,7 +181,14 @@ def stage_claims_and_catalogue(state: RunState) -> None:
             if cat and any(m.series_id for m in maps_t):
                 state.catalogue, state.onepass_maps = cat, maps_t
                 state.catalogue_source = "grid-onepass"
-                if state.content_hash:   # claims still benefit dry-runs + fallbacks
+                # Cache the one-pass claims ONLY when they cover EVERY data-bearing
+                # source sheet. A one-pass answer squeezed by its output budget can
+                # enumerate a fraction of the sheets; caching that partial would
+                # make every later run reuse it and permanently hide the sheets it
+                # missed (the incident: a 3-of-9-sheet partial cached here hid the
+                # history + budget tabs). An incomplete read is left uncached so the
+                # next run retries.
+                if state.content_hash and _claims_complete(state.source_snapshot, claims):
                     try:
                         from app.population.source_understanding import _CACHE_VERSION
                         source_cache.put(state.content_hash,
@@ -171,6 +206,9 @@ def stage_claims_and_catalogue(state: RunState) -> None:
         state.catalogue, state.catalogue_source, state.source_recon = _build_source_catalogue(
             state.source_snapshot, state.source_periods, state.content_hash,
             state.source_path, state.as_of)
+    # Completeness contract (both mapper paths): loudly flag any data-bearing
+    # source sheet that never reached the catalogue.
+    _flag_uncatalogued_sheets(state)
 
 
 def stage_routing_init(state: RunState) -> None:

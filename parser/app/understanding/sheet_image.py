@@ -101,9 +101,16 @@ def render_sheet_png(
     return _render_ws(ws, resolution)
 
 
-def _png_size(png: bytes) -> tuple[int, int]:
-    """(width, height) in px from the PNG IHDR header (offsets 16/20)."""
-    return struct.unpack(">II", png[16:24])
+def _png_size(png: bytes) -> tuple[int, int] | None:
+    """(width, height) in px from the PNG IHDR header (offsets 16/20), or None if
+    the buffer is too short/malformed to hold an IHDR (a truncated or empty render
+    — the caller then treats the sheet as un-sizeable rather than crashing)."""
+    if not png or len(png) < 24:
+        return None
+    try:
+        return struct.unpack(">II", png[16:24])
+    except struct.error:
+        return None
 
 
 def _col(idx0: int) -> str:
@@ -169,7 +176,10 @@ def render_sheet_tiles(
     """
     # Fast path: a single image that already fits.
     png = render_sheet_png(workbook_path, sheet_name, resolution=base_dpi)
-    w, h = _png_size(png)
+    size = _png_size(png)
+    if size is None:
+        return []                       # unrenderable/empty PNG → text-only, never crash
+    w, h = size
     if max(w, h) <= max_px and len(png) <= max_bytes:
         return [("", png)]
 

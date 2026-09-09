@@ -263,13 +263,22 @@ def estimate_source_understanding_usd(snapshot: dict, *, model: str = MODEL_MAP,
 
 
 def understand_source(snapshot: dict, content_hash: str | None = None, *,
-                      model: str = MODEL_MAP, max_sheets: int = 8,
+                      model: str = MODEL_MAP, max_sheets: int = 30,
                       source_path: str | Path | None = None) -> list[dict]:
     """Return [{sheet, periods, series}] for the source's data sheets. Cached by
     content_hash (free on repeat). Each sheet is one cheap Sonnet call — text
     digest + rendered tiles when ``source_path`` is given — guarded by the run's
     spend cap. A single sheet that errors is skipped (not fatal), so one odd
-    sheet can't sink the whole source — but a spend-cap breach still aborts."""
+    sheet can't sink the whole source — but a spend-cap breach still aborts.
+
+    COMPLETENESS: understands EVERY data-bearing sheet up to `max_sheets` (raised
+    from 8 — real PortCo packs routinely exceed it, and the least-dense sheets
+    dropped by a low cap are exactly the history/budget tabs). The result is
+    cached ONLY when it is complete — no sheet failed AND the cap didn't truncate
+    — so a partial can never be cached and silently reused on every later run
+    (the incident: a 3-of-9-sheet partial was cached, permanently hiding the
+    history + budget tabs). Failures/truncations are surfaced via
+    `understanding_gaps()` for the pipeline to flag, never swallowed."""
     from app.population.cost import SpendCapExceeded
 
     cached = cached_sheets(content_hash)
@@ -277,8 +286,12 @@ def understand_source(snapshot: dict, content_hash: str | None = None, *,
         logger.info("source understanding: cache hit (%s sheets)", len(cached))
         return cached
 
+    all_data_bearing = select_sheets(snapshot, max_sheets=10_000)
+    selected = all_data_bearing[:max_sheets]
+    truncated = [s.get("name") for s in all_data_bearing[max_sheets:]]
+
     sheets, failed = [], []
-    for s in select_sheets(snapshot, max_sheets=max_sheets):
+    for s in selected:
         tiles = _render_tiles(source_path, s.get("name"))
         try:
             sheets.append(_understand_sheet(s, model, tiles))
@@ -288,12 +301,37 @@ def understand_source(snapshot: dict, content_hash: str | None = None, *,
             failed.append(s.get("name"))
             logger.exception("source understanding failed for sheet %s — skipping", s.get("name"))
 
-    # Cache only COMPLETE results. Caching a partial one would make every future
-    # populate of this file cache-hit and never retry the failed sheet —
-    # permanent silent degradation.
-    if content_hash and sheets and not failed:
+    # Record what we could NOT read so the pipeline can surface it loudly.
+    _record_gaps(content_hash, failed, truncated)
+
+    # Cache ONLY a COMPLETE read: every data-bearing sheet understood, none failed,
+    # none dropped by the cap. Anything less is NOT cached, so the next run retries
+    # instead of inheriting a permanent partial.
+    complete = bool(sheets) and not failed and not truncated
+    if content_hash and complete:
         source_cache.put(content_hash, {"version": _CACHE_VERSION, "sheets": sheets})
-    elif failed:
-        logger.warning("source understanding incomplete (failed: %s) — result NOT cached "
-                       "so the next run retries", failed)
+    elif failed or truncated:
+        logger.warning("source understanding INCOMPLETE — failed:%s truncated(cap %d):%s — "
+                       "result NOT cached; next run retries", failed, max_sheets, truncated)
     return sheets
+
+
+# Per-content-hash record of sheets we could not read (failed or cap-truncated),
+# so the pipeline can raise a loud, first-class flag instead of silently
+# producing a partial fill. Best-effort in-process; keyed by content_hash.
+_UNDERSTANDING_GAPS: dict[str, dict] = {}
+
+
+def _record_gaps(content_hash: str | None, failed: list, truncated: list) -> None:
+    if content_hash is None:
+        return
+    if failed or truncated:
+        _UNDERSTANDING_GAPS[content_hash] = {"failed": list(failed), "truncated": list(truncated)}
+    else:
+        _UNDERSTANDING_GAPS.pop(content_hash, None)
+
+
+def understanding_gaps(content_hash: str | None) -> dict:
+    """Sheets the last understanding run could not read for this file:
+    {failed: [...], truncated: [...]}. Empty when the read was complete."""
+    return _UNDERSTANDING_GAPS.get(content_hash or "", {})
